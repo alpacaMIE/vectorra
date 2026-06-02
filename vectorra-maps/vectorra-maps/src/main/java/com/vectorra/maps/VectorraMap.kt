@@ -19,6 +19,7 @@ import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.source.VectorraRasterTileSource
 import java.io.Closeable
 
+@VectorraBetaApi
 data class CameraState(
     val longitude: Double,
     val latitude: Double,
@@ -27,6 +28,7 @@ data class CameraState(
     val bearing: Double
 )
 
+@VectorraBetaApi
 data class CameraOptions(
     val longitude: Double? = null,
     val latitude: Double? = null,
@@ -35,10 +37,12 @@ data class CameraOptions(
     val bearing: Double? = null
 )
 
+@VectorraBetaApi
 data class CameraAnimationOptions(
     val durationMillis: Long = 300L
 )
 
+@VectorraBetaApi
 interface VectorraMap : Closeable {
     val cameraState: CameraState
     val location: VectorraLocationComponent

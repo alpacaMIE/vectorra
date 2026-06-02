@@ -39,5 +39,13 @@ android {
 }
 
 dependencies {
-    implementation(project(":vectorra-maps"))
+    val usePublishedVectorraAar = providers.gradleProperty("vectorra.sample.usePublishedAar")
+        .map { it.equals("true", ignoreCase = true) }
+        .getOrElse(false)
+
+    if (usePublishedVectorraAar) {
+        implementation("${project.group}:vectorra-maps:${project.version}")
+    } else {
+        implementation(project(":vectorra-maps"))
+    }
 }

@@ -21,6 +21,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 
+@VectorraBetaApi
 class VectorraMapView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -30,6 +31,7 @@ class VectorraMapView @JvmOverloads constructor(
     val map: VectorraMap
         get() = engine
     var lifecycleCallback: VectorraMapLifecycleCallback? = null
+    var errorListener: VectorraMapErrorListener? = null
     val mapLoadState: VectorraMapLoadState
         get() = engine.loadState
     val mapLoadError: VectorraMapLoadError?
@@ -40,6 +42,7 @@ class VectorraMapView @JvmOverloads constructor(
         private set
     private var surfaceAvailable = false
     private val lifecycleCallbacks = CopyOnWriteArrayList<VectorraMapLifecycleCallback>()
+    private val errorListeners = CopyOnWriteArrayList<VectorraMapErrorListener>()
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var downTouchX = 0f
@@ -328,6 +331,7 @@ class VectorraMapView @JvmOverloads constructor(
             dispatchSurfaceLifecycleChanged(surfaceLifecycleState, 0, 0)
         }
         lifecycleCallbacks.clear()
+        errorListeners.clear()
         engine.close()
     }
 
@@ -370,6 +374,13 @@ class VectorraMapView @JvmOverloads constructor(
         lifecycleCallbacks.add(callback)
         return Closeable {
             lifecycleCallbacks.remove(callback)
+        }
+    }
+
+    fun addMapLoadErrorListener(listener: VectorraMapErrorListener): Closeable {
+        errorListeners.add(listener)
+        return Closeable {
+            errorListeners.remove(listener)
         }
     }
 
@@ -484,7 +495,9 @@ class VectorraMapView @JvmOverloads constructor(
             Log.e(TAG, "unsupported Vectorra device", VectorraUnsupportedDeviceException(error.message, error.cause))
         }
         lifecycleCallback?.onMapLoadError(this, error)
+        errorListener?.onMapLoadError(this, error)
         lifecycleCallbacks.forEach { it.onMapLoadError(this, error) }
+        errorListeners.forEach { it.onMapLoadError(this, error) }
     }
 
     private companion object {

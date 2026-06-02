@@ -16,13 +16,16 @@ import com.vectorra.maps.VectorraMap
 import com.vectorra.maps.VectorraMapLifecycleCallback
 import com.vectorra.maps.VectorraMapLoadError
 import com.vectorra.maps.VectorraMapView
+import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
+import java.io.Closeable
 
 class MainActivity : Activity() {
     private lateinit var mapView: VectorraMapView
     private lateinit var statusText: TextView
     private var terrainExaggeration = 1.0
     private var layersInstalled = false
+    private var mapLoadErrorSubscription: Closeable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,7 +36,7 @@ class MainActivity : Activity() {
             textSize = 13f
             setPadding(dp(12), dp(8), dp(12), dp(8))
             background = roundedBackground(0xCC101418.toInt(), dp(6).toFloat())
-            text = "Vectorra Maps sample loading"
+            text = "Vectorra ${VectorraSdk.VERSION} sample loading"
         }
 
         mapView.lifecycleCallback = object : VectorraMapLifecycleCallback {
@@ -55,6 +58,9 @@ class MainActivity : Activity() {
                 statusText.text = "Vectorra load error: ${error.message}"
             }
         }
+        mapLoadErrorSubscription = mapView.addMapLoadErrorListener { _, error ->
+            statusText.text = "Vectorra load error: ${error.message}"
+        }
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -73,6 +79,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        mapLoadErrorSubscription?.close()
         if (::mapView.isInitialized) {
             mapView.map.close()
         }

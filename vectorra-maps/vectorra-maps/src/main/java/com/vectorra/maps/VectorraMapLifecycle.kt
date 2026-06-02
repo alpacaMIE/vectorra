@@ -1,5 +1,6 @@
 package com.vectorra.maps
 
+@VectorraBetaApi
 enum class VectorraMapLoadState {
     IDLE,
     LOADING,
@@ -7,6 +8,7 @@ enum class VectorraMapLoadState {
     ERROR
 }
 
+@VectorraBetaApi
 enum class VectorraSurfaceLifecycleState {
     NOT_CREATED,
     CREATED,
@@ -14,6 +16,7 @@ enum class VectorraSurfaceLifecycleState {
     DESTROYED
 }
 
+@VectorraBetaApi
 sealed class VectorraMapLoadError(
     val message: String,
     val cause: Throwable? = null
@@ -39,6 +42,12 @@ class VectorraUnsupportedDeviceException(
     cause: Throwable? = null
 ) : RuntimeException(message, cause)
 
+@VectorraBetaApi
+fun interface VectorraMapErrorListener {
+    fun onMapLoadError(view: VectorraMapView, error: VectorraMapLoadError)
+}
+
+@VectorraBetaApi
 interface VectorraMapLifecycleCallback {
     fun onSurfaceLifecycleChanged(
         view: VectorraMapView,

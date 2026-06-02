@@ -41,9 +41,27 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "com.vectorra.maps"
+                groupId = project.group.toString()
                 artifactId = "vectorra-maps-turf"
-                version = "0.1.0"
+                version = project.version.toString()
+
+                pom {
+                    name.set("Vectorra Maps Turf")
+                    description.set("GeoJSON and Turf-style geometry utilities for Vectorra Maps.")
+                    url.set("https://vectorra.local/vectorra-maps")
+                    licenses {
+                        license {
+                            name.set("Proprietary")
+                            distribution.set("repo")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("vectorra")
+                            name.set("Vectorra")
+                        }
+                    }
+                }
             }
         }
     }

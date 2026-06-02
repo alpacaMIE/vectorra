@@ -14,6 +14,10 @@ android {
     defaultConfig {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
+        buildConfigField("String", "VECTORRA_VERSION", "\"${project.version}\"")
+        buildConfigField("String", "VECTORRA_API_STATUS", "\"beta\"")
+        buildConfigField("int", "VECTORRA_MIN_ANDROID_SDK", "26")
+        buildConfigField("String", "VECTORRA_RENDERER", "\"vulkan\"")
 
         ndk {
             abiFilters += setOf("arm64-v8a", "x86_64")
@@ -50,6 +54,10 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -75,9 +83,27 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "com.vectorra.maps"
+                groupId = project.group.toString()
                 artifactId = "vectorra-maps"
-                version = "0.1.0"
+                version = project.version.toString()
+
+                pom {
+                    name.set("Vectorra Maps Android SDK")
+                    description.set("Android-first Vectorra Maps Beta SDK with Vulkan native rendering.")
+                    url.set("https://vectorra.local/vectorra-maps")
+                    licenses {
+                        license {
+                            name.set("Proprietary")
+                            distribution.set("repo")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("vectorra")
+                            name.set("Vectorra")
+                        }
+                    }
+                }
             }
         }
     }

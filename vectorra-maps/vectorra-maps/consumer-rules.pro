@@ -1,1 +1,2 @@
-# Consumer rules will be filled as public Vectorra SDK APIs move into this module.
+# The JNI method names in VectorraNative are resolved by native symbol name.
+-keep class com.vectorra.maps.internal.VectorraNative { *; }
