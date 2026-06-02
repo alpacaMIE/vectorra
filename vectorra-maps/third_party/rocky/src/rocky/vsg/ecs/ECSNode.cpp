@@ -1,0 +1,157 @@
+/**
+ * rocky c++
+ * Copyright 2025 Pelican Mapping
+ * MIT License
+ */
+#include "ECSNode.h"
+
+#include "MeshSystem.h"
+#include "LineSystem.h"
+#include "PointSystem.h"
+#ifdef ROCKY_HAS_IMGUI
+#include "LabelSystem.h"
+#endif
+#include "WidgetSystem.h"
+#include "TransformSystem.h"
+#include "ModelSystem.h"
+#include "NodeGraphSystem.h"
+
+ROCKY_ABOUT(entt, ENTT_VERSION);
+
+using namespace ROCKY_NAMESPACE;
+using namespace ROCKY_NAMESPACE::detail;
+
+
+SimpleSystemNodeBase::SimpleSystemNodeBase(Registry& in_registry) :
+    System(in_registry)
+{
+    _toCompile = vsg::Objects::create();
+    _toDispose = vsg::Objects::create();
+
+    _tempMT = vsg::MatrixTransform::create();
+    _tempMT->children.resize(1);
+
+    // Stub DepthSorted node so the VSG compiler will register its bin for use
+    // upon first compile. Not actually used for anything.
+    _depthSortedStub = vsg::DepthSorted::create();
+    _depthSortedStub->binNumber = 1; // positive bin number ==> DESCENDING sort order (distance)
+    _depthSortedStub->child = vsg::Node::create();
+}
+
+void
+SimpleSystemNodeBase::update(VSGContext vsgcontext)
+{
+    if (!_pipelinesCompiled)
+    {
+        if (!_pipelines.empty())
+            requestCompile(_pipelines[0].commands);
+        _pipelinesCompiled = true;
+    }
+
+    // compiles:
+    if (_toCompile->children.size() > 0)
+    {
+        auto r = vsgcontext->compile(_toCompile);
+        _toCompile->children.clear();
+
+        if (!r)
+        {
+            Log()->critical("Compile failure in {}. {}", className(), r.message);
+            status = Failure(Failure::AssertionFailure, "Compile failure");
+        }
+    }
+
+    // disposals
+    if (_toDispose->children.size() > 0)
+    {
+        vsgcontext->dispose(_toDispose);
+        _toDispose = vsg::Objects::create();
+    }
+
+    // uploads:
+    if (!_buffersToUpload.empty())
+    {
+        vsgcontext->upload(_buffersToUpload);
+        _buffersToUpload.clear();
+    }
+    if (!_imagesToUpload.empty())
+    {
+        vsgcontext->upload(_imagesToUpload);
+        _imagesToUpload.clear();
+    }
+
+    System::update(vsgcontext);
+}
+
+void
+SimpleSystemNodeBase::traverse(vsg::Visitor& visitor)
+{
+    if (status.failed()) return;
+
+    for (auto& pipeline : _pipelines)
+    {
+        pipeline.commands->accept(visitor);
+    }
+    Inherit::traverse(visitor);
+}
+
+void
+SimpleSystemNodeBase::traverse(vsg::ConstVisitor& visitor) const
+{
+    if (status.failed()) return;
+
+    for (auto& pipeline : _pipelines)
+    {
+        pipeline.commands->accept(visitor);
+    }
+    Inherit::traverse(visitor);
+}
+
+
+ECSNode::ECSNode(Registry& reg) :
+    registry(reg)
+{
+    // nop
+}
+
+ECSNode::ECSNode(Registry& reg, bool addDefaultSystems) :
+    ECSNode(reg)
+{
+    if (addDefaultSystems)
+    {
+        add(TransformSystem::create(registry));
+        add(NodeSystemNode::create(registry));
+        add(ModelSystemNode::create(registry));
+        add(MeshSystemNode::create(registry));
+        add(LineSystemNode::create(registry));
+        add(PointSystemNode::create(registry));
+#ifdef ROCKY_HAS_IMGUI
+        add(LabelSystem::create(registry));
+        add(WidgetSystemNode::create(registry));
+#endif
+    }
+}
+
+ECSNode::~ECSNode()
+{
+    // nop
+}
+
+void
+ECSNode::initialize(VSGContext vsgcontext)
+{
+    for (auto& system : systems)
+    {
+        system->initialize(vsgcontext);
+    }
+}
+
+void
+ECSNode::update(VSGContext vsgcontext)
+{
+    // update all systems
+    for (auto& system : systems)
+    {
+        system->update(vsgcontext);
+    }
+}

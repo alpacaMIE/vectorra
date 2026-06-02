@@ -1,0 +1,17 @@
+// GLSL INCLUDE FILE
+
+// Moves the vertex closer to the camera by the specified bias,
+// clamping it beyond the near clip plane if necessary.
+vec4 applyDepthOffset(in vec4 vertex, in float offset)
+{
+    vertex.xyz /= vertex.w;
+    float n = pc.projection[3][3] == 0 ?
+        -pc.projection[3][2] / (pc.projection[2][2] + 1.0) : // perspective
+        -1.0; //-(pc.projection[3][2] + 1.0) / pc.projection[2][2];  // orthographic
+    float t_n = (-n + 1.0) / -vertex.z; // [0..1] -> [n+1 .. vertex]
+    if (t_n <= 0.0)
+        return vertex; // already behind near plane
+    float len = length(vertex.xyz);
+    float t_offset = 1.0 - (offset / len);
+    return vec4(vertex.xyz * max(t_n, t_offset), vertex.w);
+}

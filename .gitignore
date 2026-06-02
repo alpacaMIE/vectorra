@@ -1,0 +1,18 @@
+# Reference corpus is read-only and not part of product commits.
+vectorra-references/
+
+# Gradle and Android build outputs.
+**/.gradle/
+**/.kotlin/
+**/build/
+**/.cxx/
+local.properties
+
+# Local agent/runtime caches.
+vectorra-maps/.gradle-agent-home/
+
+# IDE and OS files.
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
