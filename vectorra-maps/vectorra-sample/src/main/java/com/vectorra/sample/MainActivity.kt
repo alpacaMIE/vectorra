@@ -18,6 +18,8 @@ import com.vectorra.maps.VectorraMapLoadError
 import com.vectorra.maps.VectorraMapView
 import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
+import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import java.io.File
 import java.io.Closeable
 
 class MainActivity : Activity() {
@@ -148,6 +150,12 @@ class MainActivity : Activity() {
                     statusText.text = "Terrain x${"%.1f".format(terrainExaggeration)}"
                 }
             ))
+
+            addView(controlRow(
+                sampleButton("MBTiles") {
+                    loadSampleMbTiles()
+                }
+            ))
         }
     }
 
@@ -169,6 +177,32 @@ class MainActivity : Activity() {
             maxZoom = 14
         )
         map.setTerrainExaggeration(terrainExaggeration)
+    }
+
+    private fun loadSampleMbTiles() {
+        val file = File(filesDir, "sample.mbtiles")
+        if (!file.exists()) {
+            statusText.text = "Place sample.mbtiles in app filesDir"
+            return
+        }
+
+        runCatching {
+            val source = VectorraMbTilesRasterSource.open(file, id = "sample-mbtiles")
+            mapView.map.addMbTilesRasterLayer(source, layerId = "sample-mbtiles")
+            val center = source.metadata.center
+            if (center != null) {
+                mapView.map.setCamera(
+                    CameraOptions(
+                        longitude = center.longitude,
+                        latitude = center.latitude,
+                        zoom = center.zoom ?: source.minZoom.toDouble()
+                    )
+                )
+            }
+            statusText.text = "MBTiles layer loaded: ${source.metadata.name ?: file.name}"
+        }.onFailure { error ->
+            statusText.text = "MBTiles error: ${error.message}"
+        }
     }
 
     private fun controlRow(vararg buttons: View): LinearLayout {

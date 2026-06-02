@@ -128,6 +128,61 @@ class TileProxyServerTest {
     }
 
     @Test
+    fun proxyFetchesLocalProviderTile() {
+        val cacheRoot = Files.createTempDirectory("vectorra-tile-proxy-local-provider-cache").toFile()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val template = it.proxyTemplateForLocalProvider(
+                    sourceId = "mbtiles",
+                    layerId = "mbtiles-layer",
+                    provider = LocalTileProvider { request ->
+                        TileResponse(
+                            request = request,
+                            statusCode = 200,
+                            headers = mapOf("Content-Type" to "image/png"),
+                            body = "local:${request.tileId?.z}/${request.tileId?.x}/${request.tileId?.y}".toByteArray()
+                        )
+                    }
+                )
+                val url = template
+                    .replace("{z}", "9")
+                    .replace("{x}", "10")
+                    .replace("{y}", "11")
+
+                assertEquals("local:9/10/11", readUrl(url))
+            }
+        } finally {
+            cacheRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun proxyForwardsLocalProviderMissingTileStatus() {
+        val cacheRoot = Files.createTempDirectory("vectorra-tile-proxy-local-provider-missing-cache").toFile()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val template = it.proxyTemplateForLocalProvider(
+                    sourceId = "mbtiles",
+                    layerId = "mbtiles-layer",
+                    provider = LocalTileProvider { request ->
+                        TileResponse(request = request, statusCode = 404)
+                    }
+                )
+                val url = template
+                    .replace("{z}", "9")
+                    .replace("{x}", "10")
+                    .replace("{y}", "11")
+
+                assertEquals(404, statusCode(url))
+            }
+        } finally {
+            cacheRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun keepsLocalFileTemplatesOutOfProxy() {
         val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-local-cache").toFile()
         try {

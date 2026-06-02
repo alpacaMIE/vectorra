@@ -1,6 +1,6 @@
 # API Stability
 
-Vectorra Maps `0.1.0-beta.1` exposes a small Beta API boundary for external Android integration.
+Vectorra Maps `0.2.0-beta.1` exposes a small Beta API boundary for external Android integration.
 
 ## Stable Enough For Beta Integrators
 

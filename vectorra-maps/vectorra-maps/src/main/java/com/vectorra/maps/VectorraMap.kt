@@ -16,6 +16,7 @@ import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.query.VectorraCoordinate
 import com.vectorra.maps.network.TileNetworkConfig
+import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.source.VectorraRasterTileSource
 import java.io.Closeable
 
@@ -127,6 +128,8 @@ interface VectorraMap : Closeable {
     fun addRasterLayer(source: VectorraRasterTileSource, layerId: String = source.id) {
         addRasterLayer(source.toRasterLayer(layerId))
     }
+
+    fun addMbTilesRasterLayer(source: VectorraMbTilesRasterSource, layerId: String = source.id)
 
     fun setTileNetworkConfig(config: TileNetworkConfig)
 

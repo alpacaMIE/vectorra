@@ -18,6 +18,7 @@ import com.vectorra.maps.location.VectorraLocationComponentImpl
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
 import com.vectorra.maps.network.TileResourceType
+import com.vectorra.maps.network.TileScheme
 import com.vectorra.maps.query.VectorraAnnotationFeature
 import com.vectorra.maps.query.VectorraAnnotationGeometry
 import com.vectorra.maps.query.VectorraAnnotationHitTester
@@ -31,6 +32,7 @@ import com.vectorra.maps.query.VectorraMapClickListener
 import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
+import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
@@ -74,6 +76,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         camera = { cameraState }
     )
     private val mapClickListeners = CopyOnWriteArrayList<VectorraMapClickListener>()
+    private val mbTilesSources = CopyOnWriteArrayList<VectorraMbTilesRasterSource>()
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -446,6 +449,35 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    override fun addMbTilesRasterLayer(source: VectorraMbTilesRasterSource, layerId: String) {
+        require(layerId.isNotBlank()) { "MBTiles raster layer id must not be blank." }
+        ifOpen {
+            val proxiedTemplateUrl = tileProxyServer.proxyTemplateForLocalProvider(
+                sourceId = source.id,
+                layerId = layerId,
+                resourceType = TileResourceType.RASTER,
+                provider = source::loadTile
+            )
+            VectorraNative.addRasterLayer(
+                nativeHandle,
+                layerId,
+                proxiedTemplateUrl,
+                source.minZoom,
+                source.maxZoom,
+                true,
+                1.0,
+                0.0,
+                0.0,
+                source.tileSize,
+                TileScheme.XYZ.name,
+                "",
+                emptyArray(),
+                emptyArray()
+            )
+            mbTilesSources.addIfAbsent(source)
+        }
+    }
+
     override fun setTileNetworkConfig(config: TileNetworkConfig) {
         tileNetworkConfig = config
         tileProxyServer.updateConfig(config)
@@ -804,6 +836,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             clearDrawAnnotations()
             geoJsonIndex.clear()
             tileProxyServer.close()
+            mbTilesSources.forEach { it.close() }
+            mbTilesSources.clear()
             VectorraNative.destroy(nativeHandle)
         }
     }

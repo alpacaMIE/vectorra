@@ -17,6 +17,10 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
+internal fun interface LocalTileProvider {
+    fun load(request: TileRequest): TileResponse
+}
+
 class TileProxyServer(
     private val cacheDirectory: File,
     initialConfig: TileNetworkConfig = TileNetworkConfig()
@@ -24,9 +28,10 @@ class TileProxyServer(
     private data class Registration(
         val sourceId: String?,
         val layerId: String?,
-        val templateUrl: String,
+        val templateUrl: String?,
         val headers: Map<String, String>,
-        val resourceType: TileResourceType
+        val resourceType: TileResourceType,
+        val localProvider: LocalTileProvider?
     )
 
     private val closed = AtomicBoolean(false)
@@ -71,7 +76,27 @@ class TileProxyServer(
             layerId = layerId,
             templateUrl = templateUrl,
             headers = headers,
-            resourceType = resourceType
+            resourceType = resourceType,
+            localProvider = null
+        )
+        return "http://127.0.0.1:${socket.localPort}/tile/$id?z={z}&x={x}&y={y}"
+    }
+
+    internal fun proxyTemplateForLocalProvider(
+        sourceId: String?,
+        layerId: String?,
+        resourceType: TileResourceType = TileResourceType.RASTER,
+        provider: LocalTileProvider
+    ): String {
+        val socket = startIfNeeded()
+        val id = UUID.randomUUID().toString()
+        registrations[id] = Registration(
+            sourceId = sourceId,
+            layerId = layerId,
+            templateUrl = null,
+            headers = emptyMap(),
+            resourceType = resourceType,
+            localProvider = provider
         )
         return "http://127.0.0.1:${socket.localPort}/tile/$id?z={z}&x={x}&y={y}"
     }
@@ -172,19 +197,43 @@ class TileProxyServer(
             return
         }
 
-        val targetUrl = registration.templateUrl
+        val tileId = TileId(
+            z = z.toIntOrNull() ?: -1,
+            x = x.toIntOrNull() ?: -1,
+            y = y.toIntOrNull() ?: -1
+        )
+        val provider = registration.localProvider
+        if (provider != null) {
+            val response = provider.load(
+                TileRequest(
+                    sourceId = registration.sourceId,
+                    layerId = registration.layerId,
+                    url = "vectorra-local://tile/$id/${tileId.z}/${tileId.x}/${tileId.y}",
+                    tileId = tileId,
+                    resourceType = registration.resourceType
+                )
+            )
+            val status = if (response.statusCode in 100..599) response.statusCode else 502
+            val contentType = response.headers.entries
+                .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+                ?.value
+                ?: inferContentType(response.request.url)
+            writeResponse(socket, status, contentType, response.body)
+            return
+        }
+
+        val templateUrl = registration.templateUrl
+        if (templateUrl == null) {
+            writeResponse(socket, 404, "text/plain", "Unknown tile source".toByteArray())
+            return
+        }
+        val targetUrl = templateUrl
             .replace("{z}", z)
             .replace("{x}", x)
             .replace("{y}", y)
             .replace("\${z}", z)
             .replace("\${x}", x)
             .replace("\${y}", y)
-
-        val tileId = TileId(
-            z = z.toIntOrNull() ?: -1,
-            x = x.toIntOrNull() ?: -1,
-            y = y.toIntOrNull() ?: -1
-        )
         val request = TileRequest(
             sourceId = registration.sourceId,
             layerId = registration.layerId,

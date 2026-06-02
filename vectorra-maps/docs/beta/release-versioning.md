@@ -5,14 +5,14 @@ Vectorra Maps uses semantic-version-shaped Beta versions.
 ## Current Version
 
 ```text
-0.1.0-beta.1
+0.2.0-beta.1
 ```
 
 ## Coordinates
 
 ```text
-com.vectorra:vectorra-maps:0.1.0-beta.1
-com.vectorra:vectorra-maps-turf:0.1.0-beta.1
+com.vectorra:vectorra-maps:0.2.0-beta.1
+com.vectorra:vectorra-maps-turf:0.2.0-beta.1
 ```
 
 ## Beta Version Rules

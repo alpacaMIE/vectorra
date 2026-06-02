@@ -13,8 +13,8 @@ Vectorra Maps is an Android-first map SDK Beta. It exposes a Mapbox-like indepen
 ## Current Coordinates
 
 ```kotlin
-implementation("com.vectorra:vectorra-maps:0.1.0-beta.1")
-implementation("com.vectorra:vectorra-maps-turf:0.1.0-beta.1")
+implementation("com.vectorra:vectorra-maps:0.2.0-beta.1")
+implementation("com.vectorra:vectorra-maps-turf:0.2.0-beta.1")
 ```
 
 During local development, publish to Maven local first:
@@ -34,4 +34,5 @@ Then verify the sample from the published AAR:
 
 - [Android AAR integration](docs/beta/android-aar-integration.md)
 - [API stability](docs/beta/api-stability.md)
+- [MBTiles offline source](docs/beta/mbtiles-offline-source.md)
 - [Release and versioning](docs/beta/release-versioning.md)
