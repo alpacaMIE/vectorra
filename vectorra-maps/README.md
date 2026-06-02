@@ -7,14 +7,14 @@ Vectorra Maps is an Android-first map SDK Beta. It exposes a Mapbox-like indepen
 - Android AAR and Kotlin API first.
 - `minSdk 26`.
 - Vulkan-only renderer; no OpenGL fallback.
-- Current focus: map view lifecycle, camera, gestures, raster layers, DEM terrain, annotations, query helpers, network interception, cache/offline helpers, and sample integration.
-- Not included: POI search, geocoding, routing, navigation, traffic, iOS, desktop runtime, full Mapbox Style JSON compatibility, full MVT pipeline, MBTiles-first offline integration, or 3D Tiles production support.
+- Current focus: map view lifecycle, camera, gestures, raster layers, DEM terrain, 3D Tiles tileset inspection, annotations, query helpers, network interception, cache/offline helpers, and sample integration.
+- Not included: POI search, geocoding, routing, navigation, traffic, iOS, desktop runtime, full Mapbox Style JSON compatibility, full MVT pipeline, or production 3D Tiles rendering.
 
 ## Current Coordinates
 
 ```kotlin
-implementation("com.vectorra:vectorra-maps:0.4.0-beta.1")
-implementation("com.vectorra:vectorra-maps-turf:0.4.0-beta.1")
+implementation("com.vectorra:vectorra-maps:0.5.0-beta.1")
+implementation("com.vectorra:vectorra-maps-turf:0.5.0-beta.1")
 ```
 
 During local development, publish to Maven local first:
@@ -37,4 +37,5 @@ Then verify the sample from the published AAR:
 - [MBTiles offline source](docs/beta/mbtiles-offline-source.md)
 - [Basic MVT](docs/beta/basic-mvt.md)
 - [3D terrain](docs/beta/3d-terrain.md)
+- [3D Tiles](docs/beta/3d-tiles.md)
 - [Release and versioning](docs/beta/release-versioning.md)

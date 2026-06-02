@@ -13,7 +13,7 @@ Vectorra Maps Beta is currently published as Android AAR artifacts for local Mav
 
 ```kotlin
 dependencies {
-    implementation("com.vectorra:vectorra-maps:0.4.0-beta.1")
+    implementation("com.vectorra:vectorra-maps:0.5.0-beta.1")
 }
 ```
 
@@ -21,7 +21,7 @@ Use the Turf utilities only when GeoJSON or geometry helpers are needed:
 
 ```kotlin
 dependencies {
-    implementation("com.vectorra:vectorra-maps-turf:0.4.0-beta.1")
+    implementation("com.vectorra:vectorra-maps-turf:0.5.0-beta.1")
 }
 ```
 
@@ -42,7 +42,7 @@ The sample app normally depends on `project(":vectorra-maps")`. To verify extern
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
-This mode reads `com.vectorra:vectorra-maps:0.4.0-beta.1` from `mavenLocal()`.
+This mode reads `com.vectorra:vectorra-maps:0.5.0-beta.1` from `mavenLocal()`.
 
 ## Minimal Kotlin Usage
 

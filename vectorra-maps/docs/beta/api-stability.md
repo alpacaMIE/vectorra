@@ -1,6 +1,6 @@
 # API Stability
 
-Vectorra Maps `0.4.0-beta.1` exposes a small Beta API boundary for external Android integration.
+Vectorra Maps `0.5.0-beta.1` exposes a small Beta API boundary for external Android integration.
 
 ## Stable Enough For Beta Integrators
 
@@ -16,6 +16,7 @@ Vectorra Maps `0.4.0-beta.1` exposes a small Beta API boundary for external Andr
 - `VectorraSurfaceLifecycleState`
 - Basic raster and DEM layer entry points.
 - 3D terrain source and options APIs.
+- 3D Tiles tileset parsing and inspection APIs.
 - Basic MVT data decoding and GeoJSON conversion.
 - Gesture settings, annotations, query helpers, location component, network config, and offline raster helpers.
 
@@ -45,6 +46,7 @@ Included in Beta scope:
 - Vulkan renderer startup and lifecycle.
 - Camera, gestures, screenshot, map ready/error callbacks.
 - Raster tiles and DEM terrain entry points.
+- 3D Tiles tileset metadata, bounding volume, content URI, and statistics parsing.
 - Basic annotations, query helpers, network interception, and cache/offline helpers.
 
 Excluded from this Beta boundary:
