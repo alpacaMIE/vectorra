@@ -19,6 +19,8 @@ import com.vectorra.maps.VectorraMapView
 import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.terrain.VectorraTerrainOptions
+import com.vectorra.maps.terrain.VectorraTerrainSource
 import java.io.File
 import java.io.Closeable
 
@@ -121,13 +123,10 @@ class MainActivity : Activity() {
                     statusText.text = "Imagery layer requested"
                 },
                 sampleButton("DEM") {
-                    mapView.map.addElevationLayer(
-                        id = "sample-terrarium-dem",
-                        templateUrl = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
-                        minZoom = 0,
-                        maxZoom = 14
+                    mapView.map.addTerrain(
+                        source = sampleTerrainSource("sample-terrarium-dem"),
+                        options = VectorraTerrainOptions(exaggeration = terrainExaggeration)
                     )
-                    mapView.map.setTerrainExaggeration(terrainExaggeration)
                     statusText.text = "DEM layer requested"
                 },
                 sampleButton("Reset") {
@@ -170,13 +169,19 @@ class MainActivity : Activity() {
             minZoom = 0,
             maxZoom = 18
         )
-        map.addElevationLayer(
-            id = "sample-base-dem",
+        map.addTerrain(
+            source = sampleTerrainSource("sample-base-dem"),
+            options = VectorraTerrainOptions(exaggeration = terrainExaggeration)
+        )
+    }
+
+    private fun sampleTerrainSource(id: String): VectorraTerrainSource {
+        return VectorraTerrainSource(
+            id = id,
             templateUrl = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
             minZoom = 0,
             maxZoom = 14
         )
-        map.setTerrainExaggeration(terrainExaggeration)
     }
 
     private fun loadSampleMbTiles() {

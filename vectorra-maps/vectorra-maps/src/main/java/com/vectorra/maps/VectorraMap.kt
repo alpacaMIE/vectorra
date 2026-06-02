@@ -18,6 +18,8 @@ import com.vectorra.maps.query.VectorraCoordinate
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.source.VectorraRasterTileSource
+import com.vectorra.maps.terrain.VectorraTerrainOptions
+import com.vectorra.maps.terrain.VectorraTerrainSource
 import java.io.Closeable
 
 @VectorraBetaApi
@@ -148,6 +150,15 @@ interface VectorraMap : Closeable {
     fun addElevationLayer(id: String, templateUrl: String, minZoom: Int = 0, maxZoom: Int = 14)
 
     fun setTerrainExaggeration(value: Double)
+
+    fun addTerrain(
+        source: VectorraTerrainSource,
+        options: VectorraTerrainOptions = VectorraTerrainOptions()
+    )
+
+    fun removeTerrain(id: String)
+
+    fun setTerrainVisible(id: String, visible: Boolean)
 
     fun setLayerVisible(id: String, visible: Boolean)
 

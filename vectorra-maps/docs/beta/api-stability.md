@@ -1,6 +1,6 @@
 # API Stability
 
-Vectorra Maps `0.3.0-beta.1` exposes a small Beta API boundary for external Android integration.
+Vectorra Maps `0.4.0-beta.1` exposes a small Beta API boundary for external Android integration.
 
 ## Stable Enough For Beta Integrators
 
@@ -15,6 +15,7 @@ Vectorra Maps `0.3.0-beta.1` exposes a small Beta API boundary for external Andr
 - `VectorraMapLoadState`
 - `VectorraSurfaceLifecycleState`
 - Basic raster and DEM layer entry points.
+- 3D terrain source and options APIs.
 - Basic MVT data decoding and GeoJSON conversion.
 - Gesture settings, annotations, query helpers, location component, network config, and offline raster helpers.
 

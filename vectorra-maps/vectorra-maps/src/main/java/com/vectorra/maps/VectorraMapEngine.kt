@@ -33,6 +33,8 @@ import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.terrain.VectorraTerrainOptions
+import com.vectorra.maps.terrain.VectorraTerrainSource
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
@@ -515,8 +517,24 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     override fun addElevationLayer(id: String, templateUrl: String, minZoom: Int, maxZoom: Int) {
+        addElevationLayerInternal(
+            id = id,
+            templateUrl = templateUrl,
+            minZoom = minZoom,
+            maxZoom = maxZoom,
+            sourceHeaders = emptyMap()
+        )
+    }
+
+    private fun addElevationLayerInternal(
+        id: String,
+        templateUrl: String,
+        minZoom: Int,
+        maxZoom: Int,
+        sourceHeaders: Map<String, String>
+    ) {
         ifOpen {
-            val headers = tileNetworkConfig.headersFor(id)
+            val headers = tileNetworkConfig.headersFor(id) + sourceHeaders
             val proxiedTemplateUrl = tileProxyServer.proxyTemplateFor(
                 sourceId = id,
                 layerId = id,
@@ -541,6 +559,26 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         ifOpen {
             VectorraNative.setTerrainExaggeration(nativeHandle, value.coerceIn(0.0, 10.0))
         }
+    }
+
+    override fun addTerrain(source: VectorraTerrainSource, options: VectorraTerrainOptions) {
+        addElevationLayerInternal(
+            id = source.id,
+            templateUrl = source.templateUrl,
+            minZoom = source.minZoom,
+            maxZoom = source.maxZoom,
+            sourceHeaders = source.headers
+        )
+        setTerrainExaggeration(options.clampedExaggeration)
+        setTerrainVisible(source.id, options.visible)
+    }
+
+    override fun removeTerrain(id: String) {
+        removeLayer(id)
+    }
+
+    override fun setTerrainVisible(id: String, visible: Boolean) {
+        setLayerVisible(id, visible)
     }
 
     override fun setLayerVisible(id: String, visible: Boolean) {
