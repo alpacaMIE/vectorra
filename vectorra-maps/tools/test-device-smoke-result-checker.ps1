@@ -75,7 +75,15 @@ function New-SmokeFixture {
         "logcatCleared=true",
         "forceStopBeforeColdStart=true",
         "startSample=cold-start delaySeconds=10",
-        "startSampleEnd=cold-start",
+        "startSampleEnd=cold-start"
+    )
+    foreach ($action in $requiredActions) {
+        if ($action -ne $OmitAction) {
+            $lines += "actionStart=$action delaySeconds=1"
+            $lines += "actionEnd=$action"
+        }
+    }
+    $lines += @(
         "lifecycleStart=pause-home delaySeconds=4",
         "lifecycleEnd=pause-home",
         "startSample=resume-after-home delaySeconds=10",
@@ -85,12 +93,6 @@ function New-SmokeFixture {
         "startSample=recreate-after-force-stop delaySeconds=10",
         "startSampleEnd=recreate-after-force-stop"
     )
-    foreach ($action in $requiredActions) {
-        if ($action -ne $OmitAction) {
-            $lines += "actionStart=$action delaySeconds=1"
-            $lines += "actionEnd=$action"
-        }
-    }
     if ($OmitArtifact -ne "screenshot") {
         $path = if ($MismatchedArtifact -eq "screenshot") {
             Join-Path $testRoot "wrong-vectorra-smoke-$Stamp.png"
@@ -211,5 +213,11 @@ $incompatibleApkAbiReport = New-SmokeFixture `
     -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk" `
     -Abis "x86_64"
 Invoke-CheckerFailure $incompatibleApkAbiReport "incompatible APK ABI"
+
+$outOfOrderReport = New-SmokeFixture -Stamp "20260604-000012"
+(Get-Content -Path $outOfOrderReport -Raw) `
+    -replace 'actionStart=mvt delaySeconds=1\r?\nactionEnd=mvt', "actionEnd=mvt`nactionStart=mvt delaySeconds=1" |
+    Set-Content -Path $outOfOrderReport -Encoding utf8
+Invoke-CheckerFailure $outOfOrderReport "out-of-order action markers"
 
 Write-Host "Device smoke result checker self-test passed."

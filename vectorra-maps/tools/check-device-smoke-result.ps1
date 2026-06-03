@@ -48,6 +48,25 @@ function Assert-Contains {
     }
 }
 
+function Assert-OrderedReportPatterns {
+    param([string]$Text, [string[]]$Patterns)
+    $lines = $Text -split "`r?`n"
+    $startIndex = 0
+    foreach ($pattern in $Patterns) {
+        $foundIndex = -1
+        for ($index = $startIndex; $index -lt $lines.Count; $index++) {
+            if ($lines[$index] -match $pattern) {
+                $foundIndex = $index
+                break
+            }
+        }
+        if ($foundIndex -lt 0) {
+            throw "Ordered smoke report marker missing after line ${startIndex}: $pattern"
+        }
+        $startIndex = $foundIndex + 1
+    }
+}
+
 function Assert-ReportValue {
     param([string]$Text, [string]$Key)
     if ($Text -notmatch "(?m)^$([regex]::Escape($Key))=\S") {
@@ -206,6 +225,28 @@ foreach ($action in $requiredActions) {
     Assert-Contains $reportText "actionStart=$([regex]::Escape($action))" "actionStart $action"
     Assert-Contains $reportText "actionEnd=$([regex]::Escape($action))" "actionEnd $action"
 }
+
+$orderedReportPatterns = @(
+    'logcatCleared=true',
+    'forceStopBeforeColdStart=true',
+    'startSample=cold-start(\s|$)',
+    'startSampleEnd=cold-start(\s|$)'
+)
+foreach ($action in $requiredActions) {
+    $orderedReportPatterns += "actionStart=$([regex]::Escape($action))(\s|$)"
+    $orderedReportPatterns += "actionEnd=$([regex]::Escape($action))(\s|$)"
+}
+$orderedReportPatterns += @(
+    'lifecycleStart=pause-home(\s|$)',
+    'lifecycleEnd=pause-home(\s|$)',
+    'startSample=resume-after-home(\s|$)',
+    'startSampleEnd=resume-after-home(\s|$)',
+    'lifecycleStart=destroy-force-stop(\s|$)',
+    'lifecycleEnd=destroy-force-stop(\s|$)',
+    'startSample=recreate-after-force-stop(\s|$)',
+    'startSampleEnd=recreate-after-force-stop(\s|$)'
+)
+Assert-OrderedReportPatterns $reportText $orderedReportPatterns
 
 Assert-NonEmptyFile $screenshot "screenshot"
 Assert-NonEmptyFile $uiDump "ui dump"

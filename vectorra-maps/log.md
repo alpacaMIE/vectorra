@@ -2576,6 +2576,40 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
 
+### Device Smoke Ordered Marker Validation
+
+Tightened the runtime smoke result checker so action and lifecycle report markers must follow the script execution order.
+
+Completed:
+
+- Added `Assert-OrderedReportPatterns` to `tools/check-device-smoke-result.ps1`.
+- The checker now validates the ordered sequence from logcat clear, force-stop, cold start, all sample actions, pause/home/resume, destroy/recreate, and lifecycle end markers.
+- Updated `tools/test-device-smoke-result-checker.ps1` so the valid fixture follows the real `run-device-smoke.ps1` order.
+- Added an out-of-order action marker fixture that must fail even though both start/end markers are present.
+- Updated the ABI/device matrix and Android 1.0 acceptance docs with the ordered marker requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-device-smoke-result.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\test-device-smoke-result-checker.ps1'), [ref]$tokens, [ref]$errors)
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failure for out-of-order `mvt` action markers.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Device Smoke APK Metadata Consistency
 
 Tightened the runtime smoke result checker so installed APK metadata must match the actual smoke APK selection.
