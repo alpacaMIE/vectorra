@@ -1922,3 +1922,36 @@ Results:
 Known remaining work:
 
 - Re-run the `zoom-3d-tiles` device smoke once adb returns to `device`; the recently reinserted device still needs to be confirmed from `adb devices -l`.
+
+### P4.T2 Diagnostics and Troubleshooting Docs
+
+Added the public diagnostics and troubleshooting guide for the current Beta hardening pass.
+
+Completed:
+
+- Added `docs/beta/diagnostics-troubleshooting.md`.
+- Documented map-load error callbacks, shared resource status, current status queries, redacted tile request logging, offline prefetch progress/result diagnostics, common failure modes, and sample smoke actions.
+- Documented the redaction boundary: `RedactingTileLogger` redacts URL query parameters only and does not log headers or bodies.
+- Linked diagnostics docs from `README.md` and `docs/beta/android-aar-integration.md`.
+- Updated `docs/beta/api-stability.md` to list shared resource status and redacted tile request logging in the Beta boundary.
+- Updated `docs/resource-status-contract.md` to include `TILES3D`, `VECTOR`, and current error types.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "diagnostics-troubleshooting|Diagnostics and troubleshooting|RedactingTileLogger|VectorraResourceStatus|addMapLoadErrorListener|offline-prefetch|redactQueryKeys" .\vectorra-maps\README.md .\vectorra-maps\docs .\vectorra-maps\vectorra-maps\src\main\java
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.VectorraNativeResourceStatusMapperTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Documentation search found the new diagnostics page, README link, AAR integration link, resource status docs, logger, and referenced APIs.
+- Network, offline, and native resource status mapper unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Device smoke for user-visible diagnostics still depends on adb returning the physical device as `device` instead of `offline`.

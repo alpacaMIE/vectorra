@@ -34,6 +34,7 @@ Then verify the sample from the published AAR:
 
 - [Android AAR integration](docs/beta/android-aar-integration.md)
 - [API stability](docs/beta/api-stability.md)
+- [Diagnostics and troubleshooting](docs/beta/diagnostics-troubleshooting.md)
 - [Offline prefetch and cache](docs/beta/offline-prefetch-cache.md)
 - [MBTiles offline source](docs/beta/mbtiles-offline-source.md)
 - [Basic MVT](docs/beta/basic-mvt.md)

@@ -76,3 +76,5 @@ val subscription = mapView.addMapLoadErrorListener { _, error ->
 ```
 
 Close the returned subscription when the surrounding component is destroyed if it outlives the `VectorraMapView`.
+
+For layer/source status, redacted network logging, and offline prefetch diagnostics, see [Diagnostics and troubleshooting](diagnostics-troubleshooting.md).

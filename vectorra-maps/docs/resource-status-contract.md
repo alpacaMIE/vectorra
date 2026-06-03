@@ -1,18 +1,20 @@
 # Vectorra Resource Status Contract
 
-This document records the Phase 0 resource status contract used by raster, DEM, model, and MBTiles paths.
+This document records the shared resource status contract used by raster, DEM, model, MBTiles, 3D Tiles, and vector tile paths.
 
 ## Payload
 
 `VectorraResourceStatus` is the public payload for layer/source load state:
 
-- `kind`: resource family, currently `RASTER`, `DEM`, `MODEL`, or `MBTILES`.
+- `kind`: resource family, currently `RASTER`, `DEM`, `MODEL`, `MBTILES`, `TILES3D`, or `VECTOR`.
 - `sourceId`: stable source identity for the requested resource.
 - `layerId`: stable render layer identity for the requested resource.
 - `generation`: monotonically increasing value per `kind/sourceId/layerId`.
 - `state`: one of `LOADING`, `LOADED`, `FAILED`, or `REMOVED`.
 - `eventSource`: component that produced the event, currently `ENGINE`, `NATIVE`, `TILE_PROXY`, or `LOCAL_PROVIDER`.
 - `error`: required only when `state == FAILED`.
+
+`error.type` is one of `NETWORK`, `NATIVE_RENDERER`, `RESOURCE`, `UNSUPPORTED`, `CACHE`, or `UNKNOWN`.
 
 ## State Semantics
 
@@ -28,3 +30,5 @@ Current status queries are synchronous. Listener callbacks are delivered on the 
 ## Ownership
 
 The engine is the single public owner of current resource status. Sample code must read statuses with `addResourceStatusListener`, `getLayerResourceStatus`, or `getSourceResourceStatus` instead of maintaining a separate product status model.
+
+See `docs/beta/diagnostics-troubleshooting.md` for user-facing diagnostics and redacted network logging guidance.
