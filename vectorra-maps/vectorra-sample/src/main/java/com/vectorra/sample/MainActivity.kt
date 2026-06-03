@@ -708,26 +708,26 @@ class MainActivity : Activity() {
                     CameraOptions(
                         longitude = SAMPLE_3D_TILES_LONGITUDE,
                         latitude = SAMPLE_3D_TILES_LATITUDE,
-                        zoom = 18.0,
+                        zoom = SAMPLE_3D_TILES_ZOOM_CLOSE,
                         pitch = 0.0,
                         bearing = 0.0
                     )
                 )
                 statusText.text = "3D Tiles zoom smoke close"
-                Log.i(LOG_TAG, "3D Tiles zoom smoke: camera zoom=18.0")
+                Log.i(LOG_TAG, "3D Tiles zoom smoke: camera zoom=$SAMPLE_3D_TILES_ZOOM_CLOSE")
             }, SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS)
             statusText.postDelayed({
                 mapView.map.setCamera(
                     CameraOptions(
                         longitude = SAMPLE_3D_TILES_LONGITUDE,
                         latitude = SAMPLE_3D_TILES_LATITUDE,
-                        zoom = 18.5,
+                        zoom = SAMPLE_3D_TILES_ZOOM_CLOSEST,
                         pitch = 0.0,
                         bearing = 0.0
                     )
                 )
                 statusText.text = "3D Tiles zoom smoke closest"
-                Log.i(LOG_TAG, "3D Tiles zoom smoke: camera zoom=18.5")
+                Log.i(LOG_TAG, "3D Tiles zoom smoke: camera zoom=$SAMPLE_3D_TILES_ZOOM_CLOSEST")
             }, SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS)
         }.onFailure { error ->
             statusText.text = "3D Tiles zoom smoke error: ${error.message}"
@@ -977,6 +977,8 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
         const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
         const val SAMPLE_3D_TILES_LATITUDE = 40.04253061142592
+        const val SAMPLE_3D_TILES_ZOOM_CLOSE = 16.25
+        const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 16.5
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
         const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"

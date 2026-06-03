@@ -1893,3 +1893,32 @@ Known remaining work:
 
 - Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
 - Bump Gradle/project docs to the intended next Beta version before cutting an actual `0.8.0-beta.1` artifact, then rerun the same published-AAR gate.
+
+### P4.T3 3D Tiles Zoom Smoke Camera Range
+
+Investigated the sample 3D Tiles disappearing when the camera zooms in.
+
+Completed:
+
+- Confirmed the sample `TilesetWithDiscreteLOD` is Cesium's dragon LOD tileset (`dragon_low.b3dm`, `dragon_medium.b3dm`, `dragon_high.b3dm`).
+- Confirmed the root transform scales the local box by roughly 100x, producing a large dragon-shaped model with an approximate 850-900 meter bounding-sphere radius.
+- Adjusted the sample zoom smoke close steps from `18.0`/`18.5` to `16.25`/`16.5`, so the smoke test approaches the model without putting the camera deep inside the model bounds.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.tiles3d.*" --tests "com.vectorra.maps.VectorraMapEngineCameraRangeTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- 3D Tiles and camera range unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+- The sample build emitted the existing non-fatal strip warning for `librocky.so` and `libvectorra_jni.so`, then packaged the libraries as-is.
+
+Known remaining work:
+
+- Re-run the `zoom-3d-tiles` device smoke once adb returns to `device`; the recently reinserted device still needs to be confirmed from `adb devices -l`.
