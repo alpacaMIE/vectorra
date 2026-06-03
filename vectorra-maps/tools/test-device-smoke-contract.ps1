@@ -80,6 +80,14 @@ if ($checkerText -notmatch 'actionStart=post-recreate-snapshot' -or $checkerText
 if ($checkerText -notmatch 'Post-recreate snapshot\\s\+\\d\+x\\d\+\\s\+nonblank=true') {
     throw "check-device-smoke-result.ps1 missing post-recreate snapshot log requirement"
 }
+if ($checkerText -notmatch 'tiles3d sample-3d-tiles-layer loaded' -or
+    $checkerText -notmatch 'registered 3D Tiles renderer content id=sample-3d-tiles-layer:' -or
+    $checkerText -notmatch 'tiles3d sample-3d-tiles-layer-bad failed:') {
+    throw "check-device-smoke-result.ps1 missing 3D Tiles runtime log requirements"
+}
+if ($checkerTestText -notmatch 'missing 3D Tiles readd loaded evidence') {
+    throw "test-device-smoke-result-checker.ps1 missing 3D Tiles readd failure fixture"
+}
 if ($checkerText -notmatch 'MVT MBTiles smoke: requested file=Vectorra Sample MVT' -or
     $checkerText -notmatch 'source=sample-mvt-mbtiles' -or
     $checkerText -notmatch 'MVT MBTiles center query: Click:') {

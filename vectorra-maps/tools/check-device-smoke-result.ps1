@@ -276,6 +276,25 @@ if ($logText -notmatch $tilesZoomSnapshotPattern) {
     throw "Required logcat pattern missing: $tilesZoomSnapshotPattern"
 }
 
+$tiles3dRuntimePatterns = @(
+    'tiles3d sample-3d-tiles-layer loaded',
+    'registered 3D Tiles renderer content id=sample-3d-tiles-layer:',
+    'applied native 3D Tiles content id=sample-3d-tiles-layer:',
+    '3D Tiles model loaded id=sample-3d-tiles-layer:',
+    'removed 3D Tiles renderer content id=sample-3d-tiles-layer:',
+    'tiles3d sample-3d-tiles-layer removed',
+    'tiles3d sample-3d-tiles-layer-bad failed:'
+)
+foreach ($pattern in $tiles3dRuntimePatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+$tiles3dLoadedPattern = 'tiles3d sample-3d-tiles-layer loaded'
+if ([regex]::Matches($logText, $tiles3dLoadedPattern).Count -lt 2) {
+    throw "Required logcat pattern missing at least twice: $tiles3dLoadedPattern"
+}
+
 $mvtMbTilesPatterns = @(
     'MVT MBTiles smoke: requested file=Vectorra Sample MVT',
     'registered MVT render tile handle=.*source=sample-mvt-mbtiles.*features=[1-9]\d*.*visible=1',

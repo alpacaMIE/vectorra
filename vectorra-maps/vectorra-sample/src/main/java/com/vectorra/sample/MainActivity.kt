@@ -119,6 +119,7 @@ class MainActivity : Activity() {
                 lastResourceStatusText = text
                 statusText.text = text
             }
+            Log.i(LOG_TAG, text)
         }
         mapClickSubscription = mapView.map.addOnMapClickListener { event ->
             val text = clickStatusText(event.features)
