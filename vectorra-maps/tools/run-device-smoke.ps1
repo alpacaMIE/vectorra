@@ -179,7 +179,8 @@ Invoke-Adb pull $uiDevice $uiHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $uiDevice | Out-Null
 
 $logHost = Join-Path $out "device-smoke-$stamp.log"
-Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra | Tee-Object -FilePath $logHost
+Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra AndroidRuntime libc DEBUG ActivityManager ActivityTaskManager |
+    Tee-Object -FilePath $logHost
 
 Assert-NonEmptyFile $screenshotHost "screenshot"
 Assert-NonEmptyFile $uiHost "uiDump"

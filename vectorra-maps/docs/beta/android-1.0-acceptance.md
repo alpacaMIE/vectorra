@@ -51,7 +51,7 @@ Runtime command:
 .\tools\check-device-smoke-result.ps1
 ```
 
-The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The result checker also verifies screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
+The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided.
 

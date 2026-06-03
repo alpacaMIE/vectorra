@@ -2543,6 +2543,32 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Crash Log Capture
+
+Fixed a runtime smoke log capture blind spot.
+
+Completed:
+
+- Updated `tools/run-device-smoke.ps1` so the logcat artifact includes `AndroidRuntime`, `libc`, `DEBUG`, `ActivityManager`, and `ActivityTaskManager` in addition to Vectorra tags.
+- This makes the existing `tools/check-device-smoke-result.ps1` crash and ANR patterns actionable against the generated logcat file.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the broader logcat coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-device-smoke-result-checker.ps1` passed and still confirms crash-log patterns fail the checker.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Snapshot Nonblank Validation
 
 Added validation for the sample snapshot smoke result.
