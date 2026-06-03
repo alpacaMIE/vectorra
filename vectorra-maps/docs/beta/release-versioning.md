@@ -2,15 +2,26 @@
 
 Vectorra Maps uses semantic-version-shaped Beta versions.
 
-## Current Version
+## Published Version
 
 ```text
 0.5.0-beta.1
 ```
 
-Current unpublished development notes:
+`VECTORRA_VERSION` in `gradle.properties` is still `0.5.0-beta.1`. Integration coordinates and Maven-local published-AAR verification use this version until the project version is intentionally bumped.
+
+## Current Development Target
+
+The current source tree contains Beta APIs annotated for the next unpublished development target:
 
 - [0.8.0-beta.1 development release notes](release-notes-0.8.0-beta.1.md)
+
+Do not treat `0.8.0-beta.1` as published until:
+
+- `VECTORRA_VERSION` is bumped;
+- both SDK artifacts are republished;
+- the sample is rebuilt from the republished AARs;
+- release notes and integration docs are updated from development notes to published release notes.
 
 ## Coordinates
 
@@ -33,9 +44,13 @@ Before publishing a Beta artifact:
 ```powershell
 .\gradlew.bat :vectorra-maps:testDebugUnitTest
 .\gradlew.bat :vectorra-maps-turf:testDebugUnitTest
+.\gradlew.bat :vectorra-sample:assembleDebug
+.\gradlew.bat assembleDebug
 .\gradlew.bat :vectorra-maps:publishReleasePublicationToMavenLocal
 .\gradlew.bat :vectorra-maps-turf:publishReleasePublicationToMavenLocal
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
 The published-AAR sample build is required because it catches missing Maven metadata, native libraries, resources, and consumer rules that project dependency builds can hide.
+
+For Android 1.0 hardening, also run the device smoke matrix from `docs/继续开发计划.md` before declaring release readiness. If a device gate cannot run, record it as a release risk instead of silently treating the artifact as fully verified.

@@ -2,7 +2,7 @@
 
 Status: unpublished development notes.
 
-These notes describe the current `0.8.0-beta.1` API and sample state before a published Beta artifact is cut. Maven coordinates in integration docs still point at the last published Beta until release publication is completed.
+These notes describe the current `0.8.0-beta.1` API and sample state before a published Beta artifact is cut. `VECTORRA_VERSION` and Maven coordinates in integration docs still point at the last published Beta until release publication is completed.
 
 ## Highlights
 

@@ -1955,3 +1955,36 @@ Results:
 Known remaining work:
 
 - Device smoke for user-visible diagnostics still depends on adb returning the physical device as `device` instead of `offline`.
+
+### P4.T4 Published vs Development Version Documentation
+
+Hardened release documentation so integrators can distinguish the published artifact from the current source-tree development target.
+
+Completed:
+
+- Updated `docs/beta/release-versioning.md` to separate the published `0.5.0-beta.1` version from the unpublished `0.8.0-beta.1` development target.
+- Added explicit release conditions before `0.8.0-beta.1` can be treated as published: bump `VECTORRA_VERSION`, republish both SDK artifacts, rebuild the sample from the republished AARs, and update release docs.
+- Expanded the release checklist with `:vectorra-sample:assembleDebug` and full `assembleDebug`, plus the Android 1.0 device smoke risk note.
+- Updated `docs/beta/api-stability.md` to split the published Beta boundary from current source development APIs.
+- Updated `docs/beta/offline-prefetch-cache.md` and `docs/beta/release-notes-0.8.0-beta.1.md` to state that 0.8 docs describe source-tree development while `VECTORRA_VERSION` remains `0.5.0-beta.1`.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "Published Version|Current Development Target|source-tree development|unpublished|VECTORRA_VERSION|0\.8\.0-beta\.1|0\.5\.0-beta\.1|published-AAR|assembleDebug" .\vectorra-maps\README.md .\vectorra-maps\docs\beta .\vectorra-maps\gradle.properties
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home assembleDebug
+```
+
+Results:
+
+- Documentation search found the published/development version split and release gate wording.
+- `:vectorra-sample:assembleDebug` passed.
+- Full `assembleDebug` passed for `vectorra-maps`, `vectorra-maps-turf`, and `vectorra-sample`.
+
+Known remaining work:
+
+- A future actual `0.8.0-beta.1` release still requires bumping `VECTORRA_VERSION` and rerunning the published-AAR gate for that bumped version.
+- Device smoke remains a release-risk item until adb reports a real device as `device`.

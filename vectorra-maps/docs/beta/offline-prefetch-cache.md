@@ -1,6 +1,8 @@
 # Offline Prefetch and Cache
 
-Vectorra Maps `0.8.0-beta.1` includes a Beta offline manager for region prefetch, cache status, cancellation, retry policy, and cleanup.
+Vectorra Maps `0.8.0-beta.1` development builds include a Beta offline manager for region prefetch, cache status, cancellation, retry policy, and cleanup.
+
+`0.8.0-beta.1` is not published while `VECTORRA_VERSION` remains `0.5.0-beta.1`. Treat this page as source-tree development documentation until the version is bumped and the published-AAR release gates are rerun.
 
 ## Scope
 

@@ -1,8 +1,10 @@
 # API Stability
 
-Vectorra Maps `0.5.0-beta.1` exposes a small Beta API boundary for external Android integration.
+Vectorra Maps publishes `0.5.0-beta.1` as the current Beta artifact. The current source tree also contains APIs annotated for the unpublished `0.8.0-beta.1` development target.
 
-## Stable Enough For Beta Integrators
+Use the published coordinates in integration docs for external apps. Treat APIs marked with a later `@VectorraBetaApi` version than `VectorraSdk.VERSION` as source-tree development APIs until that version is published.
+
+## Published Beta Boundary
 
 - `VectorraMapView`
 - `VectorraMap`
@@ -21,7 +23,17 @@ Vectorra Maps `0.5.0-beta.1` exposes a small Beta API boundary for external Andr
 - 3D terrain source and options APIs.
 - 3D Tiles tileset parsing and inspection APIs.
 - Basic MVT data decoding and GeoJSON conversion.
-- Gesture settings, annotations, query helpers, location component, network config, redacted tile request logging, offline raster helpers, and offline prefetch/cache helpers.
+- Gesture settings, annotations, query helpers, location component, network config, and offline raster helpers.
+
+## Current Source Development Boundary
+
+Present in the current source tree, but not published until the project version is bumped and release gates are rerun:
+
+- Formal 3D Tiles runtime source/layer/options APIs.
+- Vector tile source/layer APIs and basic MVT rendering/query support.
+- Redacted tile request logging.
+- Offline region prefetch, async prefetch progress/cancel, retry/partial-failure reporting, cache status, and cache cleanup helpers.
+- MVT MBTiles source support.
 
 These APIs can still change during Beta, but changes should be intentional and documented in release notes.
 
@@ -41,7 +53,7 @@ Apps must not depend on internal packages.
 
 `@VectorraBetaApi` marks APIs intended for Beta use. `@VectorraExperimentalApi` marks APIs that can change more freely. These markers are documentation annotations and do not require Kotlin opt-in.
 
-## Current Feature Boundary
+## Current Source Feature Boundary
 
 Included in Beta scope:
 
