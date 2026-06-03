@@ -80,6 +80,14 @@ if ($checkerText -notmatch 'actionStart=post-recreate-snapshot' -or $checkerText
 if ($checkerText -notmatch 'Post-recreate snapshot\\s\+\\d\+x\\d\+\\s\+nonblank=true') {
     throw "check-device-smoke-result.ps1 missing post-recreate snapshot log requirement"
 }
+if ($checkerText -notmatch 'MVT MBTiles smoke: requested file=Vectorra Sample MVT' -or
+    $checkerText -notmatch 'source=sample-mvt-mbtiles' -or
+    $checkerText -notmatch 'MVT MBTiles center query: Click:') {
+    throw "check-device-smoke-result.ps1 missing MVT MBTiles render/query log requirements"
+}
+if ($checkerTestText -notmatch 'missing MVT MBTiles query') {
+    throw "test-device-smoke-result-checker.ps1 missing MVT MBTiles failure fixture"
+}
 if (-not $abiMatrixText.Contains(".\tools\test-device-smoke-contract.ps1")) {
     throw "ABI/device matrix missing test-device-smoke-contract.ps1 runtime gate command"
 }

@@ -3030,6 +3030,34 @@ Results:
 - `tools/check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home` passed.
 - Physical-device smoke remains blocked because adb still reports the attached device as `offline`.
 
+### MVT MBTiles Smoke Result Evidence Gate
+
+Tightened the runtime device-smoke result checker so the `mvt-mbtiles` action must prove offline vector MBTiles rendering and query behavior, not only action start/end markers.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` to require MVT MBTiles sample request, native MVT render registration, native MVT render application, and center-query log output for `sample-mvt-mbtiles`.
+- Updated `tools/test-device-smoke-result-checker.ps1` so the valid fixture includes MVT MBTiles render/query evidence and a missing-query fixture fails.
+- Extended `tools/test-device-smoke-contract.ps1` to guard the MVT MBTiles checker requirements and failure fixture.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the stronger MVT MBTiles smoke evidence requirement.
+
+Verification commands run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\test-device-smoke-contract.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-contract.ps1
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for the smoke checker, checker self-test, and smoke contract self-test.
+- `tools/test-device-smoke-contract.ps1` passed.
+- `tools/test-device-smoke-result-checker.ps1` passed, including the expected failure for a report missing the MVT MBTiles center-query evidence.
+- `tools/check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home` passed.
+- Physical-device smoke remains blocked because adb still reports the attached device as `offline`.
+
 ### Device Smoke Script Contract Self-Test
 
 Added a local self-test for the device smoke script contract so runner, checker, fixtures, and sample action constants cannot silently drift.

@@ -276,6 +276,18 @@ if ($logText -notmatch $tilesZoomSnapshotPattern) {
     throw "Required logcat pattern missing: $tilesZoomSnapshotPattern"
 }
 
+$mvtMbTilesPatterns = @(
+    'MVT MBTiles smoke: requested file=Vectorra Sample MVT',
+    'registered MVT render tile handle=.*source=sample-mvt-mbtiles.*features=[1-9]\d*.*visible=1',
+    'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*',
+    'MVT MBTiles center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt-mbtiles.*source-layer=transportation.*name=Offline MBTiles'
+)
+foreach ($pattern in $mvtMbTilesPatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+
 $failurePatterns = @(
     'FATAL EXCEPTION',
     'AndroidRuntime',
