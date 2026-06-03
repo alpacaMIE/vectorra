@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
 
 Equivalent expanded command:
 
@@ -21,6 +21,7 @@ $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\tools\check-native-libs.ps1
 .\tools\check-android-test-apk.ps1
 .\tools\test-android-test-apk-checker.ps1
+.\tools\test-device-smoke-contract.ps1
 .\tools\test-device-smoke-result-checker.ps1
 ```
 
@@ -33,6 +34,7 @@ Latest local evidence:
 - `check-native-libs.ps1`: passed
 - `check-android-test-apk.ps1`: passed; `vectorra-maps-debug-androidTest.apk` exists and contains no native `.so` entries
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
+- `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
 
 Validated outputs:

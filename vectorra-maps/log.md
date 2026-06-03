@@ -3005,6 +3005,40 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Script Contract Self-Test
+
+Added a local self-test for the device smoke script contract so runner, checker, fixtures, and sample action constants cannot silently drift.
+
+Completed:
+
+- Added `tools/test-device-smoke-contract.ps1`.
+- The self-test reads `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `vectorra-sample/MainActivity.kt`.
+- It verifies that the runner main action sequence matches the checker required action sequence and fixture action sequence.
+- It verifies that the sample exposes constants for every runner action plus `post-recreate-snapshot`.
+- It verifies that `post-recreate-snapshot` remains a post-lifecycle action, has ordered checker markers, and has a distinct `Post-recreate snapshot ... nonblank=true` log requirement.
+- Wired the self-test into `tools/check-android-acceptance.ps1`.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning checklist, and 0.8.0 beta development notes to document the contract self-test.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\test-device-smoke-contract.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-contract.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `test-device-smoke-contract.ps1` and `check-android-acceptance.ps1`.
+- Initial `test-device-smoke-contract.ps1` run failed because the regex string for `$requiredActions` used PowerShell interpolation incorrectly; fixed the pattern construction by concatenating the escaped variable name.
+- `test-device-smoke-contract.ps1` then passed and reported `Device smoke script contract self-test passed.`
+- Documentation search found the new contract self-test in the acceptance record, ABI/device matrix, release versioning checklist, release notes, acceptance script, and this log.
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke script contract self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Labeled Post-Recreate Snapshot
 
 Replaced snapshot-count inference with an explicit post-recreate snapshot sample action and log label.
