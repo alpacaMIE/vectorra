@@ -1,6 +1,7 @@
 package com.vectorra.sample
 
 import android.app.Activity
+import android.database.sqlite.SQLiteDatabase
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -24,6 +25,7 @@ import com.vectorra.maps.VectorraSurfaceLifecycleState
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
@@ -34,6 +36,7 @@ import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
 import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
 import com.vectorra.maps.vector.VectorraVectorTileLayer
 import com.vectorra.maps.vector.VectorraVectorTileSource
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.Closeable
 
@@ -203,6 +206,9 @@ class MainActivity : Activity() {
                 },
                 sampleButton("MVT") {
                     loadSampleMvt()
+                },
+                sampleButton("MVT MBTiles") {
+                    loadSampleMvtMbTiles()
                 }
             ))
 
@@ -418,6 +424,87 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun loadSampleMvtMbTiles() {
+        runCatching {
+            val source = VectorraMbTilesVectorSource.open(
+                file = createSampleMvtMbTiles(),
+                id = SAMPLE_MVT_MBTILES_SOURCE_ID
+            )
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_MVT_LONGITUDE,
+                    latitude = SAMPLE_MVT_LATITUDE,
+                    zoom = 12.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            mapView.map.addMbTilesVectorLayer(
+                source = source,
+                layer = VectorraVectorTileLayer.Line(
+                    id = SAMPLE_MVT_LAYER_ID,
+                    sourceId = source.id,
+                    sourceLayer = "transportation",
+                    minZoom = 12,
+                    maxZoom = 12,
+                    color = 0xff6ee7b7.toInt(),
+                    opacity = 0.95,
+                    widthPixels = 4.0
+                )
+            )
+            statusText.text = "MVT MBTiles layer requested"
+            Log.i(LOG_TAG, "MVT MBTiles smoke: requested file=${source.metadata.name}")
+            statusText.postDelayed({
+                logCenterMvtQuery("MVT MBTiles center query")
+            }, SAMPLE_MVT_QUERY_DELAY_MS)
+        }.onFailure { error ->
+            statusText.text = "MVT MBTiles error: ${error.message}"
+        }
+    }
+
+    private fun createSampleMvtMbTiles(): File {
+        val file = File(cacheDir, SAMPLE_MVT_MBTILES_FILE_NAME)
+        if (file.exists()) {
+            file.delete()
+        }
+        val database = SQLiteDatabase.openOrCreateDatabase(file, null)
+        database.use { db ->
+            db.execSQL("CREATE TABLE metadata (name TEXT, value TEXT)")
+            db.execSQL(
+                "CREATE TABLE tiles (" +
+                    "zoom_level INTEGER, " +
+                    "tile_column INTEGER, " +
+                    "tile_row INTEGER, " +
+                    "tile_data BLOB)"
+            )
+            insertMbTilesMetadata(db, "name", "Vectorra Sample MVT")
+            insertMbTilesMetadata(db, "format", "pbf")
+            insertMbTilesMetadata(db, "minzoom", "12")
+            insertMbTilesMetadata(db, "maxzoom", "12")
+            insertMbTilesMetadata(db, "scheme", "tms")
+            db.compileStatement(
+                "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)"
+            ).use { statement ->
+                statement.bindLong(1, SAMPLE_MVT_TILE_Z.toLong())
+                statement.bindLong(2, SAMPLE_MVT_TILE_X.toLong())
+                statement.bindLong(3, tmsTileRow(SAMPLE_MVT_TILE_Z, SAMPLE_MVT_TILE_Y).toLong())
+                statement.bindBlob(4, sampleMvtTile())
+                statement.executeInsert()
+            }
+        }
+        return file
+    }
+
+    private fun insertMbTilesMetadata(database: SQLiteDatabase, name: String, value: String) {
+        database.compileStatement("INSERT INTO metadata (name, value) VALUES (?, ?)").use { statement ->
+            statement.bindString(1, name)
+            statement.bindString(2, value)
+            statement.executeInsert()
+        }
+    }
+
+    private fun tmsTileRow(z: Int, y: Int): Int = ((1 shl z) - 1) - y
+
     private fun removeSampleMvt() {
         runCatching {
             mapView.map.removeVectorTileLayer(SAMPLE_MVT_LAYER_ID)
@@ -563,6 +650,7 @@ class MainActivity : Activity() {
             when (action) {
                 SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
                 SAMPLE_ACTION_MVT -> loadSampleMvt()
+                SAMPLE_ACTION_MVT_MBTILES -> loadSampleMvtMbTiles()
                 SAMPLE_ACTION_REMOVE_MVT -> removeSampleMvt()
                 SAMPLE_ACTION_READD_MVT -> reloadSampleMvt()
                 SAMPLE_ACTION_PAN_MVT -> panSampleMvt()
@@ -692,6 +780,96 @@ class MainActivity : Activity() {
         statusText.text = text
     }
 
+    private fun sampleMvtTile(): ByteArray {
+        return pbfMessage {
+            bytes(
+                MVT_TILE_LAYERS_FIELD,
+                pbfMessage {
+                    string(MVT_LAYER_NAME_FIELD, "transportation")
+                    bytes(
+                        MVT_LAYER_FEATURES_FIELD,
+                        pbfMessage {
+                            uint(MVT_FEATURE_ID_FIELD, 1)
+                            packed(MVT_FEATURE_TAGS_FIELD, listOf(0, 0))
+                            uint(MVT_FEATURE_TYPE_FIELD, MVT_GEOMETRY_LINE_STRING.toLong())
+                            packed(
+                                MVT_FEATURE_GEOMETRY_FIELD,
+                                listOf(
+                                    mvtCommand(MVT_COMMAND_MOVE_TO, 1),
+                                    zigZag(1900),
+                                    zigZag(2048),
+                                    mvtCommand(MVT_COMMAND_LINE_TO, 2),
+                                    zigZag(350),
+                                    zigZag(0),
+                                    zigZag(350),
+                                    zigZag(0)
+                                )
+                            )
+                        }
+                    )
+                    string(MVT_LAYER_KEYS_FIELD, "name")
+                    bytes(
+                        MVT_LAYER_VALUES_FIELD,
+                        pbfMessage {
+                            string(MVT_VALUE_STRING_FIELD, "Offline MBTiles")
+                        }
+                    )
+                    uint(MVT_LAYER_EXTENT_FIELD, MVT_TILE_EXTENT.toLong())
+                    uint(MVT_LAYER_VERSION_FIELD, 2)
+                }
+            )
+        }
+    }
+
+    private fun pbfMessage(block: PbfEncoder.() -> Unit): ByteArray {
+        return PbfEncoder().apply(block).toByteArray()
+    }
+
+    private fun mvtCommand(id: Int, count: Int): Int = (count shl MVT_COMMAND_COUNT_SHIFT) or id
+
+    private fun zigZag(value: Int): Int = (value shl 1) xor (value shr 31)
+
+    private class PbfEncoder {
+        private val output = ByteArrayOutputStream()
+
+        fun uint(field: Int, value: Long) {
+            tag(field, PBF_WIRE_VARINT)
+            varint(value)
+        }
+
+        fun string(field: Int, value: String) {
+            bytes(field, value.toByteArray(Charsets.UTF_8))
+        }
+
+        fun bytes(field: Int, value: ByteArray) {
+            tag(field, PBF_WIRE_LENGTH_DELIMITED)
+            varint(value.size.toLong())
+            output.write(value)
+        }
+
+        fun packed(field: Int, values: List<Int>) {
+            if (values.isEmpty()) return
+            val packed = PbfEncoder()
+            values.forEach { packed.varint(it.toLong()) }
+            bytes(field, packed.toByteArray())
+        }
+
+        fun toByteArray(): ByteArray = output.toByteArray()
+
+        private fun tag(field: Int, wireType: Int) {
+            varint(((field shl 3) or wireType).toLong())
+        }
+
+        fun varint(value: Long) {
+            var remaining = value
+            while (remaining >= 0x80L) {
+                output.write(((remaining and 0x7fL) or 0x80L).toInt())
+                remaining = remaining ushr 7
+            }
+            output.write(remaining.toInt())
+        }
+    }
+
     private companion object {
         const val LOG_TAG = "VectorraSample"
         const val ENABLE_MODEL_SMOKE = true
@@ -713,6 +891,12 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_LONGITUDE = -122.4194
         const val SAMPLE_MVT_PAN_LONGITUDE = -122.3000
         const val SAMPLE_MVT_LATITUDE = 37.7749
+        const val SAMPLE_MVT_MBTILES_SOURCE_ID = "sample-mvt-mbtiles"
+        const val SAMPLE_MVT_MBTILES_FILE_NAME = "sample-vector.mbtiles"
+        const val SAMPLE_MVT_TILE_Z = 12
+        const val SAMPLE_MVT_TILE_X = 655
+        const val SAMPLE_MVT_TILE_Y = 1583
+        const val MVT_TILE_EXTENT = 4096
         const val SAMPLE_3D_TILES_REMOVE_DELAY_MS = 16_000L
         const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
         const val SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS = 7_000L
@@ -724,6 +908,7 @@ class MainActivity : Activity() {
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
         const val SAMPLE_ACTION_3D_TILES = "3dtiles"
         const val SAMPLE_ACTION_MVT = "mvt"
+        const val SAMPLE_ACTION_MVT_MBTILES = "mvt-mbtiles"
         const val SAMPLE_ACTION_REMOVE_MVT = "remove-mvt"
         const val SAMPLE_ACTION_READD_MVT = "readd-mvt"
         const val SAMPLE_ACTION_PAN_MVT = "pan-mvt"
@@ -732,5 +917,23 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
         const val SAMPLE_ACTION_ZOOM_3D_TILES = "zoom-3dtiles"
+        const val PBF_WIRE_VARINT = 0
+        const val PBF_WIRE_LENGTH_DELIMITED = 2
+        const val MVT_TILE_LAYERS_FIELD = 3
+        const val MVT_LAYER_NAME_FIELD = 1
+        const val MVT_LAYER_FEATURES_FIELD = 2
+        const val MVT_LAYER_KEYS_FIELD = 3
+        const val MVT_LAYER_VALUES_FIELD = 4
+        const val MVT_LAYER_EXTENT_FIELD = 5
+        const val MVT_LAYER_VERSION_FIELD = 15
+        const val MVT_FEATURE_ID_FIELD = 1
+        const val MVT_FEATURE_TAGS_FIELD = 2
+        const val MVT_FEATURE_TYPE_FIELD = 3
+        const val MVT_FEATURE_GEOMETRY_FIELD = 4
+        const val MVT_VALUE_STRING_FIELD = 1
+        const val MVT_GEOMETRY_LINE_STRING = 2
+        const val MVT_COMMAND_MOVE_TO = 1
+        const val MVT_COMMAND_LINE_TO = 2
+        const val MVT_COMMAND_COUNT_SHIFT = 3
     }
 }

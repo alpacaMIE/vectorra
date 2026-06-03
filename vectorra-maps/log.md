@@ -1511,3 +1511,39 @@ Known remaining work:
 
 - Re-run `connectedDebugAndroidTest` for `com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest` once the device is back online.
 - Add sample UI/device smoke for real MVT MBTiles rendering through `addMbTilesVectorLayer`.
+
+### P3.T7/P3.T8 MVT MBTiles Sample Smoke Entry
+
+Added a sample-app smoke path for rendering MVT from a real local MBTiles package.
+
+Completed:
+
+- Added a `MVT MBTiles` sample button.
+- Added adb smoke action `mvt-mbtiles`.
+- The sample now generates `sample-vector.mbtiles` in app cache with real SQLite `metadata` and `tiles` tables.
+- The generated MBTiles stores a z12 TMS vector tile for the existing San Francisco MVT sample camera.
+- The sample opens the file through `VectorraMbTilesVectorSource.open()` and renders it through `addMbTilesVectorLayer()` using the existing MVT runtime/render/query path.
+- Added a delayed center query log using the same `queryRenderedFeatures` path as the online MVT smoke.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.mvt.*"
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed.
+- Offline and MVT unit tests passed.
+
+Device result:
+
+- Device `4tqoz9bmfu8t8pr8` is still adb `offline`, so `mvt-mbtiles` device smoke could not be executed in this pass.
+
+Known remaining work:
+
+- Once adb returns to `device`, run `com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt-mbtiles` and verify native MVT registration plus non-empty center query.
+- Re-run the SQLite instrumentation test now that the androidTest APK size issue has been resolved.
