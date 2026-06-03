@@ -63,6 +63,8 @@ By default the script selects the split sample APK from the device ABI list:
 - `x86_64` device -> `vectorra-sample-x86_64-debug.apk`
 - otherwise -> `vectorra-sample-universal-debug.apk`
 
+The ABI query must complete successfully before automatic APK selection continues.
+
 Pass `-Apk <relative-path>` to override this selection.
 
 The UI dump must contain the `com.vectorra.sample` package before the runtime smoke is accepted.

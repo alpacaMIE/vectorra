@@ -53,7 +53,7 @@ Runtime command:
 
 The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
 
-The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided.
+The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 
 Latest adb state:
 

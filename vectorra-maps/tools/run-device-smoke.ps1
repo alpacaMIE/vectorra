@@ -34,6 +34,9 @@ if ($selectedLine -notmatch "^\S+\s+device(\s|$)") {
 
 if ($Apk.Length -eq 0) {
     $deviceAbis = (& $adb -s $DeviceSerial shell getprop ro.product.cpu.abilist) -join ""
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb command failed with exit code $LASTEXITCODE on ${DeviceSerial}: shell getprop ro.product.cpu.abilist"
+    }
     if ($deviceAbis -match "(^|,)arm64-v8a(,|$)") {
         $Apk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk"
     } elseif ($deviceAbis -match "(^|,)x86_64(,|$)") {
