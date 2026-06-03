@@ -440,6 +440,34 @@ namespace
         bool visible = true;
     };
 
+    struct MvtRenderStyleConfig
+    {
+        std::string kind;
+        bool visible = true;
+        int color = -1;
+        float opacity = 1.0f;
+        float widthPixels = 1.0f;
+        float radiusPixels = 4.0f;
+        float textSizeSp = 12.0f;
+    };
+
+    struct MvtRenderTileConfig
+    {
+        std::string sourceId;
+        std::string layerId;
+        int tileZ = 0;
+        int tileX = 0;
+        int tileY = 0;
+        MvtRenderStyleConfig style;
+        std::vector<std::string> featureIds;
+        std::vector<std::string> sourceLayers;
+        std::vector<int> geometryTypes;
+        std::vector<int> coordinateOffsets;
+        std::vector<double> coordinates;
+        std::vector<int> ringOffsets;
+        std::vector<int> ringEnds;
+    };
+
     struct LabelAnnotationConfig
     {
         std::string id;
@@ -1141,6 +1169,116 @@ namespace
                 id.c_str());
         }
 
+        std::string renderMvtTile(const MvtRenderTileConfig& config)
+        {
+            if (config.sourceId.empty() || config.layerId.empty())
+            {
+                return "";
+            }
+            if (config.tileZ < 0 || config.tileX < 0 || config.tileY < 0)
+            {
+                return "";
+            }
+            const auto featureCount = config.featureIds.size();
+            if (featureCount != config.sourceLayers.size() ||
+                featureCount != config.geometryTypes.size() ||
+                config.coordinateOffsets.size() != featureCount + 1 ||
+                config.ringOffsets.size() != featureCount + 1)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    TAG,
+                    "rejecting MVT tile layer=%s z=%d x=%d y=%d with inconsistent feature arrays",
+                    config.layerId.c_str(),
+                    config.tileZ,
+                    config.tileX,
+                    config.tileY);
+                return "";
+            }
+            if (!std::all_of(config.coordinates.begin(), config.coordinates.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }) ||
+                !std::isfinite(config.style.opacity) ||
+                !std::isfinite(config.style.widthPixels) ||
+                !std::isfinite(config.style.radiusPixels) ||
+                !std::isfinite(config.style.textSizeSp))
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    TAG,
+                    "rejecting MVT tile layer=%s z=%d x=%d y=%d with non-finite values",
+                    config.layerId.c_str(),
+                    config.tileZ,
+                    config.tileX,
+                    config.tileY);
+                return "";
+            }
+
+            const std::string handle =
+                config.layerId + ":" +
+                std::to_string(config.tileZ) + "/" +
+                std::to_string(config.tileX) + "/" +
+                std::to_string(config.tileY);
+
+            std::lock_guard<std::mutex> lock(mutex);
+            mvtTiles[handle] = config;
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "registered MVT render tile handle=%s source=%s style=%s features=%zu coordinates=%zu visible=%d",
+                handle.c_str(),
+                config.sourceId.c_str(),
+                config.style.kind.c_str(),
+                featureCount,
+                config.coordinates.size() / 2,
+                config.style.visible ? 1 : 0);
+            return handle;
+        }
+
+        void removeMvtTile(const std::string& handle)
+        {
+            if (handle.empty())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            mvtTiles.erase(handle);
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "removed MVT render tile handle=%s",
+                handle.c_str());
+        }
+
+        void removeMvtLayer(const std::string& layerId)
+        {
+            if (layerId.empty())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            int removed = 0;
+            for (auto itr = mvtTiles.begin(); itr != mvtTiles.end();)
+            {
+                if (itr->second.layerId == layerId)
+                {
+                    itr = mvtTiles.erase(itr);
+                    ++removed;
+                }
+                else
+                {
+                    ++itr;
+                }
+            }
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "removed MVT render layer id=%s tiles=%d",
+                layerId.c_str(),
+                removed);
+        }
+
         void clearAnnotations()
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -1573,6 +1711,7 @@ namespace
             modelLoggedRadii.clear();
             modelLoggedErrors.clear();
             tiles3DRendererContent.clear();
+            mvtTiles.clear();
             locationEntities.clear();
             app.reset();
         }
@@ -2625,6 +2764,7 @@ namespace
         std::unordered_map<std::string, float> modelLoggedRadii;
         std::unordered_map<std::string, std::string> modelLoggedErrors;
         std::unordered_map<std::string, Tiles3DRendererContentConfig> tiles3DRendererContent;
+        std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;
         std::unordered_map<std::string, entt::entity> labelEntities;
@@ -2690,6 +2830,58 @@ namespace
             }
         }
         return headers;
+    }
+
+    std::vector<std::string> stringsFromJArray(JNIEnv* env, jobjectArray array)
+    {
+        std::vector<std::string> result;
+        if (!array)
+        {
+            return result;
+        }
+        const auto count = env->GetArrayLength(array);
+        result.reserve(static_cast<std::size_t>(count));
+        for (jsize i = 0; i < count; ++i)
+        {
+            auto value = static_cast<jstring>(env->GetObjectArrayElement(array, i));
+            result.push_back(jstringToString(env, value));
+            if (value)
+            {
+                env->DeleteLocalRef(value);
+            }
+        }
+        return result;
+    }
+
+    std::vector<int> intsFromJArray(JNIEnv* env, jintArray array)
+    {
+        std::vector<int> result;
+        if (!array)
+        {
+            return result;
+        }
+        const auto count = env->GetArrayLength(array);
+        std::vector<jint> values(static_cast<std::size_t>(count));
+        env->GetIntArrayRegion(array, 0, count, values.data());
+        result.reserve(static_cast<std::size_t>(count));
+        for (jint value : values)
+        {
+            result.push_back(static_cast<int>(value));
+        }
+        return result;
+    }
+
+    std::vector<double> doublesFromJArray(JNIEnv* env, jdoubleArray array)
+    {
+        std::vector<double> result;
+        if (!array)
+        {
+            return result;
+        }
+        const auto count = env->GetArrayLength(array);
+        result.resize(static_cast<std::size_t>(count));
+        env->GetDoubleArrayRegion(array, 0, count, result.data());
+        return result;
     }
 
     std::optional<std::array<double, 16>> matrixFromJDoubleArray(JNIEnv* env, jdoubleArray array)
@@ -3034,6 +3226,86 @@ Java_com_vectorra_maps_internal_VectorraNative_remove3DTilesRendererContent(
     if (auto* engine = fromHandle(handle))
     {
         engine->remove3DTilesRendererContent(jstringToString(env, id));
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_renderMvtTile(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring sourceId,
+    jstring layerId,
+    jint tileZ,
+    jint tileX,
+    jint tileY,
+    jstring styleKind,
+    jboolean visible,
+    jint color,
+    jfloat opacity,
+    jfloat widthPixels,
+    jfloat radiusPixels,
+    jfloat textSizeSp,
+    jobjectArray featureIds,
+    jobjectArray sourceLayers,
+    jintArray geometryTypes,
+    jintArray coordinateOffsets,
+    jdoubleArray coordinates,
+    jintArray ringOffsets,
+    jintArray ringEnds)
+{
+    std::string nativeHandle;
+    if (auto* engine = fromHandle(handle))
+    {
+        MvtRenderTileConfig config;
+        config.sourceId = jstringToString(env, sourceId);
+        config.layerId = jstringToString(env, layerId);
+        config.tileZ = static_cast<int>(tileZ);
+        config.tileX = static_cast<int>(tileX);
+        config.tileY = static_cast<int>(tileY);
+        config.style = MvtRenderStyleConfig{
+            jstringToString(env, styleKind),
+            visible == JNI_TRUE,
+            static_cast<int>(color),
+            opacity,
+            widthPixels,
+            radiusPixels,
+            textSizeSp};
+        config.featureIds = stringsFromJArray(env, featureIds);
+        config.sourceLayers = stringsFromJArray(env, sourceLayers);
+        config.geometryTypes = intsFromJArray(env, geometryTypes);
+        config.coordinateOffsets = intsFromJArray(env, coordinateOffsets);
+        config.coordinates = doublesFromJArray(env, coordinates);
+        config.ringOffsets = intsFromJArray(env, ringOffsets);
+        config.ringEnds = intsFromJArray(env, ringEnds);
+        nativeHandle = engine->renderMvtTile(config);
+    }
+    return env->NewStringUTF(nativeHandle.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_removeMvtTile(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring nativeTileHandle)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->removeMvtTile(jstringToString(env, nativeTileHandle));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_removeMvtLayer(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring layerId)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->removeMvtLayer(jstringToString(env, layerId));
     }
 }
 

@@ -691,3 +691,37 @@ Acceptance:
 Known remaining Android 1.0 work:
 
 - Phase 2 is next: MVT native render contract, vector tile API, runtime tile store, rendering, query, device smoke, and P2 acceptance.
+
+### P2.T0 MVT Native Render Contract
+
+Started Phase 2 by defining the internal MVT render contract boundary used by the upcoming Kotlin runtime tile store.
+
+Completed:
+
+- Added internal MVT render contract types for style, feature batches, tile input, and stable native render handles.
+- Fixed the native tile handle shape as `layerId:z/x/y`.
+- Added deterministic feature batch flattening for feature ids, source layers, geometry types, coordinate offsets, coordinates, ring offsets, and ring ends.
+- Added JNI methods for `renderMvtTile`, `removeMvtTile`, and `removeMvtLayer`.
+- Added native-side MVT tile registration storage keyed by native tile handle, with remove-by-tile and remove-by-layer cleanup.
+- Added focused unit tests covering native flattening and invalid contract inputs.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake built both `arm64-v8a` and `x86_64`.
+- Existing rocky warnings and the sample native library strip warning remained non-blocking; the build completed successfully.
+
+Known remaining Phase 2 work:
+
+- P2.T1: add public vector tile source/layer API.
+- P2.T2: add the Kotlin MVT runtime tile store as the single owner of decoded tiles, native handles, and query state.
+- P2.T5: replace the native registration stub with actual visible MVT rendering.

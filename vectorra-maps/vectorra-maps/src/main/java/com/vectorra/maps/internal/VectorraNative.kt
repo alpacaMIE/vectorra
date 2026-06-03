@@ -94,6 +94,30 @@ internal object VectorraNative {
         visible: Boolean
     )
     external fun remove3DTilesRendererContent(handle: Long, id: String)
+    external fun renderMvtTile(
+        handle: Long,
+        sourceId: String,
+        layerId: String,
+        tileZ: Int,
+        tileX: Int,
+        tileY: Int,
+        styleKind: String,
+        visible: Boolean,
+        color: Int,
+        opacity: Float,
+        widthPixels: Float,
+        radiusPixels: Float,
+        textSizeSp: Float,
+        featureIds: Array<String>,
+        sourceLayers: Array<String>,
+        geometryTypes: IntArray,
+        coordinateOffsets: IntArray,
+        coordinates: DoubleArray,
+        ringOffsets: IntArray,
+        ringEnds: IntArray
+    ): String
+    external fun removeMvtTile(handle: Long, nativeTileHandle: String)
+    external fun removeMvtLayer(handle: Long, layerId: String)
     external fun clearAnnotations(handle: Long)
     external fun addPointAnnotation(handle: Long, id: String, longitude: Double, latitude: Double)
     external fun clearDrawAnnotations(handle: Long)
