@@ -28,7 +28,7 @@ Latest local evidence:
 
 - Gradle local gate: `BUILD SUCCESSFUL`
 - `check-native-libs.ps1`: passed
-- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, missing artifact byte record, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
+- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
 
 Validated outputs:
 
@@ -51,7 +51,7 @@ Runtime command:
 .\tools\check-device-smoke-result.ps1
 ```
 
-The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies positive-byte screenshot/UI/log artifact records, screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
+The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 

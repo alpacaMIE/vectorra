@@ -2576,6 +2576,39 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
 
+### Device Smoke Artifact Path Validation
+
+Tightened the runtime smoke result checker so artifact byte records must identify the exact files being validated.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` so `Assert-ArtifactReportLine` parses the reported artifact path and positive byte count.
+- The checker now compares each reported artifact path against the timestamp-derived screenshot, UI dump, and logcat paths it actually validates.
+- Updated `tools/test-device-smoke-result-checker.ps1` with a mismatched artifact path fixture that must fail.
+- Updated the ABI/device matrix and Android 1.0 acceptance docs with the artifact path matching requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-device-smoke-result.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\test-device-smoke-result-checker.ps1'), [ref]$tokens, [ref]$errors)
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failure for a mismatched screenshot artifact path.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Device Smoke ADB Device Enumeration Check
 
 Tightened runtime smoke startup diagnostics.

@@ -48,7 +48,8 @@ function New-SmokeFixture {
         [string]$OmitAction = "",
         [switch]$InvalidPng,
         [string]$OmitMetadata = "",
-        [string]$OmitArtifact = ""
+        [string]$OmitArtifact = "",
+        [string]$MismatchedArtifact = ""
     )
 
     $reportPath = Join-Path $testRoot "device-smoke-$Stamp.txt"
@@ -89,13 +90,28 @@ function New-SmokeFixture {
         }
     }
     if ($OmitArtifact -ne "screenshot") {
-        $lines += "screenshot=$testRoot\vectorra-smoke-$Stamp.png bytes=4"
+        $path = if ($MismatchedArtifact -eq "screenshot") {
+            Join-Path $testRoot "wrong-vectorra-smoke-$Stamp.png"
+        } else {
+            Join-Path $testRoot "vectorra-smoke-$Stamp.png"
+        }
+        $lines += "screenshot=$path bytes=4"
     }
     if ($OmitArtifact -ne "uiDump") {
-        $lines += "uiDump=$testRoot\vectorra-smoke-$Stamp.xml bytes=64"
+        $path = if ($MismatchedArtifact -eq "uiDump") {
+            Join-Path $testRoot "wrong-vectorra-smoke-$Stamp.xml"
+        } else {
+            Join-Path $testRoot "vectorra-smoke-$Stamp.xml"
+        }
+        $lines += "uiDump=$path bytes=64"
     }
     if ($OmitArtifact -ne "logcat") {
-        $lines += "logcat=$testRoot\device-smoke-$Stamp.log bytes=32"
+        $path = if ($MismatchedArtifact -eq "logcat") {
+            Join-Path $testRoot "wrong-device-smoke-$Stamp.log"
+        } else {
+            Join-Path $testRoot "device-smoke-$Stamp.log"
+        }
+        $lines += "logcat=$path bytes=32"
     }
     $lines += "uiDumpContainsPackage=com.vectorra.sample"
 
@@ -179,5 +195,8 @@ Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom s
 
 $missingArtifactReport = New-SmokeFixture -Stamp "20260604-000008" -OmitArtifact "logcat"
 Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
+
+$mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000009" -MismatchedArtifact "screenshot"
+Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path"
 
 Write-Host "Device smoke result checker self-test passed."
