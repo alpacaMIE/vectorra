@@ -1852,3 +1852,44 @@ Known remaining work:
 
 - Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
 - Run published-AAR verification before cutting an actual `0.8.0-beta.1` artifact.
+
+### P4.T5 Published AAR Verification
+
+Ran the Maven-local publication and sample published-AAR consumption gate for the current Gradle project version.
+
+Completed:
+
+- Published `:vectorra-maps` release publication to Maven local.
+- Published `:vectorra-maps-turf` release publication to Maven local.
+- Built `:vectorra-sample` with `-Pvectorra.sample.usePublishedAar=true`, so the sample consumed `com.vectorra:vectorra-maps:0.5.0-beta.1` from Maven local instead of the project dependency.
+- Confirmed Maven local contains AAR, sources jar, Gradle module metadata, and POM artifacts for both maps and turf.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` to record that this gate passed for the current `0.5.0-beta.1` Gradle version, while `0.8.0-beta.1` remains unpublished until the project version is bumped and release gates are rerun.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
+```
+
+Results:
+
+- Maven local publication passed.
+- Published-AAR sample build passed.
+- Maven local artifacts observed:
+  - `vectorra-maps-0.5.0-beta.1.aar`
+  - `vectorra-maps-0.5.0-beta.1-sources.jar`
+  - `vectorra-maps-0.5.0-beta.1.module`
+  - `vectorra-maps-0.5.0-beta.1.pom`
+  - `vectorra-maps-turf-0.5.0-beta.1.aar`
+  - `vectorra-maps-turf-0.5.0-beta.1-sources.jar`
+  - `vectorra-maps-turf-0.5.0-beta.1.module`
+  - `vectorra-maps-turf-0.5.0-beta.1.pom`
+- The sample published-AAR build emitted a non-fatal strip warning for `librocky.so` and `libvectorra_jni.so`, then packaged the libraries as-is.
+
+Known remaining work:
+
+- Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
+- Bump Gradle/project docs to the intended next Beta version before cutting an actual `0.8.0-beta.1` artifact, then rerun the same published-AAR gate.

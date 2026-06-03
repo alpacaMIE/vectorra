@@ -107,7 +107,7 @@ Targeted tests added or expanded include:
 
 - Device smoke for `offline-prefetch` and `cancel-prefetch` has not run because adb reported device `4tqoz9bmfu8t8pr8` as `offline`.
 - `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` still needs to be rerun on a device once adb returns to `device`.
-- A published-AAR verification pass is still required before release:
+- A published-AAR verification pass was run successfully against the current Gradle project version `0.5.0-beta.1`:
 
 ```powershell
 .\gradlew.bat :vectorra-maps:publishReleasePublicationToMavenLocal
@@ -115,4 +115,6 @@ Targeted tests added or expanded include:
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
-Do not treat `0.8.0-beta.1` as published until those release gates are complete.
+This confirms the current local publication path, Maven metadata, sources jars, native libraries, and sample AAR consumption path. It does not publish or validate a `0.8.0-beta.1` artifact, because the Gradle project version has not been bumped.
+
+Do not treat `0.8.0-beta.1` as published until the Gradle version is bumped and the same release gates are rerun for that version.
