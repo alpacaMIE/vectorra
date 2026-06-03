@@ -962,3 +962,37 @@ Known remaining Phase 2 work:
 - P2.T4: complete geometry conversion fixtures around extent, Y-down coordinates, tile boundaries, and polygon rings.
 - P2.T5: schedule visible vector tiles from the camera and render line/fill/circle output.
 - P2.T6: query loaded store entries through `queryRenderedFeatures`.
+
+### P2.T4 MVT Geometry Conversion Fixtures
+
+Continued Phase 2 by solidifying MVT geometry conversion behavior with focused fixtures.
+
+Completed:
+
+- Added Web Mercator tile-corner fixtures proving Y-down MVT coordinates map correctly to longitude/latitude.
+- Added extent-sensitive point conversion coverage using a non-default extent.
+- Added polygon ring fixtures that preserve outer and inner rings.
+- Added tile boundary assertions for `-180/180` longitude and Web Mercator max latitude.
+- Added validation coverage for non-positive MVT extent.
+- Confirmed the existing conversion implementation already satisfied these fixtures; no production conversion changes were required.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Focused MVT unit tests passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 2 work:
+
+- P2.T5: schedule visible vector tiles from the camera and render line/fill/circle output.
+- P2.T6: query loaded store entries through `queryRenderedFeatures`.
