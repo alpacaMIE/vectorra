@@ -276,6 +276,16 @@ if ($logText -notmatch $tilesZoomSnapshotPattern) {
     throw "Required logcat pattern missing: $tilesZoomSnapshotPattern"
 }
 
+$baseMapPatterns = @(
+    'raster sample-base-imagery loaded',
+    'dem sample-base-dem loaded'
+)
+foreach ($pattern in $baseMapPatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+
 $tiles3dRuntimePatterns = @(
     'tiles3d sample-3d-tiles-layer loaded',
     'registered 3D Tiles renderer content id=sample-3d-tiles-layer:',

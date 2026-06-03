@@ -3005,6 +3005,38 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Base Raster DEM Smoke Result Evidence Gate
+
+Tightened the Android device smoke result contract so the cold-start base raster and DEM layers must prove loaded resource status through logcat before a device smoke run can pass.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` to require `raster sample-base-imagery loaded` and `dem sample-base-dem loaded`.
+- Updated `tools/test-device-smoke-result-checker.ps1` with base raster/DEM loaded evidence in the valid fixture and a missing base DEM failure fixture.
+- Extended `tools/test-device-smoke-contract.ps1` so contract drift fails when the base raster/DEM evidence gate is removed.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the new checker coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\test-device-smoke-contract.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-contract.ps1
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for the smoke result checker, checker self-test, and contract self-test scripts.
+- `test-device-smoke-contract.ps1` passed.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failure for missing base DEM loaded evidence.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Re-run `tools/run-device-smoke.ps1` and `tools/check-device-smoke-result.ps1` once adb reports the physical device as `device`.
+
 ### ABI Matrix Smoke Contract Command
 
 Aligned the documented runtime device-smoke command block with the local acceptance gate.

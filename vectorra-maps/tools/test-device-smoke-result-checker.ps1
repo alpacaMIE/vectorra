@@ -46,6 +46,8 @@ $validLogText = @(
     "Snapshot 1080x1920 nonblank=true",
     "Post-recreate snapshot 1080x1920 nonblank=true",
     "3D Tiles zoom snapshot 1080x1920 nonblank=true",
+    "raster sample-base-imagery loaded",
+    "dem sample-base-dem loaded",
     "tiles3d sample-3d-tiles-layer loaded",
     "registered 3D Tiles renderer content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb transform=ECEF_LOCAL ecef=(1.000,2.000,3.000) visible=1",
     "applied native 3D Tiles content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb entity=42 transform=ECEF_LOCAL",
@@ -250,45 +252,48 @@ Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom s
 $missing3DTilesReaddReport = New-SmokeFixture -Stamp "20260604-000008" -LogText ($validLogText -replace 'tiles3d sample-3d-tiles-layer removed\r?\ntiles3d sample-3d-tiles-layer loaded', 'tiles3d sample-3d-tiles-layer removed')
 Invoke-CheckerFailure $missing3DTilesReaddReport "missing 3D Tiles readd loaded evidence"
 
-$missingMvtMbTilesQueryReport = New-SmokeFixture -Stamp "20260604-000009" -LogText ($validLogText -replace 'MVT MBTiles center query: Click: 1 feature\(s\) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles', 'MVT MBTiles center query: Click: no features')
+$missingBaseMapReport = New-SmokeFixture -Stamp "20260604-000009" -LogText ($validLogText -replace 'dem sample-base-dem loaded', 'dem sample-base-dem loading')
+Invoke-CheckerFailure $missingBaseMapReport "missing base DEM loaded evidence"
+
+$missingMvtMbTilesQueryReport = New-SmokeFixture -Stamp "20260604-000010" -LogText ($validLogText -replace 'MVT MBTiles center query: Click: 1 feature\(s\) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles', 'MVT MBTiles center query: Click: no features')
 Invoke-CheckerFailure $missingMvtMbTilesQueryReport "missing MVT MBTiles query"
 
-$missingMvtRuntimeReport = New-SmokeFixture -Stamp "20260604-000010" -LogText ($validLogText -replace 'MVT hidden center query: Click: no features', 'MVT hidden center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation')
+$missingMvtRuntimeReport = New-SmokeFixture -Stamp "20260604-000011" -LogText ($validLogText -replace 'MVT hidden center query: Click: no features', 'MVT hidden center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation')
 Invoke-CheckerFailure $missingMvtRuntimeReport "missing MVT hidden no-features evidence"
 
-$missingOfflineCleanupReport = New-SmokeFixture -Stamp "20260604-000011" -LogText ($validLogText -replace 'Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0', 'Offline prefetch smoke: cache cleared entries=1 bytes=256 proxy=0/0 resources=1/256')
+$missingOfflineCleanupReport = New-SmokeFixture -Stamp "20260604-000012" -LogText ($validLogText -replace 'Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0', 'Offline prefetch smoke: cache cleared entries=1 bytes=256 proxy=0/0 resources=1/256')
 Invoke-CheckerFailure $missingOfflineCleanupReport "missing offline prefetch cleanup"
 
-$missingSampleInteractionReport = New-SmokeFixture -Stamp "20260604-000012" -LogText ($validLogText -replace 'Draw center query: Click: 1 feature\(s\) layer=draw-point', 'Draw center query: Click: no features')
+$missingSampleInteractionReport = New-SmokeFixture -Stamp "20260604-000013" -LogText ($validLogText -replace 'Draw center query: Click: 1 feature\(s\) layer=draw-point', 'Draw center query: Click: no features')
 Invoke-CheckerFailure $missingSampleInteractionReport "missing sample interaction query"
 
-$missingArtifactReport = New-SmokeFixture -Stamp "20260604-000013" -OmitArtifact "logcat"
+$missingArtifactReport = New-SmokeFixture -Stamp "20260604-000014" -OmitArtifact "logcat"
 Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
 
-$mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000014" -MismatchedArtifact "screenshot"
+$mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000015" -MismatchedArtifact "screenshot"
 Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path"
 
 $mismatchedInstalledApkReport = New-SmokeFixture `
-    -Stamp "20260604-000015" `
+    -Stamp "20260604-000016" `
     -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-x86_64-debug.apk"
 Invoke-CheckerFailure $mismatchedInstalledApkReport "mismatched installed APK"
 
 $incompatibleApkAbiReport = New-SmokeFixture `
-    -Stamp "20260604-000016" `
+    -Stamp "20260604-000017" `
     -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk" `
     -Abis "x86_64"
 Invoke-CheckerFailure $incompatibleApkAbiReport "incompatible APK ABI"
 
-$outOfOrderReport = New-SmokeFixture -Stamp "20260604-000017"
+$outOfOrderReport = New-SmokeFixture -Stamp "20260604-000018"
 (Get-Content -Path $outOfOrderReport -Raw) `
     -replace 'actionStart=mvt delaySeconds=1\r?\nactionEnd=mvt', "actionEnd=mvt`nactionStart=mvt delaySeconds=1" |
     Set-Content -Path $outOfOrderReport -Encoding utf8
 Invoke-CheckerFailure $outOfOrderReport "out-of-order action markers"
 
-$missingPostRecreateSnapshotReport = New-SmokeFixture -Stamp "20260604-000018" -OmitPostRecreateSnapshot
+$missingPostRecreateSnapshotReport = New-SmokeFixture -Stamp "20260604-000019" -OmitPostRecreateSnapshot
 Invoke-CheckerFailure $missingPostRecreateSnapshotReport "missing post-recreate snapshot"
 
-$missingPostRecreateSnapshotLogReport = New-SmokeFixture -Stamp "20260604-000019" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true"
+$missingPostRecreateSnapshotLogReport = New-SmokeFixture -Stamp "20260604-000020" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true"
 Invoke-CheckerFailure $missingPostRecreateSnapshotLogReport "missing post-recreate snapshot log"
 
 Write-Host "Device smoke result checker self-test passed."
