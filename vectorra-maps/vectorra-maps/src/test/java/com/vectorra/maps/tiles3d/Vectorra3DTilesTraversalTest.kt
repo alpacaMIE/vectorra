@@ -148,7 +148,7 @@ class Vectorra3DTilesTraversalTest {
     }
 
     @Test
-    fun replaceRefinementKeepsLoadedParentUntilReplacementChildLoaded() {
+    fun replaceRefinementKeepsLoadedParentWhileReplacementChildIsSelected() {
         val scene = tileset(
             root = tile(
                 sphere = sphere(z = 0.0, radius = 10.0),
@@ -185,8 +185,8 @@ class Vectorra3DTilesTraversalTest {
 
         assertEquals(listOf("root/0", "root"), loadingChild.selectedTiles.map { it.id })
         assertFalse(loadingChild.unloadTileIds.contains("root"))
-        assertEquals(listOf("root/0"), loadedChild.selectedTiles.map { it.id })
-        assertEquals(setOf("root"), loadedChild.unloadTileIds)
+        assertEquals(listOf("root/0", "root"), loadedChild.selectedTiles.map { it.id })
+        assertFalse(loadedChild.unloadTileIds.contains("root"))
     }
 
     @Test

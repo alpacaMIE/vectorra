@@ -197,14 +197,14 @@ internal class Vectorra3DTilesTraversal {
                 }
                 if (selected.size == before) {
                     selected += runtimeTile
-                } else if (shouldKeepLoadedParentUntilReplacementReady(runtimeTile, selected.drop(before), tileStates)) {
+                } else if (shouldKeepLoadedParentWhileReplacing(runtimeTile, selected.drop(before), tileStates)) {
                     selected += runtimeTile
                 }
             }
         }
     }
 
-    private fun shouldKeepLoadedParentUntilReplacementReady(
+    private fun shouldKeepLoadedParentWhileReplacing(
         parent: Vectorra3DTilesRuntimeTile,
         replacements: List<Vectorra3DTilesRuntimeTile>,
         tileStates: Map<String, Vectorra3DTilesRuntimeTileLoadState>
@@ -216,8 +216,7 @@ internal class Vectorra3DTilesTraversal {
         }
 
         val renderableReplacements = replacements.filter { it.hasRenderableContent }
-        return renderableReplacements.isNotEmpty() &&
-            renderableReplacements.any { tileStates[it.id] != Vectorra3DTilesRuntimeTileLoadState.LOADED }
+        return renderableReplacements.isNotEmpty()
     }
 
     private fun screenSpaceError(tile: Vectorra3DTilesRuntimeTile, camera: Vectorra3DTilesCamera): Double {

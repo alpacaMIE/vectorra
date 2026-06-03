@@ -1186,3 +1186,47 @@ Known remaining Phase 2 work:
 
 - P2.T7 still needs pan/zoom stale-feature device smoke plus visibility and remove/re-add coverage.
 - Broaden P2.T6/P2.T7 fixtures for cross-tile query ordering and cache-hit tile loads.
+
+### 3D Tiles Zoom-In Disappearance Fix
+
+Fixed the current cause of 3D Tiles disappearing when the camera moves closer.
+
+Completed:
+
+- Updated REPLACE refinement traversal so a loaded parent tile remains selected while renderable replacement children are selected.
+- This avoids unloading the visible parent immediately when Kotlin has marked child content loaded but the native `rocky::Model` may still be asynchronously preparing geometry.
+- Updated traversal coverage so both loading and loaded replacement children keep the loaded parent in the selected set.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.tiles3d.Vectorra3DTilesTraversalTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Results:
+
+- `Vectorra3DTilesTraversalTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+
+Device check:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` was visible and installed the arm64 debug sample.
+- Logcat showed the sample 3D Tiles root request, native content application, and model load: `3D Tiles model loaded id=sample-3d-tiles-layer:root ... radius=16.03`.
+- The existing sample action did not reliably apply the intended zoom=16 camera during the captured window; a dedicated zoom-in 3D Tiles device smoke action is still needed for repeatable manual verification.
+
+Known remaining work:
+
+- Add a deterministic 3D Tiles zoom-in smoke action that waits for native readiness, applies close camera, and captures traversal/content logs.
+- Add native renderer readiness feedback if we want strict REPLACE unloading without parent/child overlap.
