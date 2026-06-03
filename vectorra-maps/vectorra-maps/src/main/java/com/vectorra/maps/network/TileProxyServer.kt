@@ -57,6 +57,14 @@ class TileProxyServer(
         previous.close()
     }
 
+    internal fun cacheStatus(): TileCacheStoreStatus {
+        return cacheStore.status()
+    }
+
+    internal fun clearCache() {
+        cacheStore.clear()
+    }
+
     fun proxyTemplateFor(
         sourceId: String?,
         layerId: String?,

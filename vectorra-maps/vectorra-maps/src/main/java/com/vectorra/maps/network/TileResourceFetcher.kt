@@ -35,6 +35,14 @@ internal class TileResourceFetcher(
         return response
     }
 
+    fun cacheStatus(): TileCacheStoreStatus {
+        return cacheStore.status()
+    }
+
+    fun clearCache() {
+        cacheStore.clear()
+    }
+
     override fun close() {
         scheduler.close()
     }

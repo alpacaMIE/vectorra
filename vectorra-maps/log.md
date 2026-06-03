@@ -1578,3 +1578,38 @@ Known remaining work:
 
 - Surface this internal cache status/cleanup through the future `VectorraOfflineManager` public API.
 - Unify product-level cache status ownership between `TileProxyServer` and `TileResourceFetcher` around the same store contract.
+
+### P3.T2 Offline Manager Cache Status API
+
+Started the public offline manager surface by exposing cache status and cleanup without leaking proxy/native details.
+
+Completed:
+
+- Added public beta `VectorraOfflineManager`.
+- Added public beta `VectorraCacheStatus` and `VectorraCacheBucketStatus` for aggregate cache state.
+- Added `VectorraMap.offline`.
+- Implemented `VectorraMapEngine.offline.cacheStatus()` by aggregating proxy tile cache and resource cache buckets.
+- Implemented `VectorraMapEngine.offline.clearCache()` to clear proxy tile cache and resource cache together.
+- Added internal cache status/clear hooks on `TileProxyServer` and `TileResourceFetcher`.
+- Added tests for public cache status totals and resource fetcher status/clear behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.TileCacheAndSchedulerTest" --tests "com.vectorra.maps.offline.VectorraOfflineManagerModelsTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.offline.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Target cache/offline manager tests passed.
+- Network and offline unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Add prefetch task API and progress/cancel semantics on top of `VectorraOfflineManager`.
+- Add sample UI for cache status and cleanup once device smoke is available again.

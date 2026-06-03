@@ -180,6 +180,53 @@ class TileCacheAndSchedulerTest {
     }
 
     @Test
+    fun tileResourceFetcherReportsAndClearsCacheStatus() {
+        val root = Files.createTempDirectory("vectorra-resource-fetcher-cache-status").toFile()
+        try {
+            var calls = 0
+            val fetcher = TileResourceFetcher(
+                cacheDirectory = root,
+                initialConfig = TileNetworkConfig(
+                    interceptors = listOf(
+                        TileRequestInterceptor { chain ->
+                            calls += 1
+                            TileResponse(
+                                request = chain.request,
+                                statusCode = 200,
+                                body = "cached-resource".toByteArray()
+                            )
+                        }
+                    )
+                )
+            )
+            val request = TileRequest(
+                sourceId = "tiles3d",
+                url = "https://assets.example.com/cache.bin",
+                resourceType = TileResourceType.TILES3D
+            )
+
+            fetcher.fetch(request)
+            val cached = fetcher.fetch(request)
+            val populated = fetcher.cacheStatus()
+            val callsBeforeClear = calls
+            fetcher.clearCache()
+            val cleared = fetcher.cacheStatus()
+            fetcher.fetch(request)
+
+            assertEquals(1, callsBeforeClear)
+            assertEquals(TileCacheStatus.MEMORY, cached.cacheStatus)
+            assertEquals(2, populated.totalEntryCount)
+            assertEquals("cached-resource".length.toLong() * 2L, populated.totalBytes)
+            assertEquals(0, cleared.totalEntryCount)
+            assertEquals(0L, cleared.totalBytes)
+            assertEquals(2, calls)
+            fetcher.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun servesSuccessfulTileFromDiskCacheAcrossExecutors() {
         val root = Files.createTempDirectory("rocky-tile-disk-cache").toFile()
         try {

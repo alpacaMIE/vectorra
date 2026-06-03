@@ -20,6 +20,7 @@ import com.vectorra.maps.query.VectorraCoordinate
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.offline.VectorraMbTilesVectorSource
+import com.vectorra.maps.offline.VectorraOfflineManager
 import com.vectorra.maps.source.VectorraRasterTileSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
@@ -57,6 +58,7 @@ data class CameraAnimationOptions(
 interface VectorraMap : Closeable {
     val cameraState: CameraState
     val location: VectorraLocationComponent
+    val offline: VectorraOfflineManager
     var onCameraChanged: ((CameraState) -> Unit)?
 
     fun setCamera(

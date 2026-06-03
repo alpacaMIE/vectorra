@@ -25,6 +25,7 @@ import com.vectorra.maps.mvt.VectorraMvtTileId
 import com.vectorra.maps.mvt.VectorraMvtTileLoadResult
 import com.vectorra.maps.mvt.asMvtTileLoader
 import com.vectorra.maps.mvt.VectorraMvtRuntimeTileStore
+import com.vectorra.maps.network.TileCacheStoreStatus
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
 import com.vectorra.maps.network.TileResourceFetcher
@@ -43,8 +44,11 @@ import com.vectorra.maps.query.VectorraMapClickListener
 import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
+import com.vectorra.maps.offline.VectorraCacheBucketStatus
+import com.vectorra.maps.offline.VectorraCacheStatus
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.offline.VectorraMbTilesVectorSource
+import com.vectorra.maps.offline.VectorraOfflineManager
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -103,6 +107,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
     override val location: VectorraLocationComponent = VectorraLocationComponentImpl(this)
+    override val offline: VectorraOfflineManager = EngineOfflineManager()
     var loadState: VectorraMapLoadState = VectorraMapLoadState.IDLE
         private set
     var lastLoadError: VectorraMapLoadError? = null
@@ -1678,6 +1683,20 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private inner class EngineOfflineManager : VectorraOfflineManager {
+        override fun cacheStatus(): VectorraCacheStatus {
+            return VectorraCacheStatus(
+                proxy = tileProxyServer.cacheStatus().toPublicStatus(),
+                resources = tileResourceFetcher.cacheStatus().toPublicStatus()
+            )
+        }
+
+        override fun clearCache() {
+            tileProxyServer.clearCache()
+            tileResourceFetcher.clearCache()
+        }
+    }
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             VectorraNative.setResourceStatusCallback(nativeHandle, null)
@@ -1845,6 +1864,15 @@ internal fun VectorraTileset3D.cameraTargetHeightMeters(): Double {
         root.transform ?: Vectorra3DTilesSpatial.IDENTITY_MATRIX
     )
     return Vectorra3DTilesSpatial.ecefToWgs84(sphere.center).heightMeters.takeIf(Double::isFinite) ?: 0.0
+}
+
+private fun TileCacheStoreStatus.toPublicStatus(): VectorraCacheBucketStatus {
+    return VectorraCacheBucketStatus(
+        memoryEntryCount = memoryEntryCount,
+        memoryBytes = memoryBytes,
+        diskEntryCount = diskEntryCount,
+        diskBytes = diskBytes
+    )
 }
 
 private data class Vectorra3DTilesRuntimeLayer(
