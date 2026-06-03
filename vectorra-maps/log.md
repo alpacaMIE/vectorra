@@ -822,3 +822,34 @@ Device results:
 Known remaining issue:
 
 - `am start -W` still returns `Status: timeout` on this MIUI device while native renderer startup blocks long enough to trigger the platform wait timeout. The app recovers and renders, but startup latency remains a separate hardening item.
+
+### 3D Tiles REPLACE LOD Continuity Fix
+
+Fixed the 3D Tiles disappearing behavior seen when zooming closer to a `REPLACE` refinement tileset.
+
+Root cause:
+
+- The traversal selected replacement child tiles as soon as screen-space error exceeded the threshold.
+- Loaded parent tiles were removed from `selectedTiles` immediately and therefore added to `unloadTileIds`.
+- If the child tile was still `LOADING` or otherwise not yet native-loaded, the renderer removed the visible parent before the replacement was ready, producing a visible disappearance while zooming in.
+
+Completed:
+
+- Passed tile load state into recursive traversal selection.
+- For `REPLACE` refinement, keep a loaded renderable parent selected until at least one renderable replacement child selected for that branch is also `LOADED`.
+- Once replacement children are loaded, traversal unloads the parent normally.
+- Added a regression test proving a loaded parent is retained while a replacement child is still loading and unloaded only after the child reaches `LOADED`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.

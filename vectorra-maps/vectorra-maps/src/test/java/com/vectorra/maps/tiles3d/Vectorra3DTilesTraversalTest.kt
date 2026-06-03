@@ -148,6 +148,48 @@ class Vectorra3DTilesTraversalTest {
     }
 
     @Test
+    fun replaceRefinementKeepsLoadedParentUntilReplacementChildLoaded() {
+        val scene = tileset(
+            root = tile(
+                sphere = sphere(z = 0.0, radius = 10.0),
+                geometricError = 100.0,
+                refine = VectorraTileset3DRefine.REPLACE,
+                content = content("root.glb"),
+                children = listOf(
+                    tile(
+                        sphere = sphere(z = 0.0, radius = 5.0),
+                        geometricError = 0.0,
+                        content = content("child.glb")
+                    )
+                )
+            )
+        )
+        val loadingChild = traversal.traverse(
+            tileset = scene,
+            camera = camera,
+            options = options(maximumScreenSpaceError = 1.0),
+            tileStates = mapOf(
+                "root" to Vectorra3DTilesRuntimeTileLoadState.LOADED,
+                "root/0" to Vectorra3DTilesRuntimeTileLoadState.LOADING
+            )
+        )
+        val loadedChild = traversal.traverse(
+            tileset = scene,
+            camera = camera,
+            options = options(maximumScreenSpaceError = 1.0),
+            tileStates = mapOf(
+                "root" to Vectorra3DTilesRuntimeTileLoadState.LOADED,
+                "root/0" to Vectorra3DTilesRuntimeTileLoadState.LOADED
+            )
+        )
+
+        assertEquals(listOf("root/0", "root"), loadingChild.selectedTiles.map { it.id })
+        assertFalse(loadingChild.unloadTileIds.contains("root"))
+        assertEquals(listOf("root/0"), loadedChild.selectedTiles.map { it.id })
+        assertEquals(setOf("root"), loadedChild.unloadTileIds)
+    }
+
+    @Test
     fun loadedTileBudgetKeepsHighestPriorityTilesAndUnloadsOverflow() {
         val result = traversal.traverse(
             tileset = tileset(

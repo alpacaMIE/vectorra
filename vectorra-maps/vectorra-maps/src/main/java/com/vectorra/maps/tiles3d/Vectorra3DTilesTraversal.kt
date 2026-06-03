@@ -105,6 +105,7 @@ internal class Vectorra3DTilesTraversal {
             ),
             camera = camera,
             options = options,
+            tileStates = tileStates,
             selected = selected
         )
 
@@ -155,6 +156,7 @@ internal class Vectorra3DTilesTraversal {
         runtimeTile: Vectorra3DTilesRuntimeTile,
         camera: Vectorra3DTilesCamera,
         options: Vectorra3DTilesTraversalOptions,
+        tileStates: Map<String, Vectorra3DTilesRuntimeTileLoadState>,
         selected: MutableList<Vectorra3DTilesRuntimeTile>
     ) {
         if (!isVisible(runtimeTile.tile.boundingVolume, runtimeTile.transform, camera)) {
@@ -185,19 +187,37 @@ internal class Vectorra3DTilesTraversal {
             VectorraTileset3DRefine.ADD -> {
                 selected += runtimeTile
                 children.forEach { child ->
-                    selectTile(child, camera, options, selected)
+                    selectTile(child, camera, options, tileStates, selected)
                 }
             }
             VectorraTileset3DRefine.REPLACE -> {
                 val before = selected.size
                 children.forEach { child ->
-                    selectTile(child, camera, options, selected)
+                    selectTile(child, camera, options, tileStates, selected)
                 }
                 if (selected.size == before) {
+                    selected += runtimeTile
+                } else if (shouldKeepLoadedParentUntilReplacementReady(runtimeTile, selected.drop(before), tileStates)) {
                     selected += runtimeTile
                 }
             }
         }
+    }
+
+    private fun shouldKeepLoadedParentUntilReplacementReady(
+        parent: Vectorra3DTilesRuntimeTile,
+        replacements: List<Vectorra3DTilesRuntimeTile>,
+        tileStates: Map<String, Vectorra3DTilesRuntimeTileLoadState>
+    ): Boolean {
+        if (!parent.hasRenderableContent ||
+            tileStates[parent.id] != Vectorra3DTilesRuntimeTileLoadState.LOADED
+        ) {
+            return false
+        }
+
+        val renderableReplacements = replacements.filter { it.hasRenderableContent }
+        return renderableReplacements.isNotEmpty() &&
+            renderableReplacements.any { tileStates[it.id] != Vectorra3DTilesRuntimeTileLoadState.LOADED }
     }
 
     private fun screenSpaceError(tile: Vectorra3DTilesRuntimeTile, camera: Vectorra3DTilesCamera): Double {
