@@ -43,7 +43,15 @@ import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
 import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
 import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
+import com.vectorra.maps.tiles3d.Vectorra3DTilesCamera
+import com.vectorra.maps.tiles3d.Vectorra3DTilesContentLifecycle
+import com.vectorra.maps.tiles3d.Vectorra3DTilesContentLoadCompletion
+import com.vectorra.maps.tiles3d.Vectorra3DTilesContentLoadTask
+import com.vectorra.maps.tiles3d.Vectorra3DTilesContentRenderer
+import com.vectorra.maps.tiles3d.Vectorra3DTilesRendererContentInput
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTilesetLoader
+import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversal
+import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversalOptions
 import com.vectorra.maps.tiles3d.VectorraTileset3D
 import java.io.Closeable
 import java.io.File
@@ -57,6 +65,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.sinh
 
 internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
@@ -64,9 +73,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val nativeHandle: Long = VectorraNative.create()
     private val tileProxyServer = TileProxyServer(File(cacheDirectory, "rocky-tile-cache"))
     private val tileResourceFetcher = TileResourceFetcher(File(cacheDirectory, "vectorra-resource-cache"))
+    private val tiles3DContentCacheDirectory = File(cacheDirectory, "vectorra-3dtiles-content-cache")
     private val tiles3DTilesetLoader = Vectorra3DTilesTilesetLoader { request ->
         tileResourceFetcher.fetch(request)
     }
+    private val tiles3DTraversal = Vectorra3DTilesTraversal()
+    private val tiles3DContentRenderer = Native3DTilesContentRenderer()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val nativeResourceStatusCallback = object : VectorraNative.ResourceStatusCallback {
         override fun onNativeResourceStatus(
@@ -115,6 +127,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val tiles3DRuntimeLock = Any()
     private val tiles3DLayers = linkedMapOf<String, Vectorra3DTilesRuntimeLayer>()
     private val tiles3DLoadGenerationByLayerId = linkedMapOf<String, Long>()
+    private var tiles3DTraversalScheduled = false
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -205,6 +218,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         hitTester.setCamera(next)
         scheduleNativeCameraApply()
         scheduleCameraNotification()
+        schedule3DTilesTraversal()
         (location as? VectorraLocationComponentImpl)?.onCameraChanged()
     }
 
@@ -748,9 +762,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 tiles3DLoadGenerationByLayerId[id] = (tiles3DLoadGenerationByLayerId[id] ?: 0L) + 1L
                 tiles3DLayers.remove(id)
             }
-            runtimeLayer?.contentIds?.forEach { contentId ->
-                VectorraNative.remove3DTilesRendererContent(nativeHandle, contentId)
-            }
+            runtimeLayer?.contentLifecycle?.cancelAll()
             emitRemovedStatusForLayer(id)
         }
     }
@@ -1019,6 +1031,159 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private fun schedule3DTilesTraversal() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { schedule3DTilesTraversal() }
+            return
+        }
+        if (tiles3DTraversalScheduled || closed.get()) {
+            return
+        }
+        tiles3DTraversalScheduled = true
+        Choreographer.getInstance().postFrameCallback {
+            tiles3DTraversalScheduled = false
+            if (closed.get()) {
+                return@postFrameCallback
+            }
+            traverse3DTilesLayers(cameraState)
+        }
+    }
+
+    private fun traverse3DTilesLayers(camera: CameraState) {
+        val tasks = mutableListOf<Vectorra3DTilesRuntimeContentTask>()
+        val failures = linkedMapOf<String, Pair<Vectorra3DTilesRuntimeLayer, String>>()
+        synchronized(tiles3DRuntimeLock) {
+            tiles3DLayers.values.forEach { runtimeLayer ->
+                if (!runtimeLayer.layer.options.visible) {
+                    runtimeLayer.contentLifecycle.cancelAll()
+                    return@forEach
+                }
+                val traversalResult = tiles3DTraversal.traverse(
+                    tileset = runtimeLayer.tileset,
+                    camera = camera.to3DTilesCamera(),
+                    options = Vectorra3DTilesTraversalOptions(
+                        maximumScreenSpaceError = runtimeLayer.layer.options.maximumScreenSpaceError,
+                        maximumLoadedTiles = runtimeLayer.layer.options.maximumLoadedTiles
+                    ),
+                    tileStates = runtimeLayer.contentLifecycle.tileLoadStates()
+                )
+                val lifecycleResult = runtimeLayer.contentLifecycle.applyTraversal(traversalResult)
+                lifecycleResult.failedTileIds.forEach { (tileId, reason) ->
+                    failures[tileId] = runtimeLayer to reason
+                }
+                lifecycleResult.loadTasks.forEach { task ->
+                    tasks += Vectorra3DTilesRuntimeContentTask(runtimeLayer.layer.id, runtimeLayer.loadGeneration, task)
+                }
+            }
+        }
+        failures.values.forEach { (runtimeLayer, reason) ->
+            emit3DTilesLayerFailure(runtimeLayer, reason, null)
+        }
+        tasks.forEach { task ->
+            Thread({
+                load3DTilesContent(task)
+            }, "Vectorra3DTilesContent-${task.layerId}-${task.task.tileId}").start()
+        }
+    }
+
+    private fun load3DTilesContent(runtimeTask: Vectorra3DTilesRuntimeContentTask) {
+        if (closed.get()) {
+            return
+        }
+        val response = tileResourceFetcher.fetch(
+            request = runtimeTask.task.request,
+            priority = runtimeTask.task.priority
+        )
+        var failure: Pair<Vectorra3DTilesRuntimeLayer, String>? = null
+        synchronized(tiles3DRuntimeLock) {
+            val runtimeLayer = tiles3DLayers[runtimeTask.layerId] ?: return
+            if (runtimeLayer.loadGeneration != runtimeTask.loadGeneration ||
+                tiles3DLoadGenerationByLayerId[runtimeTask.layerId] != runtimeTask.loadGeneration
+            ) {
+                return
+            }
+            val completion = runtimeLayer.contentLifecycle.completeRemoteLoad(runtimeTask.task, response)
+            if (completion == Vectorra3DTilesContentLoadCompletion.FAILED) {
+                failure = runtimeLayer to (
+                    response.errorMessage ?: "3D Tiles content request or preparation failed."
+                )
+            }
+        }
+        failure?.let { (runtimeLayer, reason) ->
+            emit3DTilesLayerFailure(runtimeLayer, reason, null)
+        }
+    }
+
+    private fun emit3DTilesLayerFailure(
+        runtimeLayer: Vectorra3DTilesRuntimeLayer,
+        message: String,
+        cause: Throwable?
+    ) {
+        emitResourceStatus(
+            kind = VectorraResourceKind.TILES3D,
+            sourceId = runtimeLayer.source.id,
+            layerId = runtimeLayer.layer.id,
+            state = VectorraResourceLoadState.FAILED,
+            eventSource = VectorraResourceEventSource.ENGINE,
+            error = VectorraResourceLoadError(
+                type = VectorraResourceErrorType.RESOURCE,
+                message = message,
+                cause = cause
+            )
+        )
+    }
+
+    private fun CameraState.to3DTilesCamera(): Vectorra3DTilesCamera {
+        val position = wgs84DegreesToEcef(longitude, latitude, cameraHeightMetersForZoom(zoom))
+        val directionLength = sqrt(
+            position.x * position.x +
+                position.y * position.y +
+                position.z * position.z
+        ).coerceAtLeast(1.0)
+        return Vectorra3DTilesCamera(
+            positionX = position.x,
+            positionY = position.y,
+            positionZ = position.z,
+            directionX = -position.x / directionLength,
+            directionY = -position.y / directionLength,
+            directionZ = -position.z / directionLength,
+            verticalFovDegrees = 60.0,
+            viewportHeightPixels = 1080
+        )
+    }
+
+    private inner class Native3DTilesContentRenderer : Vectorra3DTilesContentRenderer {
+        override fun addContent(input: Vectorra3DTilesRendererContentInput) {
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                mainHandler.post { addContent(input) }
+                return
+            }
+            ifOpen {
+                VectorraNative.add3DTilesRendererContent(
+                    handle = nativeHandle,
+                    id = input.nativeContentId,
+                    renderUri = input.renderUri,
+                    transformKind = input.nativeTransformKind(),
+                    transformMatrix = input.nativeMatrix(),
+                    ecefX = input.nativeEcefOrigin()[0],
+                    ecefY = input.nativeEcefOrigin()[1],
+                    ecefZ = input.nativeEcefOrigin()[2],
+                    visible = input.visible
+                )
+            }
+        }
+
+        override fun removeContent(nativeContentId: String) {
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                mainHandler.post { removeContent(nativeContentId) }
+                return
+            }
+            ifOpen {
+                VectorraNative.remove3DTilesRendererContent(nativeHandle, nativeContentId)
+            }
+        }
+    }
+
     private inline fun ifOpen(block: () -> Unit) {
         if (!closed.get()) {
             block()
@@ -1074,7 +1239,15 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     tiles3DLayers[layer.id] = Vectorra3DTilesRuntimeLayer(
                         source = source,
                         layer = layer,
-                        tileset = tileset
+                        tileset = tileset,
+                        loadGeneration = loadGeneration,
+                        contentLifecycle = Vectorra3DTilesContentLifecycle(
+                            layerId = layer.id,
+                            sourceId = source.id,
+                            headers = tileNetworkConfig.headersFor(source.id) + source.headers,
+                            contentCacheDirectory = File(tiles3DContentCacheDirectory, layer.id),
+                            renderer = tiles3DContentRenderer
+                        )
                     )
                     emitResourceStatus(
                         kind = VectorraResourceKind.TILES3D,
@@ -1085,6 +1258,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     )
                 }
             }
+            schedule3DTilesTraversal()
         } catch (error: Throwable) {
             if (closed.get()) {
                 return
@@ -1247,6 +1421,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             synchronized(tiles3DRuntimeLock) {
                 tiles3DLayers.clear()
                 tiles3DLoadGenerationByLayerId.clear()
+                tiles3DTraversalScheduled = false
             }
             VectorraNative.destroy(nativeHandle)
         }
@@ -1260,6 +1435,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MIN_PITCH = 0.0
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
+        const val WGS84_RADIUS_METERS = 6_378_137.0
 
         data class WorldPoint(val x: Double, val y: Double)
 
@@ -1354,6 +1530,26 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         fun Map<String, String>.toNameArray(): Array<String> = keys.toTypedArray()
 
         fun Map<String, String>.toValueArray(): Array<String> = values.toTypedArray()
+
+        fun wgs84DegreesToEcef(
+            longitudeDegrees: Double,
+            latitudeDegrees: Double,
+            heightMeters: Double
+        ): EcefPoint {
+            val longitude = Math.toRadians(longitudeDegrees)
+            val latitude = Math.toRadians(latitudeDegrees)
+            val radius = WGS84_RADIUS_METERS + heightMeters
+            val cosLatitude = cos(latitude)
+            return EcefPoint(
+                x = radius * cosLatitude * cos(longitude),
+                y = radius * cosLatitude * sin(longitude),
+                z = radius * sin(latitude)
+            )
+        }
+
+        fun cameraHeightMetersForZoom(zoom: Double): Double {
+            return (WGS84_RADIUS_METERS / 2.0.pow(zoom.coerceIn(MIN_ZOOM, MAX_ZOOM))).coerceAtLeast(10.0)
+        }
     }
 }
 
@@ -1361,5 +1557,18 @@ private data class Vectorra3DTilesRuntimeLayer(
     val source: Vectorra3DTilesSource,
     val layer: Vectorra3DTilesLayer,
     val tileset: VectorraTileset3D,
-    val contentIds: Set<String> = emptySet()
+    val loadGeneration: Long,
+    val contentLifecycle: Vectorra3DTilesContentLifecycle
+)
+
+private data class Vectorra3DTilesRuntimeContentTask(
+    val layerId: String,
+    val loadGeneration: Long,
+    val task: Vectorra3DTilesContentLoadTask
+)
+
+private data class EcefPoint(
+    val x: Double,
+    val y: Double,
+    val z: Double
 )

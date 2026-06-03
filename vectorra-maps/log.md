@@ -427,3 +427,45 @@ Known remaining Phase 1 work:
 
 - P1.T6 is implemented as a tested parser/content-preparation core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
 - P1.T7 is next: sample/device smoke for formal `Vectorra3DTiles*` loading with lifecycle validation once live scheduling is connected.
+
+### P1.T7 Prework - Live 3D Tiles Scheduling
+
+Continued Phase 1 by connecting the tested 3D Tiles traversal and content lifecycle cores to the live `VectorraMapEngine` runtime.
+
+Completed:
+
+- Added engine-owned `Vectorra3DTilesTraversal` and `Vectorra3DTilesContentLifecycle` instances for formal `Vectorra3DTiles*` layers.
+- Created a native renderer adapter that submits lifecycle renderer inputs to `VectorraNative.add3DTilesRendererContent` and unloads via `remove3DTilesRendererContent`.
+- Added per-layer content cache directories for renderer-ready GLB/GLTF and extracted b3dm inner GLB content.
+- After tileset load, the engine now schedules a traversal pass instead of stopping at tileset parsing.
+- Camera updates now coalesce traversal work through a frame callback, so pan/zoom changes can request and unload 3D Tiles content.
+- Traversal output now feeds the content lifecycle, which deduplicates in-flight/loaded/failed content and emits load tasks.
+- Remote content load tasks now execute through `TileResourceFetcher`, preserving the P1.T2 scheduler/interceptor/cache path.
+- Remote content completion re-enters the lifecycle with layer generation checks so stale results after remove/re-add do not render.
+- Lifecycle renderer calls are posted to the main thread before entering JNI.
+- Removing a 3D Tiles layer now cancels lifecycle state and unloads renderer content through the lifecycle owner.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Device smoke note:
+
+- Installed and launched `vectorra-sample-arm64-v8a-debug.apk` on device `2312DRAABC`.
+- The app stayed in foreground and logcat showed continuous `rocky_jni` frame updates without `FATAL EXCEPTION`, `AndroidRuntime`, or ANR in the filtered output.
+- The attempted coordinate tap did not provide valid P1.T7 3D Tiles evidence; filtered logs showed the model/C130 path was triggered instead of a formal `Vectorra3DTiles*` load.
+
+Known remaining Phase 1 work:
+
+- Run a focused P1.T7 device smoke with reliable UI automation or a dedicated sample trigger for the `3D Tiles` button.
+- Add/remove/re-add, rotate or pause/resume, screenshot, and bad tileset validation still need to be executed against the live scheduling path.
