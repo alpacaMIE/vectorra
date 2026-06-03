@@ -36,6 +36,7 @@ Then verify the sample from the published AAR:
 - [API stability](docs/beta/api-stability.md)
 - [Public API surface](docs/beta/public-api-surface.md)
 - [Diagnostics and troubleshooting](docs/beta/diagnostics-troubleshooting.md)
+- [ABI and device matrix](docs/beta/abi-device-matrix.md)
 - [Offline prefetch and cache](docs/beta/offline-prefetch-cache.md)
 - [MBTiles offline source](docs/beta/mbtiles-offline-source.md)
 - [Basic MVT](docs/beta/basic-mvt.md)

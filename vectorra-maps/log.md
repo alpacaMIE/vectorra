@@ -2227,3 +2227,52 @@ Results:
 Known remaining work:
 
 - A published-AAR device startup smoke still depends on adb returning to `device`.
+
+### P4.T6 ABI Packaging Matrix
+
+Verified local ABI packaging artifacts and documented the remaining device matrix gate.
+
+Completed:
+
+- Added `docs/beta/abi-device-matrix.md`.
+- Linked the ABI/device matrix from `README.md`.
+- Updated `docs/beta/release-versioning.md` to use the new ABI/device matrix document for the Android 1.0 hardening gate.
+- Ran the sample debug build and full debug assemble.
+- Inspected split and universal sample APKs for expected native library entries.
+- Inspected debug and release SDK AARs for expected native library entries.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps` and `D:\workspace\code\vectorra`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug assembleDebug
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+foreach ($apk in Get-ChildItem -Path vectorra-maps\vectorra-sample\build\outputs\apk\debug -Filter *.apk) {
+    $zip=[System.IO.Compression.ZipFile]::OpenRead($apk.FullName)
+    $zip.Entries | ForEach-Object { $_.FullName } | Where-Object { $_ -match '^lib/.*/lib(vectorra_jni|rocky)\.so$' } | Sort-Object
+    $zip.Dispose()
+}
+foreach ($aar in Get-ChildItem -Path vectorra-maps\vectorra-maps\build\outputs\aar -Filter *.aar) {
+    $zip=[System.IO.Compression.ZipFile]::OpenRead($aar.FullName)
+    $zip.Entries | ForEach-Object { $_.FullName } | Where-Object { $_ -match '^jni/.*/lib(vectorra_jni|rocky)\.so$' } | Sort-Object
+    $zip.Dispose()
+}
+
+& "$env:ANDROID_HOME\platform-tools\adb.exe" devices -l
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug assembleDebug` passed.
+- `vectorra-sample-arm64-v8a-debug.apk` contains `lib/arm64-v8a/librocky.so` and `lib/arm64-v8a/libvectorra_jni.so`.
+- `vectorra-sample-x86_64-debug.apk` contains `lib/x86_64/librocky.so` and `lib/x86_64/libvectorra_jni.so`.
+- `vectorra-sample-universal-debug.apk` contains both `arm64-v8a` and `x86_64` native libraries.
+- `vectorra-maps-debug.aar` and `vectorra-maps-release.aar` both contain `jni/arm64-v8a/librocky.so`, `jni/arm64-v8a/libvectorra_jni.so`, `jni/x86_64/librocky.so`, and `jni/x86_64/libvectorra_jni.so`.
+- The sample build emitted the existing non-fatal strip warning for `librocky.so` and `libvectorra_jni.so`, then packaged the libraries as-is.
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- P4.T6 is not fully complete until at least one real Vulkan Android device runs the full smoke matrix and records model/API/ABI/GPU/Vulkan details.

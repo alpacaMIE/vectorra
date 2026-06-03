@@ -53,4 +53,4 @@ Before publishing a Beta artifact:
 
 The published-AAR sample build is required because it catches missing Maven metadata, native libraries, resources, and consumer rules that project dependency builds can hide.
 
-For Android 1.0 hardening, also run the device smoke matrix from `docs/继续开发计划.md` before declaring release readiness. If a device gate cannot run, record it as a release risk instead of silently treating the artifact as fully verified.
+For Android 1.0 hardening, also run the [ABI and device matrix](abi-device-matrix.md) before declaring release readiness. If a device gate cannot run, record it as a release risk instead of silently treating the artifact as fully verified.
