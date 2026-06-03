@@ -1988,3 +1988,38 @@ Known remaining work:
 
 - A future actual `0.8.0-beta.1` release still requires bumping `VECTORRA_VERSION` and rerunning the published-AAR gate for that bumped version.
 - Device smoke remains a release-risk item until adb reports a real device as `device`.
+
+### P4.T1 Public API Surface Inventory
+
+Added an explicit public API inventory for the Android Beta hardening pass.
+
+Completed:
+
+- Added `docs/beta/public-api-surface.md`.
+- Grouped current source SDK entry points by core map/lifecycle, camera, diagnostics, raster/terrain, models, location, annotations/query, MBTiles raster, 3D Tiles parsing, MVT decoding, and SDK metadata.
+- Separated unpublished development APIs for 3D Tiles runtime, vector tile runtime, offline prefetch/cache, MVT MBTiles, and redacted diagnostics.
+- Documented that `VectorraMap.add3DTilesModelLayer(...)` is deprecated experimental smoke-only API and not the Android 1.0 3D Tiles integration path.
+- Documented implementation-public areas that apps must not treat as stable contracts.
+- Linked the inventory from `README.md` and `docs/beta/api-stability.md`.
+- Adjusted `docs/beta/api-stability.md` so shared resource status APIs are listed in the current source development boundary while `VECTORRA_VERSION` remains `0.5.0-beta.1`.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "public-api-surface|Public API surface|Current Source SDK Entry Points|Unpublished Development APIs|Shared resource status APIs|RedactingTileLogger|VectorraResourceStatus|add3DTilesModelLayer" .\vectorra-maps\README.md .\vectorra-maps\docs\beta .\vectorra-maps\vectorra-maps\src\main\java
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Documentation search found the public API inventory, README/API stability links, source/development boundary labels, redacted logging, resource status, and deprecated 3D Tiles smoke entry.
+- `:vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*"` passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Before a 1.0 release candidate, every supported public API should either remain in the inventory or be moved behind an internal boundary.
+- Device smoke remains blocked by adb reporting the physical device as `offline`.

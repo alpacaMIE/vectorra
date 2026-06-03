@@ -4,6 +4,8 @@ Vectorra Maps publishes `0.5.0-beta.1` as the current Beta artifact. The current
 
 Use the published coordinates in integration docs for external apps. Treat APIs marked with a later `@VectorraBetaApi` version than `VectorraSdk.VERSION` as source-tree development APIs until that version is published.
 
+For the current API inventory, see [Public API surface](public-api-surface.md).
+
 ## Published Beta Boundary
 
 - `VectorraMapView`
@@ -15,9 +17,6 @@ Use the published coordinates in integration docs for external apps. Treat APIs 
 - `VectorraMapErrorListener`
 - `VectorraMapLoadError`
 - `VectorraMapLoadState`
-- `VectorraResourceStatus`
-- `VectorraResourceLoadState`
-- `VectorraResourceLoadError`
 - `VectorraSurfaceLifecycleState`
 - Basic raster and DEM layer entry points.
 - 3D terrain source and options APIs.
@@ -31,6 +30,7 @@ Present in the current source tree, but not published until the project version 
 
 - Formal 3D Tiles runtime source/layer/options APIs.
 - Vector tile source/layer APIs and basic MVT rendering/query support.
+- Shared resource status APIs.
 - Redacted tile request logging.
 - Offline region prefetch, async prefetch progress/cancel, retry/partial-failure reporting, cache status, and cache cleanup helpers.
 - MVT MBTiles source support.
