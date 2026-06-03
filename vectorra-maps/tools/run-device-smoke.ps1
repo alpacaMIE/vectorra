@@ -188,7 +188,7 @@ Invoke-Adb pull $uiDevice $uiHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $uiDevice | Out-Null
 
 $logHost = Join-Path $out "device-smoke-$stamp.log"
-Invoke-Adb logcat '-d' '-s' VectorraSample VectorraMapEngine vectorra_jni AndroidRuntime libc DEBUG ActivityManager:E ActivityTaskManager:E |
+Invoke-Adb logcat '-d' '-s' VectorraSample VectorraMapView VectorraMapEngine vectorra_jni AndroidRuntime libc DEBUG ActivityManager:E ActivityTaskManager:E |
     Set-Content -Path $logHost
 
 Assert-NonEmptyFile $screenshotHost "screenshot"

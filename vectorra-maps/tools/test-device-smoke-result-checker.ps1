@@ -231,6 +231,9 @@ Invoke-CheckerSuccess $validReport
 $crashReport = New-SmokeFixture "20260604-000001" "$validLogText`nAndroidRuntime FATAL EXCEPTION"
 Invoke-CheckerFailure $crashReport "crash log"
 
+$nativeStartupFailureReport = New-SmokeFixture -Stamp "20260604-000021" -LogText ($validLogText + "`nfailed to start rocky renderer: vsg::Exception result=1 message=Number of vsg:Device allocated exceeds number supported")
+Invoke-CheckerFailure $nativeStartupFailureReport "native renderer startup failure"
+
 $missingActionReport = New-SmokeFixture "20260604-000002" $validLogText "cancel-prefetch"
 Invoke-CheckerFailure $missingActionReport "missing action"
 

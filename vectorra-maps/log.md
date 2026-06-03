@@ -3041,6 +3041,44 @@ Known remaining work:
 - Real-device release smoke remains blocked until `4tqoz9bmfu8t8pr8` reports `device` instead of `offline`.
 - Emulator lifecycle still logs transient `Number of vsg:Device allocated exceeds number supported` during home/resume, then recovers and passes post-recreate snapshot; track separately if it reproduces on hardware.
 
+### Runtime Smoke Lifecycle Failure Tightening
+
+Completed:
+
+- Added `VectorraMapView` to the device smoke logcat tag list so surface lifecycle callbacks are captured with native renderer logs.
+- Added `VectorraMapView` duplicate attach tracking so a `surfaceChanged` callback with the same already attached dimensions does not immediately call native `setSurface` a second time.
+- Tightened `tools/check-device-smoke-result.ps1` so `failed to start rocky renderer` and `Vectorra renderer startup failed` reject a smoke report instead of being hidden by later force-stop/recreate recovery.
+- Added a result-checker fixture that proves native renderer startup failures are rejected.
+- Reclassified the prior emulator smoke evidence in beta docs: the action sequence can complete, but runtime smoke is not accepted while home/resume logs native renderer startup failure.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+.\tools\test-device-smoke-result-checker.ps1
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\run-device-smoke.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\check-device-smoke-result.ps1 -Report .\build\device-smoke\device-smoke-20260604-051027.txt
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `test-device-smoke-result-checker.ps1` passed and now includes the expected native renderer startup failure rejection.
+- PowerShell parser checks passed for the smoke runner, smoke checker, and checker self-test.
+- The latest emulator report `build/device-smoke/device-smoke-20260604-051027.txt` is correctly rejected because it contains `SIGABRT`; the previous emulator reports with `failed to start rocky renderer` are now also invalid under the stricter checker.
+- `:vectorra-sample:assembleDebug` passed.
+
+Rejected approach:
+
+- Deferring native detach on `surfaceDestroyed` while the view remains attached avoids immediate renderer recreation, but it lets the render thread keep using a destroyed swapchain and crashes with `SIGABRT` in `vsg::Swapchain`/`vsgAndroid::Android_Window::resize`. That change was removed.
+
+Known remaining work:
+
+- Fix the same-process Android home/resume lifecycle path in native/rocky integration so releasing the old surface and creating the next VSG window does not hit `Number of vsg:Device allocated exceeds number supported`.
+- Run full emulator smoke again after the native lifecycle fix and require `tools/check-device-smoke-result.ps1` to pass without native startup failures.
+- Real-device smoke remains blocked until `4tqoz9bmfu8t8pr8` reports `device`.
+
 ### Base Raster DEM Smoke Result Evidence Gate
 
 Tightened the Android device smoke result contract so the cold-start base raster and DEM layers must prove loaded resource status through logcat before a device smoke run can pass.

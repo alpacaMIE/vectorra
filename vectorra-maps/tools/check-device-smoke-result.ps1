@@ -382,6 +382,8 @@ $failurePatterns = @(
     'FATAL EXCEPTION',
     'SIGSEGV',
     'SIGABRT',
+    'failed to start rocky renderer',
+    'Vectorra renderer startup failed',
     'ANR in com\.vectorra\.sample'
 )
 foreach ($pattern in $failurePatterns) {

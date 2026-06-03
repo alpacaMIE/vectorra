@@ -41,6 +41,9 @@ class VectorraMapView @JvmOverloads constructor(
     var surfaceLifecycleState: VectorraSurfaceLifecycleState = VectorraSurfaceLifecycleState.NOT_CREATED
         private set
     private var surfaceAvailable = false
+    private var attachedSurface: android.view.Surface? = null
+    private var attachedSurfaceWidth = 0
+    private var attachedSurfaceHeight = 0
     private val lifecycleCallbacks = CopyOnWriteArrayList<VectorraMapLifecycleCallback>()
     private val errorListeners = CopyOnWriteArrayList<VectorraMapErrorListener>()
     private var lastTouchX = 0f
@@ -117,10 +120,25 @@ class VectorraMapView @JvmOverloads constructor(
 
     private fun attachSurfaceIfSized(holder: SurfaceHolder, width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        val error = engine.attachSurface(holder.surface, width, height)
+        val surface = holder.surface
+        if (
+            attachedSurface != null &&
+            attachedSurfaceWidth == width &&
+            attachedSurfaceHeight == height
+        ) {
+            Log.i(TAG, "surface attach skipped; already attached ${width}x${height}")
+            return
+        }
+        val error = engine.attachSurface(surface, width, height)
         if (error == null) {
+            attachedSurface = surface
+            attachedSurfaceWidth = width
+            attachedSurfaceHeight = height
             dispatchMapReady()
         } else {
+            attachedSurface = null
+            attachedSurfaceWidth = 0
+            attachedSurfaceHeight = 0
             dispatchMapLoadError(error)
         }
     }
@@ -129,6 +147,9 @@ class VectorraMapView @JvmOverloads constructor(
         surfaceAvailable = false
         surfaceLifecycleState = VectorraSurfaceLifecycleState.DESTROYED
         Log.i(TAG, "surfaceDestroyed")
+        attachedSurface = null
+        attachedSurfaceWidth = 0
+        attachedSurfaceHeight = 0
         engine.detachSurface()
         dispatchSurfaceLifecycleChanged(surfaceLifecycleState, 0, 0)
     }
@@ -325,6 +346,9 @@ class VectorraMapView @JvmOverloads constructor(
         recycleVelocityTracker()
         holder.removeCallback(this)
         if (surfaceAvailable) {
+            attachedSurface = null
+            attachedSurfaceWidth = 0
+            attachedSurfaceHeight = 0
             engine.detachSurface()
             surfaceAvailable = false
             surfaceLifecycleState = VectorraSurfaceLifecycleState.DESTROYED
