@@ -2569,6 +2569,32 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Android Local Acceptance Rerun
+
+Reran the full documented local Android 1.0 acceptance gate after adding the smoke result checker self-test to the gate.
+
+Completed:
+
+- Ran `tools/check-android-acceptance.ps1` with the project-local Gradle user home.
+- Updated `docs/beta/android-1.0-acceptance.md` with the latest local gate evidence.
+
+Verification command was run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- Gradle local gate passed with `BUILD SUCCESSFUL`.
+- `check-native-libs.ps1` passed.
+- `test-device-smoke-result-checker.ps1` passed.
+- `check-android-acceptance.ps1` reported `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Android Acceptance Documentation Gate Entry
 
 Removed duplicated local gate commands from the Android 1.0 acceptance record.

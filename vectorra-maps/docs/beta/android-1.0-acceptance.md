@@ -22,7 +22,13 @@ $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\tools\test-device-smoke-result-checker.ps1
 ```
 
-Current local result: passed.
+Current local result: passed with `.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home`.
+
+Latest local evidence:
+
+- Gradle local gate: `BUILD SUCCESSFUL`
+- `check-native-libs.ps1`: passed
+- `test-device-smoke-result-checker.ps1`: passed
 
 Validated outputs:
 
