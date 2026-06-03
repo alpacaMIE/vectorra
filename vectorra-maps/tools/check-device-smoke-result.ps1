@@ -320,6 +320,7 @@ Assert-NonEmptyFile $uiDump "ui dump"
 Assert-NonEmptyFile $logcat "logcat"
 Assert-PngDimensions $screenshot
 Assert-PngDimensions $zoom3dTilesScreenshot
+Assert-PngVisibleContent $screenshot "final screenshot" 0.10 0.92
 Assert-PngVisibleContent $zoom3dTilesScreenshot "3D Tiles close-zoom screenshot"
 
 $uiText = Get-Content -Path $uiDump -Raw

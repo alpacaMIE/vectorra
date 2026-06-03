@@ -280,6 +280,10 @@ Invoke-CheckerFailure $emptyMetadataReport "empty metadata"
 $blankSnapshotReport = New-SmokeFixture -Stamp "20260604-000006" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=false"
 Invoke-CheckerFailure $blankSnapshotReport "blank snapshot"
 
+$blankFinalScreenshotReport = New-SmokeFixture -Stamp "20260604-000027"
+Write-SolidPng -Path (Join-Path $testRoot "vectorra-smoke-20260604-000027.png") -Argb -16777216
+Invoke-CheckerFailure $blankFinalScreenshotReport "blank final screenshot"
+
 $missing3DTilesZoomSnapshotReport = New-SmokeFixture -Stamp "20260604-000007" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true"
 Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom snapshot"
 
