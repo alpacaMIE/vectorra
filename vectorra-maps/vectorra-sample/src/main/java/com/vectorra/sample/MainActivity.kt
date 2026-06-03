@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +24,7 @@ import com.vectorra.maps.VectorraSurfaceLifecycleState
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -42,6 +44,7 @@ class MainActivity : Activity() {
     private var modelVisible = true
     private var mapLoadErrorSubscription: Closeable? = null
     private var resourceStatusSubscription: Closeable? = null
+    private var mapClickSubscription: Closeable? = null
     private var pendingSmokeAction: String? = null
     private var lastResourceStatusText: String? = null
 
@@ -93,6 +96,12 @@ class MainActivity : Activity() {
                 statusText.text = text
             }
         }
+        mapClickSubscription = mapView.map.addOnMapClickListener { event ->
+            val text = clickStatusText(event.features)
+            Log.i(LOG_TAG, text)
+            statusText.text = text
+            event.features.isNotEmpty()
+        }
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -113,6 +122,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         mapLoadErrorSubscription?.close()
         resourceStatusSubscription?.close()
+        mapClickSubscription?.close()
         if (::mapView.isInitialized) {
             mapView.map.close()
         }
@@ -533,7 +543,17 @@ class MainActivity : Activity() {
         return lastResourceStatusText?.startsWith("tiles3d ") != true
     }
 
+    private fun clickStatusText(features: List<VectorraQueriedFeature>): String {
+        val first = features.firstOrNull()
+            ?: return "Click: no features"
+        val sourceLayer = first.properties["source-layer"]?.let { " source-layer=$it" }.orEmpty()
+        val name = first.properties["name"]?.let { " name=$it" }.orEmpty()
+        val source = first.sourceId?.let { " source=$it" }.orEmpty()
+        return "Click: ${features.size} feature(s) layer=${first.layerId}$source$sourceLayer$name"
+    }
+
     private companion object {
+        const val LOG_TAG = "VectorraSample"
         const val ENABLE_MODEL_SMOKE = true
         const val ENABLE_STARTUP_TERRAIN = false
         const val SAMPLE_MODEL_LAYER_ID = "sample-c130-model"

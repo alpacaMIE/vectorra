@@ -1142,3 +1142,47 @@ Known remaining Phase 2 work:
 - Add a device/UI smoke that performs an actual click/query assertion against the visible MVT layer.
 - Broaden P2.T6 fixtures for cross-tile query ordering and cache-hit tile loads.
 - P2.T7 device smoke remains open for pan/zoom, query, visibility, and remove/re-add.
+
+### P2.T7 MVT Click Query Device Smoke
+
+Continued Phase 2 device smoke coverage by adding a visible sample click-query path for MVT.
+
+Completed:
+
+- Added a sample map click listener that calls the SDK click/query path and displays the hit count plus first feature layer/source/source-layer/name in the status label.
+- Added `VectorraSample` log output for the same click result so adb smoke can capture query evidence.
+- Kept the listener generic for all sample features, while the current MVT smoke proves the loaded MVT store is queried through `queryRenderedFeatures`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell input tap 540 1120
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the MVT sample action.
+- Logcat showed `registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt style=LINE features=2904 coordinates=6748 visible=1`.
+- Logcat showed `applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`.
+- Logcat showed `VectorraSample: Click: 11 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+
+Known remaining Phase 2 work:
+
+- P2.T7 still needs pan/zoom stale-feature device smoke plus visibility and remove/re-add coverage.
+- Broaden P2.T6/P2.T7 fixtures for cross-tile query ordering and cache-hit tile loads.
