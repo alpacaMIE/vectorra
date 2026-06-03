@@ -34,6 +34,7 @@ enum class TileResourceType {
     RASTER,
     VECTOR,
     DEM,
+    TILES3D,
     GLYPH,
     SPRITE,
     UNKNOWN

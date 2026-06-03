@@ -95,6 +95,45 @@ class TileCacheAndSchedulerTest {
     }
 
     @Test
+    fun tileResourceFetcherUsesInterceptorsAndCacheStore() {
+        val root = Files.createTempDirectory("vectorra-resource-fetcher-cache").toFile()
+        try {
+            var calls = 0
+            val fetcher = TileResourceFetcher(
+                cacheDirectory = root,
+                initialConfig = TileNetworkConfig(
+                    interceptors = listOf(
+                        TileRequestInterceptor { chain ->
+                            calls += 1
+                            TileResponse(
+                                request = chain.request,
+                                statusCode = 200,
+                                body = "resource".toByteArray()
+                            )
+                        }
+                    )
+                )
+            )
+            val request = TileRequest(
+                sourceId = "tiles3d",
+                url = "https://assets.example.com/tileset.json",
+                resourceType = TileResourceType.TILES3D
+            )
+
+            val first = fetcher.fetch(request)
+            val second = fetcher.fetch(request)
+
+            assertEquals(1, calls)
+            assertEquals(TileCacheStatus.MISS, first.cacheStatus)
+            assertEquals(TileCacheStatus.MEMORY, second.cacheStatus)
+            assertEquals("resource", second.body.decodeToString())
+            fetcher.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun servesSuccessfulTileFromDiskCacheAcrossExecutors() {
         val root = Files.createTempDirectory("rocky-tile-disk-cache").toFile()
         try {

@@ -21,6 +21,7 @@ import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
+import com.vectorra.maps.network.TileResourceFetcher
 import com.vectorra.maps.network.TileResourceType
 import com.vectorra.maps.network.TileScheme
 import com.vectorra.maps.query.VectorraAnnotationFeature
@@ -42,14 +43,11 @@ import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
 import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
 import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
+import com.vectorra.maps.tiles3d.Vectorra3DTilesTilesetLoader
 import com.vectorra.maps.tiles3d.VectorraTileset3D
-import com.vectorra.maps.tiles3d.VectorraTileset3DParser
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URI
-import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
@@ -65,6 +63,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val closed = AtomicBoolean(false)
     private val nativeHandle: Long = VectorraNative.create()
     private val tileProxyServer = TileProxyServer(File(cacheDirectory, "rocky-tile-cache"))
+    private val tileResourceFetcher = TileResourceFetcher(File(cacheDirectory, "vectorra-resource-cache"))
+    private val tiles3DTilesetLoader = Vectorra3DTilesTilesetLoader { request ->
+        tileResourceFetcher.fetch(request)
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val nativeResourceStatusCallback = object : VectorraNative.ResourceStatusCallback {
         override fun onNativeResourceStatus(
@@ -557,6 +559,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     override fun setTileNetworkConfig(config: TileNetworkConfig) {
         tileNetworkConfig = config
         tileProxyServer.updateConfig(config)
+        tileResourceFetcher.updateConfig(config)
     }
 
     override fun removeLayer(id: String) {
@@ -1057,9 +1060,9 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
 
         try {
-            val tileset = VectorraTileset3DParser.parse(
-                json = readTilesetJson(source),
-                baseUri = source.tilesetUri
+            val tileset = tiles3DTilesetLoader.load(
+                source = source,
+                headers = tileNetworkConfig.headersFor(source.id) + source.headers
             )
             if (closed.get()) {
                 return
@@ -1103,34 +1106,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     )
                 )
             }
-        }
-    }
-
-    private fun readTilesetJson(source: Vectorra3DTilesSource): String {
-        val uri = URI(source.tilesetUri)
-        return when (uri.scheme?.lowercase()) {
-            "http", "https" -> readRemoteTilesetJson(source)
-            "file" -> File(uri).readText()
-            null -> File(source.tilesetUri).readText()
-            else -> throw IllegalArgumentException("Unsupported 3D Tiles tileset URI scheme: ${uri.scheme}")
-        }
-    }
-
-    private fun readRemoteTilesetJson(source: Vectorra3DTilesSource): String {
-        val headers = tileNetworkConfig.headersFor(source.id) + source.headers
-        val connection = URL(source.tilesetUri).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "GET"
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            connection.connectTimeout = TILES3D_CONNECT_TIMEOUT_MILLIS
-            connection.readTimeout = TILES3D_READ_TIMEOUT_MILLIS
-            val statusCode = connection.responseCode
-            if (statusCode !in 200..299) {
-                throw IOException("3D Tiles tileset request failed with HTTP $statusCode.")
-            }
-            return connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
         }
     }
 
@@ -1265,6 +1240,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             clearDrawAnnotations()
             geoJsonIndex.clear()
             tileProxyServer.close()
+            tileResourceFetcher.close()
             mbTilesSources.forEach { it.close() }
             mbTilesSources.clear()
             modelLayerIds.clear()
@@ -1284,8 +1260,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MIN_PITCH = 0.0
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
-        const val TILES3D_CONNECT_TIMEOUT_MILLIS = 10_000
-        const val TILES3D_READ_TIMEOUT_MILLIS = 20_000
 
         data class WorldPoint(val x: Double, val y: Double)
 

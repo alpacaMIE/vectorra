@@ -218,3 +218,36 @@ Known remaining Phase 1 work:
 
 - P1.T2 still needs product-level URI loading behavior: cache/interceptor reuse, stronger base URI fixtures, and explicit bad tileset sample status validation.
 - P1.T3-P1.T6 still need runtime tile traversal, GLB/GLTF content lifecycle, transform composition, and b3dm extraction/rendering through the P1.T0 renderer contract.
+
+### P1.T2 Tileset Loading
+
+Continued Phase 1 by tightening the `tileset.json` loading path for the formal `Vectorra3DTiles*` API.
+
+Completed:
+
+- Added internal `TileResourceFetcher` so non-proxy resources can reuse the same request scheduler, interceptor chain, resilient HTTP executor, and `TileCacheStore` cache owner used by tile requests.
+- Added `TileResourceType.TILES3D` so cache keys and request metadata can distinguish 3D Tiles resources from raster/vector/DEM requests.
+- Added internal `Vectorra3DTilesTilesetLoader` for local path, `file://`, `http`, and `https` tileset loading.
+- Moved 3D Tiles tileset loading out of `VectorraMapEngine` direct `HttpURLConnection` code and into the loader/fetcher boundary.
+- Remote tileset requests now use `TileNetworkConfig` default/source headers, source headers, interceptors, scheduler de-duplication, and `TileCacheStore`.
+- Local path and remote URI fixtures now verify that relative tile content URIs resolve against the normalized tileset file/URL base URI.
+- HTTP error responses fail early and flow back to the unified `TILES3D` resource status failure path in engine.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- Bad tileset UI/device validation is still not run in sample; it needs a focused P1 device smoke once traversal/content rendering is further along.
+- P1.T3 is next: runtime tile state and traversal with SSE/LOD, request priority, unload budget, and `ADD`/`REPLACE`.
