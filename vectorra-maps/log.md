@@ -1716,3 +1716,38 @@ Known remaining work:
 
 - Define retry and partial failure policy for prefetch tasks.
 - Add sample UI/device smoke for prefetch progress, cancel, cache status, and cleanup once adb is stable.
+
+### P3.T5 Prefetch Retry and Partial Failure Policy
+
+Continued prefetch productization by making retry and partial-failure reporting explicit in the offline API.
+
+Completed:
+
+- Added public beta `VectorraPrefetchOptions` with `maxAttempts` and retryable HTTP status codes.
+- Added public beta `VectorraPrefetchResultStatus` with `SUCCESS`, `PARTIAL_FAILURE`, and `FAILED`.
+- Added `attemptCount` to each `VectorraPrefetchTileResult`.
+- Updated synchronous and asynchronous tile/region prefetch entry points to accept `VectorraPrefetchOptions`.
+- Implemented task-level retry policy in `VectorraPrefetchTaskRunner`, retrying only failed tile results whose status code is in `retryStatusCodes` and only up to `maxAttempts`.
+- Kept completed tile cache writes and result aggregation intact when later tiles fail, so partial success is visible through `VectorraPrefetchResult.status`.
+- Added tests for result status, option validation, retry success, retry exhaustion, and non-retryable failures.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.VectorraPrefetchTaskRunnerTest" --tests "com.vectorra.maps.offline.VectorraOfflineManagerModelsTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Target prefetch task/offline manager tests passed.
+- Offline and network unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Add sample UI/device smoke for prefetch progress, cancel, cache status, and cleanup once adb is stable.
+- Add product-facing documentation for offline region prefetch and cache lifecycle.

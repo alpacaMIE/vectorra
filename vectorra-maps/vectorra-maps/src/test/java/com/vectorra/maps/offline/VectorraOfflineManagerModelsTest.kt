@@ -65,5 +65,47 @@ class VectorraOfflineManagerModelsTest {
         assertEquals(1, result.completedCount)
         assertEquals(1, result.failedCount)
         assertEquals(12L, result.totalBytes)
+        assertEquals(VectorraPrefetchResultStatus.PARTIAL_FAILURE, result.status)
+    }
+
+    @Test
+    fun prefetchResultReportsSuccessAndFailedStatus() {
+        val request = TileRequest(url = "https://tiles.example.com/tile.pbf")
+        val success = VectorraPrefetchResult(
+            listOf(
+                VectorraPrefetchTileResult(
+                    request = request,
+                    statusCode = 200,
+                    cacheStatus = TileCacheStatus.MISS,
+                    byteCount = 1
+                )
+            )
+        )
+        val failed = VectorraPrefetchResult(
+            listOf(
+                VectorraPrefetchTileResult(
+                    request = request,
+                    statusCode = 500,
+                    cacheStatus = TileCacheStatus.MISS,
+                    byteCount = 0,
+                    errorMessage = "server error"
+                )
+            )
+        )
+        val empty = VectorraPrefetchResult(emptyList())
+
+        assertEquals(VectorraPrefetchResultStatus.SUCCESS, success.status)
+        assertEquals(VectorraPrefetchResultStatus.FAILED, failed.status)
+        assertEquals(VectorraPrefetchResultStatus.SUCCESS, empty.status)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsInvalidPrefetchAttempts() {
+        VectorraPrefetchOptions(maxAttempts = 0)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsInvalidRetryStatusCode() {
+        VectorraPrefetchOptions(retryStatusCodes = setOf(99))
     }
 }

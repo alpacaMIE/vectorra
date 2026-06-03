@@ -1,11 +1,13 @@
 package com.vectorra.maps.offline
 
+import com.vectorra.maps.network.TileCacheStatus
 import com.vectorra.maps.network.TileRequest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class VectorraPrefetchTaskRunner(
     private val requests: List<TileRequest>,
+    private val options: VectorraPrefetchOptions = VectorraPrefetchOptions(),
     private val listener: VectorraPrefetchProgressListener? = null,
     private val fetchTile: (TileRequest) -> VectorraPrefetchTileResult
 ) : VectorraPrefetchTask {
@@ -49,7 +51,7 @@ internal class VectorraPrefetchTaskRunner(
                 if (canceled.get()) {
                     break
                 }
-                val result = fetchTile(request)
+                val result = fetchWithPolicy(request)
                 val nextProgress = synchronized(lock) {
                     results += result
                     currentProgress = currentProgress.copy(
@@ -73,5 +75,32 @@ internal class VectorraPrefetchTaskRunner(
             currentProgress
         }
         listener?.onProgress(finished)
+    }
+
+    private fun fetchWithPolicy(request: TileRequest): VectorraPrefetchTileResult {
+        var attempt = 0
+        var lastResult: VectorraPrefetchTileResult
+        do {
+            attempt += 1
+            lastResult = try {
+                fetchTile(request).copy(attemptCount = attempt)
+            } catch (error: Throwable) {
+                VectorraPrefetchTileResult(
+                    request = request,
+                    statusCode = 599,
+                    cacheStatus = TileCacheStatus.MISS,
+                    byteCount = 0,
+                    errorMessage = error.message,
+                    attemptCount = attempt
+                )
+            }
+        } while (shouldRetry(lastResult, attempt))
+        return lastResult
+    }
+
+    private fun shouldRetry(result: VectorraPrefetchTileResult, attempt: Int): Boolean {
+        return !result.isSuccess &&
+            attempt < options.maxAttempts &&
+            result.statusCode in options.retryStatusCodes
     }
 }

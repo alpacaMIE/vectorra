@@ -36,10 +36,22 @@ data class VectorraPrefetchTileResult(
     val statusCode: Int,
     val cacheStatus: TileCacheStatus,
     val byteCount: Int,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val attemptCount: Int = 1
 ) {
+    init {
+        require(attemptCount >= 1) { "Prefetch tile result attemptCount must be at least 1." }
+    }
+
     val isSuccess: Boolean
         get() = statusCode in 200..299 && errorMessage == null
+}
+
+@VectorraBetaApi("0.8.0-beta.1")
+enum class VectorraPrefetchResultStatus {
+    SUCCESS,
+    PARTIAL_FAILURE,
+    FAILED
 }
 
 @VectorraBetaApi("0.8.0-beta.1")
@@ -54,6 +66,30 @@ data class VectorraPrefetchResult(
 
     val totalBytes: Long
         get() = tiles.sumOf { it.byteCount.toLong() }
+
+    val status: VectorraPrefetchResultStatus
+        get() = when {
+            failedCount == 0 -> VectorraPrefetchResultStatus.SUCCESS
+            completedCount == 0 -> VectorraPrefetchResultStatus.FAILED
+            else -> VectorraPrefetchResultStatus.PARTIAL_FAILURE
+        }
+}
+
+@VectorraBetaApi("0.8.0-beta.1")
+data class VectorraPrefetchOptions(
+    val maxAttempts: Int = 1,
+    val retryStatusCodes: Set<Int> = DEFAULT_RETRY_STATUS_CODES
+) {
+    init {
+        require(maxAttempts >= 1) { "Prefetch maxAttempts must be at least 1." }
+        require(retryStatusCodes.all { it in 100..599 }) {
+            "Prefetch retryStatusCodes must contain valid HTTP status codes."
+        }
+    }
+
+    companion object {
+        val DEFAULT_RETRY_STATUS_CODES: Set<Int> = setOf(408, 429, 500, 502, 503, 504)
+    }
 }
 
 @VectorraBetaApi("0.8.0-beta.1")
@@ -111,21 +147,27 @@ interface VectorraOfflineManager {
 
     fun clearCache()
 
-    fun prefetchTiles(requests: List<TileRequest>): VectorraPrefetchResult
+    fun prefetchTiles(
+        requests: List<TileRequest>,
+        options: VectorraPrefetchOptions = VectorraPrefetchOptions()
+    ): VectorraPrefetchResult
 
     fun prefetchRegion(
         region: VectorraOfflineRegion,
-        sources: List<VectorraOfflineTileSource>
+        sources: List<VectorraOfflineTileSource>,
+        options: VectorraPrefetchOptions = VectorraPrefetchOptions()
     ): VectorraPrefetchResult
 
     fun prefetchTilesAsync(
         requests: List<TileRequest>,
+        options: VectorraPrefetchOptions = VectorraPrefetchOptions(),
         listener: VectorraPrefetchProgressListener? = null
     ): VectorraPrefetchTask
 
     fun prefetchRegionAsync(
         region: VectorraOfflineRegion,
         sources: List<VectorraOfflineTileSource>,
+        options: VectorraPrefetchOptions = VectorraPrefetchOptions(),
         listener: VectorraPrefetchProgressListener? = null
     ): VectorraPrefetchTask
 }

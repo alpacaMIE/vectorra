@@ -53,6 +53,7 @@ import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.offline.VectorraOfflineManager
 import com.vectorra.maps.offline.VectorraOfflineRegion
 import com.vectorra.maps.offline.VectorraOfflineTileSource
+import com.vectorra.maps.offline.VectorraPrefetchOptions
 import com.vectorra.maps.offline.VectorraPrefetchResult
 import com.vectorra.maps.offline.VectorraPrefetchTileResult
 import com.vectorra.maps.offline.VectorraPrefetchProgressListener
@@ -1706,30 +1707,41 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             tileResourceFetcher.clearCache()
         }
 
-        override fun prefetchTiles(requests: List<TileRequest>): VectorraPrefetchResult {
-            return VectorraPrefetchResult(
-                tiles = tileResourceFetcher.prefetch(requests).map { it.toPrefetchTileResult() }
-            )
+        override fun prefetchTiles(
+            requests: List<TileRequest>,
+            options: VectorraPrefetchOptions
+        ): VectorraPrefetchResult {
+            require(requests.isNotEmpty()) { "Prefetch requests must not be empty." }
+            return VectorraPrefetchTaskRunner(
+                requests = requests,
+                options = options
+            ) { request ->
+                tileResourceFetcher.fetch(request).toPrefetchTileResult()
+            }.await()
         }
 
         override fun prefetchRegion(
             region: VectorraOfflineRegion,
-            sources: List<VectorraOfflineTileSource>
+            sources: List<VectorraOfflineTileSource>,
+            options: VectorraPrefetchOptions
         ): VectorraPrefetchResult {
             val requests = region.toTileRequests(sources)
             return if (requests.isEmpty()) {
                 VectorraPrefetchResult(emptyList())
             } else {
-                prefetchTiles(requests)
+                prefetchTiles(requests, options)
             }
         }
 
         override fun prefetchTilesAsync(
             requests: List<TileRequest>,
+            options: VectorraPrefetchOptions,
             listener: VectorraPrefetchProgressListener?
         ): VectorraPrefetchTask {
+            require(requests.isNotEmpty()) { "Prefetch requests must not be empty." }
             return VectorraPrefetchTaskRunner(
                 requests = requests,
+                options = options,
                 listener = listener
             ) { request ->
                 tileResourceFetcher.fetch(request).toPrefetchTileResult()
@@ -1739,11 +1751,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         override fun prefetchRegionAsync(
             region: VectorraOfflineRegion,
             sources: List<VectorraOfflineTileSource>,
+            options: VectorraPrefetchOptions,
             listener: VectorraPrefetchProgressListener?
         ): VectorraPrefetchTask {
             val requests = region.toTileRequests(sources)
             return VectorraPrefetchTaskRunner(
                 requests = requests,
+                options = options,
                 listener = listener
             ) { request ->
                 tileResourceFetcher.fetch(request).toPrefetchTileResult()

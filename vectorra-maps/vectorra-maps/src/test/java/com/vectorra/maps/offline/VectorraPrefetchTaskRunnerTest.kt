@@ -116,4 +116,89 @@ class VectorraPrefetchTaskRunnerTest {
         assertEquals(0, result.tiles.size)
         assertEquals(0, task.progress.totalCount)
     }
+
+    @Test
+    fun retriesRetryableFailureUntilSuccess() {
+        val calls = AtomicInteger(0)
+        val request = TileRequest(url = "https://tiles.example.com/retry.png")
+        val task = VectorraPrefetchTaskRunner(
+            requests = listOf(request),
+            options = VectorraPrefetchOptions(maxAttempts = 3)
+        ) { tileRequest ->
+            val attempt = calls.incrementAndGet()
+            if (attempt == 1) {
+                VectorraPrefetchTileResult(
+                    request = tileRequest,
+                    statusCode = 503,
+                    cacheStatus = TileCacheStatus.MISS,
+                    byteCount = 0,
+                    errorMessage = "temporarily unavailable"
+                )
+            } else {
+                VectorraPrefetchTileResult(
+                    request = tileRequest,
+                    statusCode = 200,
+                    cacheStatus = TileCacheStatus.MISS,
+                    byteCount = 8
+                )
+            }
+        }
+
+        val result = task.await()
+
+        assertEquals(2, calls.get())
+        assertEquals(VectorraPrefetchResultStatus.SUCCESS, result.status)
+        assertEquals(2, result.tiles.single().attemptCount)
+        assertEquals(8L, result.totalBytes)
+    }
+
+    @Test
+    fun stopsRetryingAfterMaxAttempts() {
+        val calls = AtomicInteger(0)
+        val request = TileRequest(url = "https://tiles.example.com/fail.png")
+        val task = VectorraPrefetchTaskRunner(
+            requests = listOf(request),
+            options = VectorraPrefetchOptions(maxAttempts = 2)
+        ) { tileRequest ->
+            calls.incrementAndGet()
+            VectorraPrefetchTileResult(
+                request = tileRequest,
+                statusCode = 503,
+                cacheStatus = TileCacheStatus.MISS,
+                byteCount = 0,
+                errorMessage = "temporarily unavailable"
+            )
+        }
+
+        val result = task.await()
+
+        assertEquals(2, calls.get())
+        assertEquals(VectorraPrefetchResultStatus.FAILED, result.status)
+        assertEquals(2, result.tiles.single().attemptCount)
+    }
+
+    @Test
+    fun doesNotRetryNonRetryableFailure() {
+        val calls = AtomicInteger(0)
+        val request = TileRequest(url = "https://tiles.example.com/missing.png")
+        val task = VectorraPrefetchTaskRunner(
+            requests = listOf(request),
+            options = VectorraPrefetchOptions(maxAttempts = 3)
+        ) { tileRequest ->
+            calls.incrementAndGet()
+            VectorraPrefetchTileResult(
+                request = tileRequest,
+                statusCode = 404,
+                cacheStatus = TileCacheStatus.MISS,
+                byteCount = 0,
+                errorMessage = "missing"
+            )
+        }
+
+        val result = task.await()
+
+        assertEquals(1, calls.get())
+        assertEquals(VectorraPrefetchResultStatus.FAILED, result.status)
+        assertEquals(1, result.tiles.single().attemptCount)
+    }
 }
