@@ -94,6 +94,10 @@ if ($runnerText -notmatch 'Capture-Screenshot\s+"zoom-3dtiles"\s+"zoom3dTilesScr
     $checkerTestText -notmatch 'missing 3D Tiles close-zoom screenshot') {
     throw "device smoke scripts missing 3D Tiles close-zoom screenshot artifact coverage"
 }
+if ($checkerText -notmatch 'Assert-PngVisibleContent\s+\$zoom3dTilesScreenshot' -or
+    $checkerTestText -notmatch 'blank 3D Tiles close-zoom screenshot') {
+    throw "device smoke scripts missing 3D Tiles close-zoom screenshot visible-pixel coverage"
+}
 if ($checkerTestText -notmatch 'missing 3D Tiles high LOD native evidence') {
     throw "test-device-smoke-result-checker.ps1 missing 3D Tiles high LOD failure fixture"
 }

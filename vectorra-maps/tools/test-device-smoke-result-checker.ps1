@@ -19,6 +19,7 @@ if (Test-Path $testRoot) {
     Remove-Item -LiteralPath $testRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+Add-Type -AssemblyName System.Drawing
 
 $requiredActions = @(
     "mvt",
@@ -236,6 +237,23 @@ function Invoke-CheckerFailure {
     }
 }
 
+function Write-SolidPng {
+    param([string]$Path, [int]$Argb)
+    $bitmap = [System.Drawing.Bitmap]::new(8, 8)
+    try {
+        $color = [System.Drawing.Color]::FromArgb($Argb)
+        for ($y = 0; $y -lt $bitmap.Height; $y++) {
+            for ($x = 0; $x -lt $bitmap.Width; $x++) {
+                $bitmap.SetPixel($x, $y, $color)
+            }
+        }
+        $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $bitmap.Dispose()
+    }
+}
+
 $validReport = New-SmokeFixture "20260604-000000"
 Invoke-CheckerSuccess $validReport
 
@@ -300,6 +318,10 @@ Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path
 
 $mismatched3dTilesZoomScreenshotReport = New-SmokeFixture -Stamp "20260604-000025" -MismatchedArtifact "zoom3dTilesScreenshot"
 Invoke-CheckerFailure $mismatched3dTilesZoomScreenshotReport "mismatched 3D Tiles close-zoom screenshot path"
+
+$blank3dTilesZoomScreenshotReport = New-SmokeFixture -Stamp "20260604-000026"
+Write-SolidPng -Path (Join-Path $testRoot "vectorra-smoke-zoom-3dtiles-20260604-000026.png") -Argb -16777216
+Invoke-CheckerFailure $blank3dTilesZoomScreenshotReport "blank 3D Tiles close-zoom screenshot"
 
 $mismatchedInstalledApkReport = New-SmokeFixture `
     -Stamp "20260604-000016" `

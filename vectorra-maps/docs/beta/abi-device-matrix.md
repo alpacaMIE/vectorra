@@ -49,7 +49,7 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 
 The script first requires `adb devices -l` to complete successfully, then installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, runs a `post-recreate-snapshot` action, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
 The smoke contract self-test verifies that the runner action list, result-checker required action list, fixture action list, sample action constants, and post-recreate snapshot markers stay aligned.
-The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, native renderer startup failure, missing-action, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot logs, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, missing base raster loaded evidence, missing 3D Tiles zoom-snapshot, missing 3D Tiles high-LOD native render evidence, missing 3D Tiles runtime/re-add evidence, missing MVT pan query, hidden no-features, removed no-features evidence, missing MVT MBTiles native render evidence, missing offline prefetch cleanup evidence, and missing GeoJSON/Draw/Location interaction evidence failures before the device run.
+The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, native renderer startup failure, missing-action, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot logs, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, missing base raster loaded evidence, missing 3D Tiles zoom-snapshot, missing or blank 3D Tiles close-zoom screenshot evidence, missing 3D Tiles high-LOD native render evidence, missing 3D Tiles runtime/re-add evidence, missing MVT pan query, hidden no-features, removed no-features evidence, missing MVT MBTiles native render evidence, missing offline prefetch cleanup evidence, and missing GeoJSON/Draw/Location interaction evidence failures before the device run.
 
 After a run completes, verify the generated artifacts:
 
@@ -57,7 +57,7 @@ After a run completes, verify the generated artifacts:
 .\tools\check-device-smoke-result.ps1
 ```
 
-This validates non-empty device metadata records, including the Vulkan metadata line, install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action and lifecycle completion records through the `post-recreate-snapshot` action, positive-byte close-zoom 3D Tiles screenshot, final screenshot, UI, and log artifact records that point to the checked files, screenshot PNG signature and dimensions, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native high-LOD render/bad-tileset/re-add log output, MVT native render, pan action, hidden no-features, remove/re-add, MVT MBTiles request/native render log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, UI package ownership, common crash patterns, and native renderer startup failure patterns.
+This validates non-empty device metadata records, including the Vulkan metadata line, install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action and lifecycle completion records through the `post-recreate-snapshot` action, positive-byte close-zoom 3D Tiles screenshot, final screenshot, UI, and log artifact records that point to the checked files, screenshot PNG signature and dimensions, close-zoom 3D Tiles visible-pixel content, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native high-LOD render/bad-tileset/re-add log output, MVT native render, pan action, hidden no-features, remove/re-add, MVT MBTiles request/native render log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, UI package ownership, common crash patterns, and native renderer startup failure patterns.
 
 By default the script selects the split sample APK from the device ABI list:
 
@@ -92,7 +92,7 @@ Smoke actions:
 - Location indicator, heading follow, and clear
 - Initial and post-recreate snapshot nonblank results
 - 3D Tiles close-zoom snapshot nonblank result
-- 3D Tiles close-zoom screenshot artifact
+- 3D Tiles close-zoom screenshot artifact and visible-pixel content
 - 3D Tiles load, close zoom, remove/re-add, and bad tileset error
 - Pause/resume or rotation
 - Destroy/recreate
@@ -111,6 +111,6 @@ Verified command:
 
 The emulator gate wraps `run-device-smoke.ps1`, selects the latest generated `device-smoke-*.txt` report, and validates it with `check-device-smoke-result.ps1`.
 
-Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-065746.png`, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs. The latest checked report is `build/device-smoke/device-smoke-20260604-065746.txt`.
+Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-065746.png` with `2573` visible samples, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs. The latest checked report is `build/device-smoke/device-smoke-20260604-065746.txt`.
 
 The emulator runtime gate is accepted as development evidence. The physical real-device release gate remains open; the physical device `4tqoz9bmfu8t8pr8` still reported `offline`.

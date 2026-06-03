@@ -3734,6 +3734,36 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### 3D Tiles Close-Zoom Screenshot Visible-Pixel Gate
+
+Completed:
+
+- Added a visible-pixel check for the close-zoom 3D Tiles screenshot in `tools/check-device-smoke-result.ps1`.
+- The checker samples the middle/lower render area of `zoom3dTilesScreenshot` and rejects screenshots that are valid PNGs but do not contain enough non-black visible pixels.
+- Added a blank close-zoom screenshot failure fixture to `tools/test-device-smoke-result-checker.ps1`.
+- Strengthened `tools/test-device-smoke-contract.ps1` so runner, checker, and fixture visible-pixel coverage stay aligned.
+- Updated Android acceptance, ABI/device matrix, release versioning, and 0.8.0 beta notes to document close-zoom 3D Tiles visible-pixel coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\test-device-smoke-contract.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }; .\tools\test-device-smoke-contract.ps1; .\tools\test-device-smoke-result-checker.ps1; .\tools\check-device-smoke-result.ps1 -Report D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\device-smoke-20260604-065746.txt
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-device-smoke-contract.ps1` passed.
+- `test-device-smoke-result-checker.ps1` passed, including the blank close-zoom 3D Tiles screenshot rejection fixture.
+- The latest real emulator smoke report `build/device-smoke/device-smoke-20260604-065746.txt` passed the stricter checker.
+- The close-zoom screenshot `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-065746.png` produced `2573` visible samples.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
 ### 3D Tiles Close-Zoom Screenshot Smoke Evidence
 
 Completed:

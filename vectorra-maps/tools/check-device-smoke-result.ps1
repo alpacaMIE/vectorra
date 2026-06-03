@@ -176,6 +176,56 @@ function Assert-PngDimensions {
     Write-Host "screenshot PNG dimensions: ${width}x${height}"
 }
 
+function Assert-PngVisibleContent {
+    param(
+        [string]$Path,
+        [string]$Label,
+        [double]$StartYFraction = 0.45,
+        [double]$EndYFraction = 0.92,
+        [int]$MinimumVisibleSamples = 50
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+    try {
+        $width = $bitmap.Width
+        $height = $bitmap.Height
+        if ($width -le 0 -or $height -le 0) {
+            throw "$Label has invalid bitmap dimensions: ${width}x${height}"
+        }
+
+        $startY = [int][Math]::Floor($height * $StartYFraction)
+        $endY = [int][Math]::Ceiling($height * $EndYFraction)
+        if ($startY -ge $endY -or $height -lt 16) {
+            $startY = 0
+            $endY = $height
+        }
+
+        $stepX = [Math]::Max(1, [int][Math]::Floor($width / 100))
+        $stepY = [Math]::Max(1, [int][Math]::Floor(($endY - $startY) / 100))
+        $visibleSamples = 0
+        $totalSamples = 0
+        for ($y = $startY; $y -lt $endY; $y += $stepY) {
+            for ($x = 0; $x -lt $width; $x += $stepX) {
+                $totalSamples++
+                $pixel = $bitmap.GetPixel($x, $y)
+                if (($pixel.R + $pixel.G + $pixel.B) -gt 96) {
+                    $visibleSamples++
+                }
+            }
+        }
+
+        $effectiveMinimum = [Math]::Min($MinimumVisibleSamples, [Math]::Max(1, $totalSamples))
+        if ($visibleSamples -lt $effectiveMinimum) {
+            throw "$Label does not contain enough visible non-black pixels in the render area: samples=$visibleSamples minimum=$effectiveMinimum total=$totalSamples"
+        }
+        Write-Host "$Label visible samples: $visibleSamples"
+    }
+    finally {
+        $bitmap.Dispose()
+    }
+}
+
 $requiredReportPatterns = @(
     'installApk=',
     'logcatCleared=true',
@@ -270,6 +320,7 @@ Assert-NonEmptyFile $uiDump "ui dump"
 Assert-NonEmptyFile $logcat "logcat"
 Assert-PngDimensions $screenshot
 Assert-PngDimensions $zoom3dTilesScreenshot
+Assert-PngVisibleContent $zoom3dTilesScreenshot "3D Tiles close-zoom screenshot"
 
 $uiText = Get-Content -Path $uiDump -Raw
 if ($uiText -notmatch 'com\.vectorra\.sample') {
