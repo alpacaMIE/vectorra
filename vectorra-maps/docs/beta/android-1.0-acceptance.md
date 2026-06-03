@@ -8,11 +8,9 @@ Run from `vectorra-maps/`:
 
 ```powershell
 .\tools\check-android-acceptance.ps1
-.\tools\test-device-smoke-result-checker.ps1
 ```
 
-This script runs the full local gate and then checks native library entries in the generated APK/AAR artifacts.
-The checker self-test validates the runtime smoke result verifier against complete, crash-log, and missing-action fixtures before a physical device run is trusted.
+This script runs the full local gate, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against complete, crash-log, and missing-action fixtures.
 
 Equivalent expanded command:
 

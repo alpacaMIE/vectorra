@@ -2568,3 +2568,31 @@ Known remaining work:
 
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
+
+### Android Acceptance Documentation Gate Entry
+
+Removed duplicated local gate commands from the Android 1.0 acceptance record.
+
+Completed:
+
+- Updated `docs/beta/android-1.0-acceptance.md` so `tools/check-android-acceptance.ps1` is the single local acceptance entry point.
+- Kept the expanded command list showing that the script includes native library checks and `tools/test-device-smoke-result-checker.ps1`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "check-android-acceptance|test-device-smoke-result-checker|Equivalent expanded command|Local Gates" .\docs\beta\android-1.0-acceptance.md .\docs\beta\release-versioning.md .\docs\beta\abi-device-matrix.md
+$files=@('.\tools\check-android-acceptance.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- Acceptance docs now show one local gate entry command: `.\tools\check-android-acceptance.ps1`.
+- PowerShell parser checks passed for `check-android-acceptance.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed.
+
+Known remaining work:
+
+- Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
