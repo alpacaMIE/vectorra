@@ -1788,3 +1788,35 @@ Known remaining work:
 
 - Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
 - Add product-facing documentation for offline region prefetch and cache lifecycle.
+
+### P3.T9 Offline Prefetch and Cache Docs
+
+Continued Phase 3 hardening by documenting the public offline manager and cache lifecycle surface.
+
+Completed:
+
+- Added `docs/beta/offline-prefetch-cache.md`.
+- Documented `VectorraMap.offline`, cache status, cache cleanup, explicit tile prefetch, region prefetch, async progress/cancel, retry options, partial failure status, source factories, and sample smoke actions.
+- Updated `README.md` to link the offline prefetch/cache beta document.
+- Updated `docs/beta/api-stability.md` so the current Beta boundary mentions offline region prefetch, progress/cancel, retry/partial-failure reporting, and cache status/cleanup.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "offline-prefetch-cache|Offline prefetch|VectorraPrefetchOptions|VectorraOfflineRegion|cancel-prefetch" vectorra-maps/README.md vectorra-maps/docs/beta
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Documentation search found the new page and README link.
+- Offline and network unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
+- Add release note coverage when the beta version is cut.

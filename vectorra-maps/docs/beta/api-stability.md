@@ -18,7 +18,7 @@ Vectorra Maps `0.5.0-beta.1` exposes a small Beta API boundary for external Andr
 - 3D terrain source and options APIs.
 - 3D Tiles tileset parsing and inspection APIs.
 - Basic MVT data decoding and GeoJSON conversion.
-- Gesture settings, annotations, query helpers, location component, network config, and offline raster helpers.
+- Gesture settings, annotations, query helpers, location component, network config, offline raster helpers, and offline prefetch/cache helpers.
 
 These APIs can still change during Beta, but changes should be intentional and documented in release notes.
 
@@ -47,7 +47,7 @@ Included in Beta scope:
 - Camera, gestures, screenshot, map ready/error callbacks.
 - Raster tiles and DEM terrain entry points.
 - 3D Tiles tileset metadata, bounding volume, content URI, and statistics parsing.
-- Basic annotations, query helpers, network interception, and cache/offline helpers.
+- Basic annotations, query helpers, network interception, offline region prefetch, prefetch progress/cancel, retry/partial-failure reporting, and cache status/cleanup helpers.
 
 Excluded from this Beta boundary:
 
