@@ -2308,3 +2308,38 @@ Results:
 Known remaining work:
 
 - Android 1.0 release readiness cannot be declared until the real-device Vulkan smoke matrix passes.
+
+### Android Acceptance Gate Script
+
+Made the local Android acceptance gate repeatable.
+
+Completed:
+
+- Fixed `tools/check-native-libs.ps1` to check current Vectorra native library names:
+  - `librocky.so`
+  - `libvectorra_jni.so`
+- Updated `tools/check-native-libs.ps1` default artifacts to match current split APK outputs:
+  - `vectorra-sample-arm64-v8a-debug.apk`
+  - `vectorra-sample-x86_64-debug.apk`
+  - `vectorra-sample-universal-debug.apk`
+  - `vectorra-maps-debug.aar`
+  - `vectorra-maps-release.aar`
+- Added `tools/check-android-acceptance.ps1`, which runs the local unit/build/publication/published-AAR gate and then calls `check-native-libs.ps1`.
+- Updated `docs/beta/android-1.0-acceptance.md`, `docs/beta/abi-device-matrix.md`, and `docs/beta/release-versioning.md` to reference the scripts.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+.\tools\check-native-libs.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- Native library check passed.
+- Android local acceptance gate passed.
+- Real-device Vulkan smoke remains outside this script and still requires adb to return a usable `device` state.
+
+Known remaining work:
+
+- Run the ABI/device runtime smoke matrix after adb returns to `device`.

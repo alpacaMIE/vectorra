@@ -1,8 +1,5 @@
 param(
-    [string[]]$Artifacts = @(
-        "vectorra-maps/build/outputs/aar/vectorra-maps-debug.aar",
-        "vectorra-sample/build/outputs/apk/debug/vectorra-sample-debug.apk"
-    )
+    [string[]]$Artifacts = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,8 +7,39 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$abis = @("arm64-v8a", "x86_64")
-$libs = @("librocky.so", "librocky_jni.so")
+$defaultExpectations = [ordered]@{
+    "vectorra-maps/build/outputs/aar/vectorra-maps-debug.aar" = @(
+        "jni/arm64-v8a/librocky.so",
+        "jni/arm64-v8a/libvectorra_jni.so",
+        "jni/x86_64/librocky.so",
+        "jni/x86_64/libvectorra_jni.so"
+    )
+    "vectorra-maps/build/outputs/aar/vectorra-maps-release.aar" = @(
+        "jni/arm64-v8a/librocky.so",
+        "jni/arm64-v8a/libvectorra_jni.so",
+        "jni/x86_64/librocky.so",
+        "jni/x86_64/libvectorra_jni.so"
+    )
+    "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk" = @(
+        "lib/arm64-v8a/librocky.so",
+        "lib/arm64-v8a/libvectorra_jni.so"
+    )
+    "vectorra-sample/build/outputs/apk/debug/vectorra-sample-x86_64-debug.apk" = @(
+        "lib/x86_64/librocky.so",
+        "lib/x86_64/libvectorra_jni.so"
+    )
+    "vectorra-sample/build/outputs/apk/debug/vectorra-sample-universal-debug.apk" = @(
+        "lib/arm64-v8a/librocky.so",
+        "lib/arm64-v8a/libvectorra_jni.so",
+        "lib/x86_64/librocky.so",
+        "lib/x86_64/libvectorra_jni.so"
+    )
+}
+
+if ($Artifacts.Count -eq 0) {
+    $Artifacts = @($defaultExpectations.Keys)
+}
+
 $missing = @()
 
 foreach ($relativeArtifact in $Artifacts) {
@@ -24,19 +52,18 @@ foreach ($relativeArtifact in $Artifacts) {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($artifact)
     try {
         $entries = $zip.Entries | ForEach-Object { $_.FullName }
-        foreach ($abi in $abis) {
-            foreach ($lib in $libs) {
-                $patterns = @("jni/$abi/$lib", "lib/$abi/$lib")
-                $found = $false
-                foreach ($pattern in $patterns) {
-                    if ($entries -contains $pattern) {
-                        $found = $true
-                        break
-                    }
-                }
-                if (-not $found) {
-                    $missing += "$relativeArtifact missing $($patterns -join ' or ')"
-                }
+        $requiredEntries = $defaultExpectations[$relativeArtifact]
+        if ($null -eq $requiredEntries) {
+            $requiredEntries = @(
+                "jni/arm64-v8a/librocky.so",
+                "jni/arm64-v8a/libvectorra_jni.so",
+                "jni/x86_64/librocky.so",
+                "jni/x86_64/libvectorra_jni.so"
+            )
+        }
+        foreach ($entry in $requiredEntries) {
+            if ($entries -notcontains $entry) {
+                $missing += "$relativeArtifact missing $entry"
             }
         }
     }

@@ -11,6 +11,7 @@ $env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\gradlew.bat :vectorra-sample:assembleDebug
 .\gradlew.bat assembleDebug
+.\tools\check-native-libs.ps1
 ```
 
 The sample debug build must produce:

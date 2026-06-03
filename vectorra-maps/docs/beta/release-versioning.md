@@ -51,6 +51,12 @@ Before publishing a Beta artifact:
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
+The local Android acceptance script runs this gate plus the ABI native-library content check:
+
+```powershell
+.\tools\check-android-acceptance.ps1
+```
+
 The published-AAR sample build is required because it catches missing Maven metadata, native libraries, resources, and consumer rules that project dependency builds can hide.
 
 For Android 1.0 hardening, also run the [ABI and device matrix](abi-device-matrix.md) before declaring release readiness. If a device gate cannot run, record it as a release risk instead of silently treating the artifact as fully verified.
