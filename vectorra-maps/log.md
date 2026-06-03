@@ -996,3 +996,48 @@ Known remaining Phase 2 work:
 
 - P2.T5: schedule visible vector tiles from the camera and render line/fill/circle output.
 - P2.T6: query loaded store entries through `queryRenderedFeatures`.
+
+### 3D Tiles LOD Camera Range Consistency
+
+Investigated the sample 3D Tiles disappearing when zooming in after reconnecting the Android device.
+
+Findings:
+
+- The sample 3D Tiles source is Cesium `TilesetWithDiscreteLOD`; its renderable content is a dragon model with `dragon_low.b3dm`, `dragon_medium.b3dm`, and `dragon_high.b3dm`, not a building tileset.
+- The root bounding box is small, roughly 14.19m x 6.28m x 10.08m before transform.
+- Kotlin traversal estimated camera height as `WGS84_RADIUS / 2^zoom` with a 10m floor, while native rendering clamps camera range to a 100m minimum using the native range formula.
+- This mismatch could make traversal switch to finer LOD and unload parent content based on a closer camera distance than native actually uses.
+
+Completed:
+
+- Added `vectorraNativeCameraRangeMetersForZoom(...)` to mirror the native camera range formula, including latitude scale, 512 tile size, 45 degree vertical FOV, and 100m/30,000,000m clamp.
+- Updated `CameraState.to3DTilesCamera()` to use the native-equivalent range for 3D Tiles traversal.
+- Added unit coverage for formula parity and the high-zoom 100m floor.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Device `4tqoz9bmfu8t8pr8` installed and launched the sample.
+- Logcat showed `dragon_low.b3dm` registered, parsed, applied, and loaded with native radius `16.03`.
+
+Known remaining work:
+
+- Manual pinch zoom verification is still needed on device to confirm the visual disappearance is gone through LOD switching.
+- P2.T5 MVT visible rendering remains the next roadmap task.

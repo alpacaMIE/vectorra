@@ -1240,7 +1240,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     private fun CameraState.to3DTilesCamera(): Vectorra3DTilesCamera {
-        val position = wgs84DegreesToEcef(longitude, latitude, cameraHeightMetersForZoom(zoom))
+        val position = wgs84DegreesToEcef(longitude, latitude, cameraRangeMetersForZoom(zoom, latitude))
         val directionLength = sqrt(
             position.x * position.x +
                 position.y * position.y +
@@ -1669,9 +1669,21 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             )
         }
 
-        fun cameraHeightMetersForZoom(zoom: Double): Double {
-            return (WGS84_RADIUS_METERS / 2.0.pow(zoom.coerceIn(MIN_ZOOM, MAX_ZOOM))).coerceAtLeast(10.0)
+        fun cameraRangeMetersForZoom(
+            zoom: Double,
+            latitude: Double,
+            viewportHeightPixels: Int = DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS
+        ): Double {
+            return vectorraNativeCameraRangeMetersForZoom(
+                zoom = zoom,
+                latitude = latitude,
+                minZoom = MIN_ZOOM,
+                maxZoom = MAX_ZOOM,
+                viewportHeightPixels = viewportHeightPixels
+            )
         }
+
+        private const val DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS = 1080
     }
 }
 
