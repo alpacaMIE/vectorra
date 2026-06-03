@@ -133,11 +133,97 @@ class Vectorra3DTilesContentLifecycleTest {
     }
 
     @Test
-    fun b3dmContentFailsUntilDedicatedB3dmTask() {
+    fun remoteB3dmCompletionExtractsInnerGlbAndAppliesRtcCenter() {
         val renderer = RecordingRenderer()
         val lifecycle = lifecycle(renderer)
+        val traversal = traversalResult(
+            request(
+                "root",
+                VectorraTileset3DContent(
+                    uri = "tile.b3dm",
+                    resolvedUri = "https://example.test/tile.b3dm",
+                    kind = VectorraTileset3DContentKind.B3DM
+                )
+            )
+        )
+        val task = lifecycle.applyTraversal(traversal).loadTasks.single()
+
+        val completion = lifecycle.completeRemoteLoad(
+            task,
+            TileResponse(
+                request = task.request,
+                statusCode = 200,
+                body = Vectorra3DTilesB3dmParserTest.b3dmBytes(
+                    featureJson = """{"BATCH_LENGTH":1,"RTC_CENTER":[10.0,20.0,30.0]}""",
+                    batchJson = "{}"
+                )
+            )
+        )
+
+        assertEquals(Vectorra3DTilesContentLoadCompletion.ADDED, completion)
+        assertEquals(listOf("3d-layer:root"), renderer.added.map { it.nativeContentId })
+        assertEquals(VectorraTileset3DContentKind.B3DM, renderer.added.single().contentKind)
+        assertEquals(
+            Vectorra3DTilesRendererPayloadSource.B3DM_INNER_GLB_CACHE_URI,
+            renderer.added.single().payloadSource
+        )
+        assertTrue(renderer.added.single().renderUri.endsWith(".glb"))
+        assertTrue(
+            File(java.net.URI(renderer.added.single().renderUri))
+                .readBytes()
+                .contentEquals(Vectorra3DTilesB3dmParserTest.glbBytes())
+        )
+        assertEquals(
+            Vectorra3DTilesSpatial.translation(11.0, 22.0, 33.0),
+            renderer.added.single().nativeMatrix().toList()
+        )
+    }
+
+    @Test
+    fun localB3dmExtractsInnerGlbAndBypassesRemoteLoad() {
+        val renderer = RecordingRenderer()
+        val lifecycle = lifecycle(renderer)
+        val b3dmFile = temporaryFolder.newFile("tile.b3dm")
+        b3dmFile.writeBytes(
+            Vectorra3DTilesB3dmParserTest.b3dmBytes(
+                featureJson = """{"RTC_CENTER":[10.0,20.0,30.0]}""",
+                batchJson = ""
+            )
+        )
 
         val result = lifecycle.applyTraversal(
+            traversalResult(
+                request(
+                    "root",
+                    VectorraTileset3DContent(
+                        uri = b3dmFile.name,
+                        resolvedUri = b3dmFile.toURI().toString(),
+                        kind = VectorraTileset3DContentKind.B3DM
+                    )
+                )
+            )
+        )
+
+        assertTrue(result.loadTasks.isEmpty())
+        assertTrue(result.failedTileIds.isEmpty())
+        assertEquals(listOf("3d-layer:root"), result.addedContentIds)
+        assertEquals(VectorraTileset3DContentKind.B3DM, renderer.added.single().contentKind)
+        assertEquals(
+            Vectorra3DTilesRendererPayloadSource.B3DM_INNER_GLB_CACHE_URI,
+            renderer.added.single().payloadSource
+        )
+        assertTrue(renderer.added.single().renderUri.endsWith(".glb"))
+        assertEquals(
+            mapOf("root" to Vectorra3DTilesRuntimeTileLoadState.LOADED),
+            lifecycle.tileLoadStates()
+        )
+    }
+
+    @Test
+    fun invalidRemoteB3dmFailsWithoutRendererContent() {
+        val renderer = RecordingRenderer()
+        val lifecycle = lifecycle(renderer)
+        val task = lifecycle.applyTraversal(
             traversalResult(
                 request(
                     "root",
@@ -148,11 +234,15 @@ class Vectorra3DTilesContentLifecycleTest {
                     )
                 )
             )
+        ).loadTasks.single()
+
+        val completion = lifecycle.completeRemoteLoad(
+            task,
+            TileResponse(request = task.request, statusCode = 200, body = byteArrayOf(1, 2, 3))
         )
 
-        assertTrue(result.loadTasks.isEmpty())
+        assertEquals(Vectorra3DTilesContentLoadCompletion.FAILED, completion)
         assertTrue(renderer.added.isEmpty())
-        assertEquals("b3dm 3D Tiles content is implemented in P1.T6, not P1.T4.", result.failedTileIds["root"])
         assertEquals(
             mapOf("root" to Vectorra3DTilesRuntimeTileLoadState.FAILED),
             lifecycle.tileLoadStates()

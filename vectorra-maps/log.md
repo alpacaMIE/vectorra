@@ -391,3 +391,39 @@ Known remaining Phase 1 work:
 - P1.T5 transform/bounds is implemented as a tested core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
 - `RTC_CENTER` is supported by the transform composer; b3dm feature table extraction and automatic `RTC_CENTER` application remain part of P1.T6.
 - P1.T6 is next: parse b3dm header/feature table/batch table, extract inner GLB to cache URI, apply `RTC_CENTER`, and render through the existing renderer contract.
+
+### P1.T6 b3dm Inner GLB Support
+
+Continued Phase 1 by adding b3dm parsing and renderer content preparation through the existing 3D Tiles renderer contract.
+
+Completed:
+
+- Added internal `Vectorra3DTilesB3dmParser` for b3dm v1 headers.
+- Validated b3dm magic, version, declared byte length, table section lengths, and inner GLB magic.
+- Parsed feature table JSON for `BATCH_LENGTH` and `RTC_CENTER`.
+- Preserved batch table section offsets so the inner GLB start is computed after feature table JSON/binary and batch table JSON/binary.
+- Added local and remote b3dm content handling in `Vectorra3DTilesContentLifecycle`.
+- Extracted b3dm inner GLB bytes into renderer content cache files ending in `.glb`.
+- Submitted b3dm renderer inputs with `VectorraTileset3DContentKind.B3DM` and `B3DM_INNER_GLB_CACHE_URI`.
+- Composed b3dm `RTC_CENTER` onto the traversal/tile transform before submitting renderer content.
+- Kept failed b3dm parse/preparation in lifecycle `FAILED` state instead of retrying invalid payloads silently.
+- Added tests for b3dm header parsing, padding, GLB offset, `BATCH_LENGTH`, `RTC_CENTER`, invalid magic, byte length mismatch, missing GLB magic, remote b3dm rendering, local b3dm rendering, inner GLB cache bytes, payload source, and RTC transform propagation.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T6 is implemented as a tested parser/content-preparation core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
+- P1.T7 is next: sample/device smoke for formal `Vectorra3DTiles*` loading with lifecycle validation once live scheduling is connected.

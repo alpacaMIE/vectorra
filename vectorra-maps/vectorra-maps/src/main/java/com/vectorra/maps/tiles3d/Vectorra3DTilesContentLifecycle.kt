@@ -130,19 +130,30 @@ internal class Vectorra3DTilesContentLifecycle(
                     )
                 }
                 "file" -> {
-                    val input = rendererInput(
-                        tileId = request.tileId,
-                        content = request.content,
-                        renderUri = uri.toString(),
-                        transform = request.transform
-                    )
-                    renderer.addContent(input)
-                    entries[request.tileId] = Entry(
-                        state = Vectorra3DTilesContentLifecycleState.LOADED,
-                        generation = generation,
-                        nativeContentId = input.nativeContentId
-                    )
-                    added += input.nativeContentId
+                    try {
+                        val prepared = prepareLocalRendererContent(request, File(uri))
+                        val input = rendererInput(
+                            tileId = request.tileId,
+                            content = request.content,
+                            renderUri = prepared.renderUri,
+                            transform = prepared.transform
+                        )
+                        renderer.addContent(input)
+                        entries[request.tileId] = Entry(
+                            state = Vectorra3DTilesContentLifecycleState.LOADED,
+                            generation = generation,
+                            nativeContentId = input.nativeContentId
+                        )
+                        added += input.nativeContentId
+                    } catch (error: Throwable) {
+                        val reason = error.message ?: "3D Tiles local content preparation failed."
+                        entries[request.tileId] = Entry(
+                            state = Vectorra3DTilesContentLifecycleState.FAILED,
+                            generation = generation,
+                            failureReason = reason
+                        )
+                        failures[request.tileId] = reason
+                    }
                 }
                 else -> {
                     val reason = "Unsupported 3D Tiles content URI scheme: ${uri.scheme}"
@@ -184,12 +195,20 @@ internal class Vectorra3DTilesContentLifecycle(
             return Vectorra3DTilesContentLoadCompletion.FAILED
         }
 
-        val renderFile = writeRendererContent(task, response.body)
+        val prepared = try {
+            prepareRemoteRendererContent(task, response.body)
+        } catch (error: Throwable) {
+            entries[task.tileId] = current.copy(
+                state = Vectorra3DTilesContentLifecycleState.FAILED,
+                failureReason = error.message ?: "3D Tiles content preparation failed."
+            )
+            return Vectorra3DTilesContentLoadCompletion.FAILED
+        }
         val input = rendererInput(
             tileId = task.tileId,
             content = task.content,
-            renderUri = renderFile.toURI().toString(),
-            transform = task.transform
+            renderUri = prepared.renderUri,
+            transform = prepared.transform
         )
         renderer.addContent(input)
         entries[task.tileId] = current.copy(
@@ -229,8 +248,73 @@ internal class Vectorra3DTilesContentLifecycle(
         )
     }
 
-    private fun writeRendererContent(
+    private fun prepareLocalRendererContent(
+        request: Vectorra3DTilesRequest,
+        file: File
+    ): PreparedRendererContent {
+        return when (request.content.kind) {
+            VectorraTileset3DContentKind.GLB,
+            VectorraTileset3DContentKind.GLTF -> PreparedRendererContent(
+                renderUri = file.toURI().toString(),
+                transform = request.transform
+            )
+            VectorraTileset3DContentKind.B3DM -> {
+                val b3dm = Vectorra3DTilesB3dmParser.parse(file.readBytes())
+                val glbFile = writeRendererContent(
+                    layerId = layerId,
+                    tileId = request.tileId,
+                    contentUri = request.content.uri,
+                    kind = request.content.kind,
+                    body = b3dm.glb
+                )
+                PreparedRendererContent(
+                    renderUri = glbFile.toURI().toString(),
+                    transform = transformWithRtcCenter(request.transform, b3dm.rtcCenter)
+                )
+            }
+            VectorraTileset3DContentKind.UNKNOWN -> error("Unknown 3D Tiles content cannot be rendered.")
+        }
+    }
+
+    private fun prepareRemoteRendererContent(
         task: Vectorra3DTilesContentLoadTask,
+        body: ByteArray
+    ): PreparedRendererContent {
+        return when (task.content.kind) {
+            VectorraTileset3DContentKind.GLB,
+            VectorraTileset3DContentKind.GLTF -> {
+                val renderFile = writeRendererContent(
+                    layerId = task.layerId,
+                    tileId = task.tileId,
+                    contentUri = task.content.uri,
+                    kind = task.content.kind,
+                    body = body
+                )
+                PreparedRendererContent(renderUri = renderFile.toURI().toString(), transform = task.transform)
+            }
+            VectorraTileset3DContentKind.B3DM -> {
+                val b3dm = Vectorra3DTilesB3dmParser.parse(body)
+                val renderFile = writeRendererContent(
+                    layerId = task.layerId,
+                    tileId = task.tileId,
+                    contentUri = task.content.uri,
+                    kind = task.content.kind,
+                    body = b3dm.glb
+                )
+                PreparedRendererContent(
+                    renderUri = renderFile.toURI().toString(),
+                    transform = transformWithRtcCenter(task.transform, b3dm.rtcCenter)
+                )
+            }
+            VectorraTileset3DContentKind.UNKNOWN -> error("Unknown 3D Tiles content cannot be rendered.")
+        }
+    }
+
+    private fun writeRendererContent(
+        layerId: String,
+        tileId: String,
+        contentUri: String,
+        kind: VectorraTileset3DContentKind,
         body: ByteArray
     ): File {
         if (!contentCacheDirectory.exists() && !contentCacheDirectory.mkdirs()) {
@@ -238,11 +322,22 @@ internal class Vectorra3DTilesContentLifecycle(
         }
         val file = File(
             contentCacheDirectory,
-            "${safeFilePart(task.layerId)}-${safeFilePart(task.tileId)}-${safeFilePart(task.content.uri)}" +
-                extension(task.content.kind)
+            "${safeFilePart(layerId)}-${safeFilePart(tileId)}-${safeFilePart(contentUri)}" +
+                extension(kind)
         )
         file.writeBytes(body)
         return file
+    }
+
+    private fun transformWithRtcCenter(
+        transform: List<Double>,
+        rtcCenter: Vectorra3DTilesPoint3D?
+    ): List<Double> {
+        return Vectorra3DTilesSpatial.composeTransform(
+            parentTransform = transform,
+            tileTransform = null,
+            rtcCenter = rtcCenter
+        )
     }
 
     private fun nextGeneration(tileId: String): Long {
@@ -252,9 +347,8 @@ internal class Vectorra3DTilesContentLifecycle(
     private fun unsupportedReason(content: VectorraTileset3DContent): String? {
         return when (content.kind) {
             VectorraTileset3DContentKind.GLB,
-            VectorraTileset3DContentKind.GLTF -> null
-            VectorraTileset3DContentKind.B3DM ->
-                "b3dm 3D Tiles content is implemented in P1.T6, not P1.T4."
+            VectorraTileset3DContentKind.GLTF,
+            VectorraTileset3DContentKind.B3DM -> null
             VectorraTileset3DContentKind.UNKNOWN ->
                 "Unknown 3D Tiles content cannot be rendered."
         }
@@ -273,7 +367,7 @@ internal class Vectorra3DTilesContentLifecycle(
         return when (kind) {
             VectorraTileset3DContentKind.GLB -> ".glb"
             VectorraTileset3DContentKind.GLTF -> ".gltf"
-            VectorraTileset3DContentKind.B3DM,
+            VectorraTileset3DContentKind.B3DM -> ".glb"
             VectorraTileset3DContentKind.UNKNOWN -> error("Unsupported renderer content kind: $kind")
         }
     }
@@ -287,5 +381,10 @@ internal class Vectorra3DTilesContentLifecycle(
         val generation: Long,
         val nativeContentId: String? = null,
         val failureReason: String? = null
+    )
+
+    private data class PreparedRendererContent(
+        val renderUri: String,
+        val transform: List<Double>
     )
 }
