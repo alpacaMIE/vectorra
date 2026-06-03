@@ -55,6 +55,9 @@ import com.vectorra.maps.offline.VectorraOfflineRegion
 import com.vectorra.maps.offline.VectorraOfflineTileSource
 import com.vectorra.maps.offline.VectorraPrefetchResult
 import com.vectorra.maps.offline.VectorraPrefetchTileResult
+import com.vectorra.maps.offline.VectorraPrefetchProgressListener
+import com.vectorra.maps.offline.VectorraPrefetchTask
+import com.vectorra.maps.offline.VectorraPrefetchTaskRunner
 import com.vectorra.maps.offline.toTileRequests
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
@@ -1718,6 +1721,32 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 VectorraPrefetchResult(emptyList())
             } else {
                 prefetchTiles(requests)
+            }
+        }
+
+        override fun prefetchTilesAsync(
+            requests: List<TileRequest>,
+            listener: VectorraPrefetchProgressListener?
+        ): VectorraPrefetchTask {
+            return VectorraPrefetchTaskRunner(
+                requests = requests,
+                listener = listener
+            ) { request ->
+                tileResourceFetcher.fetch(request).toPrefetchTileResult()
+            }
+        }
+
+        override fun prefetchRegionAsync(
+            region: VectorraOfflineRegion,
+            sources: List<VectorraOfflineTileSource>,
+            listener: VectorraPrefetchProgressListener?
+        ): VectorraPrefetchTask {
+            val requests = region.toTileRequests(sources)
+            return VectorraPrefetchTaskRunner(
+                requests = requests,
+                listener = listener
+            ) { request ->
+                tileResourceFetcher.fetch(request).toPrefetchTileResult()
             }
         }
     }

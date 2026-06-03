@@ -1682,3 +1682,37 @@ Known remaining work:
 - Add asynchronous `VectorraPrefetchTask` with progress and cancel semantics.
 - Define retry and partial failure policy for region prefetch.
 - Add sample UI/device smoke for prefetch/cache cleanup once adb is stable.
+
+### P3.T3 Prefetch Task Progress and Cancel
+
+Continued region prefetch by adding a public task contract for asynchronous prefetch execution.
+
+Completed:
+
+- Added public beta `VectorraPrefetchTask`, `VectorraPrefetchTaskState`, `VectorraPrefetchProgress`, and `VectorraPrefetchProgressListener`.
+- Added `VectorraOfflineManager.prefetchTilesAsync(...)` and `prefetchRegionAsync(...)`.
+- Added internal `VectorraPrefetchTaskRunner` that reports initial, per-tile, and terminal progress snapshots.
+- Implemented cancel semantics that stop before starting remaining tile requests while preserving completed tile results and cache writes.
+- Wired async tile and region prefetch through `VectorraMapEngine` using the same `TileResourceFetcher` and result mapping as synchronous prefetch.
+- Added task tests for completed progress, failure totals, cancellation, and empty task completion.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.VectorraPrefetchTaskRunnerTest" --tests "com.vectorra.maps.offline.VectorraOfflineManagerModelsTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Target prefetch task/offline manager tests passed.
+- Offline and network unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Define retry and partial failure policy for prefetch tasks.
+- Add sample UI/device smoke for prefetch progress, cancel, cache status, and cleanup once adb is stable.
