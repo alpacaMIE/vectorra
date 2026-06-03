@@ -234,12 +234,12 @@ class TileProxyServer(
             return
         }
         val targetUrl = templateUrl
-            .replace("{z}", z)
-            .replace("{x}", x)
-            .replace("{y}", y)
             .replace("\${z}", z)
             .replace("\${x}", x)
             .replace("\${y}", y)
+            .replace("{z}", z)
+            .replace("{x}", x)
+            .replace("{y}", y)
         val request = TileRequest(
             sourceId = registration.sourceId,
             layerId = registration.layerId,

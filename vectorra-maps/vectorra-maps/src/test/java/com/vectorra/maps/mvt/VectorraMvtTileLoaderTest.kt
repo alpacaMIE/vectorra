@@ -58,7 +58,7 @@ class VectorraMvtTileLoaderTest {
         loader.loadTile(
             source = VectorraVectorTileSource.tms(
                 id = "vector",
-                templateUrl = "https://tiles.example/{z}/{x}/{y}.pbf"
+                templateUrl = "https://tiles.example/\${z}/\${x}/\${y}.pbf"
             ),
             layerId = "roads-line",
             tileId = VectorraMvtTileId(z = 3, x = 2, y = 1)

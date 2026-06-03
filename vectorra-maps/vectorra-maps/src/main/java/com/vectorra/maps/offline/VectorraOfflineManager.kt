@@ -63,4 +63,9 @@ interface VectorraOfflineManager {
     fun clearCache()
 
     fun prefetchTiles(requests: List<TileRequest>): VectorraPrefetchResult
+
+    fun prefetchRegion(
+        region: VectorraOfflineRegion,
+        sources: List<VectorraOfflineTileSource>
+    ): VectorraPrefetchResult
 }

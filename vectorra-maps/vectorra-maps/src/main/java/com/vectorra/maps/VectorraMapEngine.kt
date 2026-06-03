@@ -51,8 +51,11 @@ import com.vectorra.maps.offline.VectorraCacheStatus
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.offline.VectorraOfflineManager
+import com.vectorra.maps.offline.VectorraOfflineRegion
+import com.vectorra.maps.offline.VectorraOfflineTileSource
 import com.vectorra.maps.offline.VectorraPrefetchResult
 import com.vectorra.maps.offline.VectorraPrefetchTileResult
+import com.vectorra.maps.offline.toTileRequests
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -1704,6 +1707,18 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             return VectorraPrefetchResult(
                 tiles = tileResourceFetcher.prefetch(requests).map { it.toPrefetchTileResult() }
             )
+        }
+
+        override fun prefetchRegion(
+            region: VectorraOfflineRegion,
+            sources: List<VectorraOfflineTileSource>
+        ): VectorraPrefetchResult {
+            val requests = region.toTileRequests(sources)
+            return if (requests.isEmpty()) {
+                VectorraPrefetchResult(emptyList())
+            } else {
+                prefetchTiles(requests)
+            }
         }
     }
 

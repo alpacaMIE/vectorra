@@ -32,7 +32,7 @@ class TileProxyServerTest {
                 val template = it.proxyTemplateFor(
                     sourceId = "source",
                     layerId = "layer",
-                    templateUrl = "http://127.0.0.1:${upstream.port}/tiles/{z}/{x}/{y}.png",
+                    templateUrl = "http://127.0.0.1:${upstream.port}/tiles/\${z}/\${x}/\${y}.png",
                     headers = emptyMap()
                 )
                 val url = template

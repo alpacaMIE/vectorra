@@ -62,12 +62,12 @@ internal class VectorraMvtTileLoader(
             sourceId = id,
             layerId = layerId,
             url = templateUrl
-                .replace("{z}", tileId.z.toString())
-                .replace("{x}", tileId.x.toString())
-                .replace("{y}", requestY.toString())
                 .replace("\${z}", tileId.z.toString())
                 .replace("\${x}", tileId.x.toString())
-                .replace("\${y}", requestY.toString()),
+                .replace("\${y}", requestY.toString())
+                .replace("{z}", tileId.z.toString())
+                .replace("{x}", tileId.x.toString())
+                .replace("{y}", requestY.toString()),
             headers = headers,
             tileId = TileId(
                 z = tileId.z,

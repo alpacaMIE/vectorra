@@ -1647,3 +1647,38 @@ Known remaining work:
 - Add region-based tile enumeration for bounds and zoom ranges.
 - Add progress, cancel, partial failure, and retry semantics for long-running prefetch tasks.
 - Add sample UI/device smoke for cache status, cleanup, and prefetch once adb is stable.
+
+### P3.T3 Region Tile Enumeration
+
+Continued region prefetch by adding the request-enumeration layer needed before long-running task progress/cancel semantics.
+
+Completed:
+
+- Added public beta `VectorraOfflineBounds`, `VectorraOfflineRegion`, and `VectorraOfflineTileSource`.
+- Added offline tile source factories for `VectorraRasterTileSource`, `VectorraRasterLayer`, `VectorraVectorTileSource`, and `VectorraTerrainSource`.
+- Added `VectorraOfflineRegion.toTileRequests(...)` to enumerate Web Mercator XYZ tile coverage across bounds and zoom ranges.
+- Added `VectorraOfflineManager.prefetchRegion(...)`, wired through `VectorraMapEngine` by enumerating requests and reusing the existing `prefetchTiles(...)` path.
+- Supported XYZ, TMS URL Y flipping, and WMTS-style top-left row templates while keeping canonical tile ids in the request metadata.
+- Fixed tile template replacement order for `${z}`/`${x}`/`${y}` templates in offline enumeration, MVT loading, and `TileProxyServer`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.VectorraOfflineRegionTest" --tests "com.vectorra.maps.offline.VectorraOfflineManagerModelsTest" --tests "com.vectorra.maps.mvt.VectorraMvtTileLoaderTest" --tests "com.vectorra.maps.network.TileProxyServerTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.mvt.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Target offline region, MVT loader, and tile proxy tests passed.
+- Offline, network, and MVT unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Add asynchronous `VectorraPrefetchTask` with progress and cancel semantics.
+- Define retry and partial failure policy for region prefetch.
+- Add sample UI/device smoke for prefetch/cache cleanup once adb is stable.
