@@ -24,6 +24,14 @@ namespace
 {
     Window s_nullWindow;
     View s_nullView;
+
+#ifdef __ANDROID__
+    vsg::ref_ptr<vsg::Device>& androidSharedDevice()
+    {
+        static vsg::ref_ptr<vsg::Device> device;
+        return device;
+    }
+#endif
 }
 
 namespace
@@ -240,7 +248,16 @@ vsg::ref_ptr<vsg::Device>
 DisplayManager::sharedDevice() const
 {
     ROCKY_SOFT_ASSERT_AND_RETURN(vsgcontext && vsgcontext->viewer(), {});
+#ifdef __ANDROID__
+    auto& cachedDevice = androidSharedDevice();
+    if (!vsgcontext->viewer()->windows().empty())
+    {
+        cachedDevice = vsgcontext->viewer()->windows().front()->getDevice();
+    }
+    return cachedDevice;
+#else
     return !vsgcontext->viewer()->windows().empty() ? vsgcontext->viewer()->windows().front()->getDevice() : vsg::ref_ptr<vsg::Device>{ };
+#endif
 }
 
 
@@ -529,6 +546,12 @@ DisplayManager::addWindow(vsg::ref_ptr<vsg::WindowTraits> traits)
     // make a new VSG window:
     auto vsgWindow = vsg::Window::create(traits);
 #ifdef __ANDROID__
+    if (vsgWindow)
+    {
+        androidSharedDevice() = vsgWindow->getDevice();
+    }
+#endif
+#ifdef __ANDROID__
     __android_log_print(
         ANDROID_LOG_INFO,
         "rocky_jni",
@@ -758,6 +781,13 @@ DisplayManager::removeWindow(Window& window)
     auto iter = std::find(_windows.begin(), _windows.end(), window);
     if (iter != _windows.end())
     {
+#ifdef __ANDROID__
+        if (window.vsgWindow)
+        {
+            androidSharedDevice() = window.vsgWindow->getDevice();
+        }
+#endif
+
         // fire the callback first:
         onRemoveWindow.fire(window);
 

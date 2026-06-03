@@ -653,7 +653,8 @@ namespace
     public:
         ~VectorraNativeEngine()
         {
-            detachSurface();
+            std::unique_lock<std::mutex> lock(mutex);
+            shutdownRendererLocked(lock);
             clearResourceStatusCallback();
         }
 
@@ -692,13 +693,7 @@ namespace
         std::string setSurface(JNIEnv* env, jobject surface, int width, int height)
         {
             std::unique_lock<std::mutex> lock(mutex);
-            stopRendererLocked(lock);
-
-            if (nativeWindow)
-            {
-                ANativeWindow_release(nativeWindow);
-                nativeWindow = nullptr;
-            }
+            shutdownRendererLocked(lock);
 
             if (surface == nullptr)
             {
@@ -731,13 +726,8 @@ namespace
         void detachSurface()
         {
             std::unique_lock<std::mutex> lock(mutex);
-            stopRendererLocked(lock);
-            if (nativeWindow)
-            {
-                __android_log_print(ANDROID_LOG_INFO, TAG, "detachSurface");
-                ANativeWindow_release(nativeWindow);
-                nativeWindow = nullptr;
-            }
+            shutdownRendererLocked(lock);
+            __android_log_print(ANDROID_LOG_INFO, TAG, "detachSurface");
         }
 
         void resize(int width, int height)
@@ -1527,94 +1517,98 @@ namespace
                     return *vulkanFailure;
                 }
 
-                app = std::make_unique<rocky::Application>();
-                app->autoCreateWindow = false;
-                app->renderContinuously = true;
-                if (!app->ok())
+                const bool createApplication = !app;
+                if (createApplication)
                 {
-                    const auto message = app->vsgcontext && app->vsgcontext->status.failed()
-                        ? app->vsgcontext->status.error().string()
-                        : std::string("unknown initialization failure");
-                    __android_log_print(ANDROID_LOG_ERROR, TAG, "rocky Application not ok: %s", message.c_str());
-                    app.reset();
-                    return "Vectorra renderer initialization failed: " + message;
-                }
-                if (app->systemsNode && !app->systemsNode->get<rocky::ModelSystemNode>())
-                {
-                    app->systemsNode->add(rocky::ModelSystemNode::create(app->registry));
-                    __android_log_print(ANDROID_LOG_INFO, TAG, "enabled rocky ModelSystemNode");
-                }
-                __android_log_print(
-                    ANDROID_LOG_INFO,
-                    TAG,
-                    "created rocky Application ok=%d mapNode=%d map=%d",
-                    app->ok() ? 1 : 0,
-                    app->mapNode ? 1 : 0,
-                    app->mapNode && app->mapNode->map ? 1 : 0);
-
-                if (app->mapNode)
-                {
-                    auto& terrainSettings = app->mapNode->terrainSettings();
-                    terrainSettings.tileSize = 33u;
-                    terrainSettings.minLevel = 4u;
-                    terrainSettings.tilePixelSize = 256.0f;
-                    terrainSettings.pixelError = 96.0f;
-                    terrainSettings.tileCacheSize = 512u;
-                    terrainSettings.concurrency = 4u;
-                    terrainSettings.terrainExaggeration = terrainExaggeration;
+                    app = std::make_unique<rocky::Application>();
+                    app->autoCreateWindow = false;
+                    app->renderContinuously = true;
+                    if (!app->ok())
+                    {
+                        const auto message = app->vsgcontext && app->vsgcontext->status.failed()
+                            ? app->vsgcontext->status.error().string()
+                            : std::string("unknown initialization failure");
+                        __android_log_print(ANDROID_LOG_ERROR, TAG, "rocky Application not ok: %s", message.c_str());
+                        app.reset();
+                        return "Vectorra renderer initialization failed: " + message;
+                    }
+                    if (app->systemsNode && !app->systemsNode->get<rocky::ModelSystemNode>())
+                    {
+                        app->systemsNode->add(rocky::ModelSystemNode::create(app->registry));
+                        __android_log_print(ANDROID_LOG_INFO, TAG, "enabled rocky ModelSystemNode");
+                    }
                     __android_log_print(
                         ANDROID_LOG_INFO,
                         TAG,
-                        "terrain settings tileSize=%u minLevel=%u tilePixelSize=%.1f pixelError=%.1f cache=%u exaggeration=%.2f",
-                        terrainSettings.tileSize.value(),
-                        terrainSettings.minLevel.value(),
-                        terrainSettings.tilePixelSize.value(),
-                        terrainSettings.pixelError.value(),
-                        terrainSettings.tileCacheSize.value(),
-                        terrainSettings.terrainExaggeration.value());
-                }
+                        "created rocky Application ok=%d mapNode=%d map=%d",
+                        app->ok() ? 1 : 0,
+                        app->mapNode ? 1 : 0,
+                        app->mapNode && app->mapNode->map ? 1 : 0);
 
-                if (rasterLayers.empty())
-                {
-                    rasterLayerOrder.emplace_back("default-readymap");
-                    rasterLayers.emplace(
-                        "default-readymap",
-                    RasterLayerConfig{
-                        "http://readymap.org/readymap/tiles/1.0.0/7/",
-                        0,
-                        18,
-                        true,
-                        1.0f,
-                        0.0f,
-                        0.0f,
-                        256,
-                        "TMS",
-                        ""});
-                }
-
-                for (const auto& id : rasterLayerOrder)
-                {
-                    auto entry = rasterLayers.find(id);
-                    if (entry != rasterLayers.end())
+                    if (app->mapNode)
                     {
-                        addRasterLayerLocked(entry->first, entry->second);
+                        auto& terrainSettings = app->mapNode->terrainSettings();
+                        terrainSettings.tileSize = 33u;
+                        terrainSettings.minLevel = 4u;
+                        terrainSettings.tilePixelSize = 256.0f;
+                        terrainSettings.pixelError = 96.0f;
+                        terrainSettings.tileCacheSize = 512u;
+                        terrainSettings.concurrency = 4u;
+                        terrainSettings.terrainExaggeration = terrainExaggeration;
+                        __android_log_print(
+                            ANDROID_LOG_INFO,
+                            TAG,
+                            "terrain settings tileSize=%u minLevel=%u tilePixelSize=%.1f pixelError=%.1f cache=%u exaggeration=%.2f",
+                            terrainSettings.tileSize.value(),
+                            terrainSettings.minLevel.value(),
+                            terrainSettings.tilePixelSize.value(),
+                            terrainSettings.pixelError.value(),
+                            terrainSettings.tileCacheSize.value(),
+                            terrainSettings.terrainExaggeration.value());
                     }
-                }
 
-                for (const auto& id : elevationLayerOrder)
-                {
-                    auto entry = elevationLayers.find(id);
-                    if (entry != elevationLayers.end())
+                    if (rasterLayers.empty())
                     {
-                        addElevationLayerLocked(entry->first, entry->second);
+                        rasterLayerOrder.emplace_back("default-readymap");
+                        rasterLayers.emplace(
+                            "default-readymap",
+                        RasterLayerConfig{
+                            "http://readymap.org/readymap/tiles/1.0.0/7/",
+                            0,
+                            18,
+                            true,
+                            1.0f,
+                            0.0f,
+                            0.0f,
+                            256,
+                            "TMS",
+                            ""});
                     }
-                }
 
-                syncLabelAnnotationsLocked();
-                syncLocationIndicatorLocked();
-                syncModelLayersLocked();
-                sync3DTilesRendererContentLocked();
-                syncMvtTilesLocked();
+                    for (const auto& id : rasterLayerOrder)
+                    {
+                        auto entry = rasterLayers.find(id);
+                        if (entry != rasterLayers.end())
+                        {
+                            addRasterLayerLocked(entry->first, entry->second);
+                        }
+                    }
+
+                    for (const auto& id : elevationLayerOrder)
+                    {
+                        auto entry = elevationLayers.find(id);
+                        if (entry != elevationLayers.end())
+                        {
+                            addElevationLayerLocked(entry->first, entry->second);
+                        }
+                    }
+
+                    syncLabelAnnotationsLocked();
+                    syncLocationIndicatorLocked();
+                    syncModelLayersLocked();
+                    sync3DTilesRendererContentLocked();
+                    syncMvtTilesLocked();
+                }
 
                 int renderWidth = surfaceWidth;
                 int renderHeight = surfaceHeight;
@@ -1655,10 +1649,32 @@ namespace
                         ANDROID_LOG_ERROR,
                         TAG,
                         "failed to create VSG window: display has no windows after addWindow");
-                    app.reset();
+                    if (createApplication)
+                    {
+                        app.reset();
+                    }
                     return "Vectorra renderer startup failed: VSG Android window was not created";
                 }
-                app->realize();
+                if (createApplication)
+                {
+                    app->realize();
+                }
+                else
+                {
+                    auto& mainWindow = app->display.window(0);
+                    auto computeCommandGraph = app->vsgcontext->getOrCreateComputeCommandGraph(
+                        app->display.sharedDevice(),
+                        mainWindow.commandGraph->queueFamily);
+                    vsg::CommandGraphs commandGraphs{ computeCommandGraph };
+                    for (auto& window : app->display.windows())
+                    {
+                        if (window.commandGraph)
+                        {
+                            commandGraphs.emplace_back(window.commandGraph);
+                        }
+                    }
+                    app->viewer->assignRecordAndSubmitTaskAndPresentation(commandGraphs);
+                }
                 applyCameraNow(app.get());
                 __android_log_print(ANDROID_LOG_INFO, TAG, "rocky Application realized");
 
@@ -1703,6 +1719,16 @@ namespace
                                 __android_log_print(ANDROID_LOG_ERROR, TAG, "rocky frame exception: %s", e.what());
                                 running = false;
                             }
+                            catch (const vsg::Exception& e)
+                            {
+                                __android_log_print(
+                                    ANDROID_LOG_ERROR,
+                                    TAG,
+                                    "rocky frame vsg::Exception result=%d message=%s",
+                                    e.result,
+                                    e.message.c_str());
+                                running = false;
+                            }
                         }
                         else
                         {
@@ -1717,7 +1743,7 @@ namespace
             catch (const std::exception& e)
             {
                 __android_log_print(ANDROID_LOG_ERROR, TAG, "failed to start rocky renderer: %s", e.what());
-                app.reset();
+                detachSurfaceLockedNoThread();
                 return std::string("Vectorra renderer startup failed: ") + e.what();
             }
             catch (const vsg::Exception& e)
@@ -1725,22 +1751,22 @@ namespace
                 __android_log_print(
                     ANDROID_LOG_ERROR,
                     TAG,
-                    "failed to start rocky renderer: vsg::Exception result=%d message=%s",
-                    e.result,
-                    e.message.c_str());
-                app.reset();
+                        "failed to start rocky renderer: vsg::Exception result=%d message=%s",
+                        e.result,
+                        e.message.c_str());
+                detachSurfaceLockedNoThread();
                 return "Vectorra renderer startup failed: vsg::Exception result=" +
                     std::to_string(e.result) + " message=" + e.message;
             }
             catch (...)
             {
                 __android_log_print(ANDROID_LOG_ERROR, TAG, "failed to start rocky renderer: unknown exception");
-                app.reset();
+                detachSurfaceLockedNoThread();
                 return "Vectorra renderer startup failed: unknown native exception";
             }
         }
 
-        void stopRendererLocked(std::unique_lock<std::mutex>& lock)
+        void detachSurfaceLocked(std::unique_lock<std::mutex>& lock)
         {
             running = false;
             cameraUpdateQueued = false;
@@ -1752,6 +1778,35 @@ namespace
                 thread.join();
                 lock.lock();
             }
+            detachSurfaceLockedNoThread();
+        }
+
+        void detachSurfaceLockedNoThread()
+        {
+            if (app)
+            {
+                while (!app->display.windows().empty())
+                {
+                    app->display.removeWindow(app->display.windows().back());
+                }
+                if (app->viewer)
+                {
+                    app->viewer->deviceWaitIdle();
+                    app->viewer->recordAndSubmitTasks.clear();
+                    app->viewer->presentations.clear();
+                }
+            }
+            if (nativeWindow)
+            {
+                __android_log_print(ANDROID_LOG_INFO, TAG, "release native window after renderer stop");
+                ANativeWindow_release(nativeWindow);
+                nativeWindow = nullptr;
+            }
+        }
+
+        void shutdownRendererLocked(std::unique_lock<std::mutex>& lock)
+        {
+            detachSurfaceLocked(lock);
             labelEntities.clear();
             drawEntities.clear();
             modelEntities.clear();

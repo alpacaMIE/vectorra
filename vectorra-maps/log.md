@@ -3005,6 +3005,35 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Android Emulator Surface Resume Fix
+
+Fixed the emulator smoke lifecycle failure where returning from Home recreated the Android Surface in the same process and VSG failed with `Number of vsg:Device allocated exceeds number supported`.
+
+Completed:
+
+- Changed the JNI renderer shutdown path so Surface detach stops the render thread, releases the native window after the renderer is stopped, clears native renderer state, and resets the rocky Application before the next Surface attach.
+- Added a render-thread `vsg::Exception` catch so VSG frame exceptions are logged and stop the renderer instead of escaping the render loop.
+- Added an Android-only rocky DisplayManager VSG device cache so a freshly recreated rocky Application can reuse the existing VSG Device across Surface recreation on Android emulator builds.
+- Confirmed the 3D Tiles close-zoom smoke still loads the high LOD model at zoom 20/22 and remains visible after the lifecycle sequence.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$out='build/device-smoke/run-device-smoke-20260604-lifecycle-output-9.txt'; .\tools\run-device-smoke.ps1 -DeviceSerial emulator-5554 -ActionDelaySeconds 8 *> $out; $latest=Get-ChildItem .\build\device-smoke -Filter 'device-smoke-*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; .\tools\check-device-smoke-result.ps1 -Report $latest.FullName
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed. Existing non-fatal strip warnings for native libraries remained.
+- Emulator smoke report `build/device-smoke/device-smoke-20260604-054912.txt` passed `tools/check-device-smoke-result.ps1`.
+- The smoke run covered MVT, GeoJSON, draw, location, snapshots, 3D Tiles close zoom/high LOD, offline prefetch/cancel, Home/Resume lifecycle, force-stop recreate, and post-recreate snapshot.
+
+Known remaining work:
+
+- Physical device `4tqoz9bmfu8t8pr8` was still unavailable earlier in this session; rerun the same smoke on hardware after adb reports it as `device`.
+
 ### Emulator 3D Tiles Close Zoom Smoke Hardening
 
 Completed:
