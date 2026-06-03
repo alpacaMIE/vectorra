@@ -100,15 +100,16 @@ If adb reports the device as `offline`, do not mark this gate passed. Record it 
 
 ## Latest Emulator Evidence
 
-On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence and passed the stricter result checker.
+On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence through the emulator smoke gate and passed the stricter result checker.
 
 Verified command:
 
 ```powershell
-.\tools\run-device-smoke.ps1 -DeviceSerial emulator-5554 -ActionDelaySeconds 8
-.\tools\check-device-smoke-result.ps1 -Report D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\device-smoke-20260604-060442.txt
+.\tools\run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554
 ```
 
-Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs.
+The emulator gate wraps `run-device-smoke.ps1`, selects the latest generated `device-smoke-*.txt` report, and validates it with `check-device-smoke-result.ps1`.
+
+Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs. The latest checked report is `build/device-smoke/device-smoke-20260604-063910.txt`.
 
 The emulator runtime gate is accepted as development evidence. The physical real-device release gate remains open; the physical device `4tqoz9bmfu8t8pr8` still reported `offline`.

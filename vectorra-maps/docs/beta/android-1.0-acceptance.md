@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, validates the runtime smoke result verifier against the complete fixture plus crash, native renderer startup failure, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster loaded, 3D Tiles high-LOD runtime/re-add, MVT pan/hidden/remove, MVT MBTiles native render, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures, and validates the targeted MBTiles vector instrumentation runner contract.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, validates the runtime smoke result verifier against the complete fixture plus crash, native renderer startup failure, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster loaded, 3D Tiles high-LOD runtime/re-add, MVT pan/hidden/remove, MVT MBTiles native render, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures, validates the emulator smoke gate runner contract, and validates the targeted MBTiles vector instrumentation runner contract.
 
 Equivalent expanded command:
 
@@ -23,6 +23,7 @@ $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\tools\test-android-test-apk-checker.ps1
 .\tools\test-device-smoke-contract.ps1
 .\tools\test-device-smoke-result-checker.ps1
+.\tools\test-emulator-smoke-gate.ps1
 .\tools\test-mbtiles-vector-instrumentation-runner.ps1
 ```
 
@@ -37,6 +38,7 @@ Latest local evidence:
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
 - `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, native renderer startup failure rejection, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT pan query, hidden no-features, removed no-features, MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
+- `test-emulator-smoke-gate.ps1`: passed; emulator wrapper parameters, adb online-device guard, underlying smoke runner invocation, latest-report checker invocation, and docs commands are aligned
 - `test-mbtiles-vector-instrumentation-runner.ps1`: passed; runner parameters, adb online-device guards, targeted test class, and docs commands are aligned
 - `VectorraMbTilesVectorSourceInstrumentedTest`: passed on `emulator-5554` through `:vectorra-maps:connectedDebugAndroidTest`, proving the Android SQLite MBTiles vector source can open and read a real MBTiles file
 
@@ -53,7 +55,7 @@ Validated outputs:
 
 ## Runtime Device Gate
 
-Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-060442.txt`.
+Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence through `tools/run-emulator-smoke-gate.ps1` and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-063910.txt`.
 
 The emulator also passed the targeted Android instrumentation MBTiles vector source test:
 
@@ -78,11 +80,10 @@ Current real-device result: not passed because the physical device is offline.
 Runtime command:
 
 ```powershell
-.\tools\run-device-smoke.ps1
-.\tools\check-device-smoke-result.ps1
+.\tools\run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554
 ```
 
-The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, `post-recreate-snapshot` action, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records including the `post-recreate-snapshot` action, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native high-LOD render/bad-tileset/re-add log output, MVT native render, pan action, hidden no-features, remove/re-add, MVT MBTiles request/native render log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, non-empty required device metadata keys including Vulkan metadata, and absence of native renderer startup failures.
+The emulator smoke gate script requires an `emulator-*` adb serial, runs `run-device-smoke.ps1`, selects the latest generated `device-smoke-*.txt` report, and immediately validates it with `check-device-smoke-result.ps1`. The underlying runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, `post-recreate-snapshot` action, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records including the `post-recreate-snapshot` action, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native high-LOD render/bad-tileset/re-add log output, MVT native render, pan action, hidden no-features, remove/re-add, MVT MBTiles request/native render log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, non-empty required device metadata keys including Vulkan metadata, and absence of native renderer startup failures.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 

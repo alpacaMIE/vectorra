@@ -3734,6 +3734,36 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### Emulator Smoke Gate Runner
+
+Completed:
+
+- Added `tools/run-emulator-smoke-gate.ps1`.
+- The script requires an `emulator-*` adb serial, verifies the emulator is online, runs `run-device-smoke.ps1`, selects the newest generated `device-smoke-*.txt` report, and validates it with `check-device-smoke-result.ps1`.
+- Added `tools/test-emulator-smoke-gate.ps1` and wired it into `tools/check-android-acceptance.ps1`.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning doc, and 0.8.0 beta development notes to document the emulator smoke gate and its local contract self-test.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-emulator-smoke-gate.ps1','.\tools\test-emulator-smoke-gate.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }; .\tools\test-emulator-smoke-gate.ps1
+.\tools\run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-emulator-smoke-gate.ps1` passed.
+- `run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554` passed and checked `build/device-smoke/device-smoke-20260604-063910.txt`.
+- The emulator smoke evidence included `3D Tiles zoom snapshot 1080x2219 nonblank=true`, native application of `dragon_high.b3dm.glb`, MVT pan/removed/re-add query evidence, MVT MBTiles native render, offline prefetch cleanup, GeoJSON/Draw/Location interaction evidence, and clean home/resume lifecycle logs.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- The local gate output included `Emulator smoke gate contract self-test passed.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
 ### MBTiles Vector Instrumentation Runner Script
 
 Completed:
