@@ -102,11 +102,23 @@ function Assert-NonEmptyFile {
     "$Label=$Path bytes=$($item.Length)" | Tee-Object -FilePath $report -Append
 }
 
+function First-MatchingLines {
+    param([string]$Text, [string]$Pattern, [int]$Count = 10)
+    return (($Text -split "`r?`n") | Select-String -Pattern $Pattern | Select-Object -First $Count) -join "`n"
+}
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $report = Join-Path $out "device-smoke-$stamp.txt"
 
 Invoke-Adb install -r $apkPath | Tee-Object -FilePath $report
 Write-Report "installApk=$Apk"
+
+$surfaceFlinger = (Invoke-Adb shell dumpsys SurfaceFlinger 2>$null) -join "`n"
+$gpuInfo = First-MatchingLines $surfaceFlinger "GLES|Vulkan|GPU" 10
+$vulkanInfo = First-MatchingLines $surfaceFlinger "Vulkan" 10
+if ($vulkanInfo.Length -eq 0) {
+    $vulkanInfo = (Invoke-Adb shell getprop ro.hardware.vulkan) -join "`n"
+}
 
 $props = [ordered]@{
     serial = $DeviceSerial
@@ -114,7 +126,8 @@ $props = [ordered]@{
     model = (Invoke-Adb shell getprop ro.product.model) -join "`n"
     sdk = (Invoke-Adb shell getprop ro.build.version.sdk) -join "`n"
     abis = (Invoke-Adb shell getprop ro.product.cpu.abilist) -join "`n"
-    gpu = (Invoke-Adb shell dumpsys SurfaceFlinger 2>$null | Select-String -Pattern "GLES|Vulkan|GPU" | Select-Object -First 10) -join "`n"
+    gpu = $gpuInfo
+    vulkan = $vulkanInfo
 }
 $props.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Tee-Object -FilePath $report -Append
 

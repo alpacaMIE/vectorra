@@ -2543,6 +2543,33 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Vulkan Metadata Validation
+
+Added Vulkan metadata coverage to the runtime smoke report and checker.
+
+Completed:
+
+- Updated `tools/run-device-smoke.ps1` to write a separate `vulkan=` report entry from SurfaceFlinger Vulkan lines or `ro.hardware.vulkan`.
+- Updated `tools/check-device-smoke-result.ps1` to require non-empty values for `serial`, `installedApk`, `model`, `sdk`, `abis`, `gpu`, and `vulkan`.
+- Updated `tools/test-device-smoke-result-checker.ps1` to include `vulkan` in valid fixtures and to require an empty metadata fixture to fail.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the Vulkan and non-empty metadata validation behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-device-smoke-result-checker.ps1` passed: valid fixture passed; crash-log, missing-action, invalid-screenshot, missing-metadata, and empty-metadata fixtures failed as expected.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Metadata Validation
 
 Strengthened runtime smoke result metadata validation.

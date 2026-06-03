@@ -59,7 +59,8 @@ function New-SmokeFixture {
         "model=Vectorra Test Device",
         "sdk=35",
         "abis=arm64-v8a,armeabi-v7a",
-        "gpu=Vulkan 1.3 test renderer"
+        "gpu=Vulkan 1.3 test renderer",
+        "vulkan=Vulkan API 1.3.278"
     )
     foreach ($line in $metadataLines) {
         if ($line -notmatch "^$([regex]::Escape($OmitMetadata))=") {
@@ -157,5 +158,10 @@ Invoke-CheckerFailure $invalidPngReport "invalid png"
 
 $missingMetadataReport = New-SmokeFixture -Stamp "20260604-000004" -OmitMetadata "gpu"
 Invoke-CheckerFailure $missingMetadataReport "missing metadata"
+
+$emptyMetadataReport = New-SmokeFixture -Stamp "20260604-000005"
+(Get-Content -Path $emptyMetadataReport -Raw) -replace '(?m)^vulkan=.*$', 'vulkan=' |
+    Set-Content -Path $emptyMetadataReport -Encoding utf8
+Invoke-CheckerFailure $emptyMetadataReport "empty metadata"
 
 Write-Host "Device smoke result checker self-test passed."

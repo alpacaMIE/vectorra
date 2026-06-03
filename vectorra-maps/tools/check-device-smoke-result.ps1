@@ -48,6 +48,13 @@ function Assert-Contains {
     }
 }
 
+function Assert-ReportValue {
+    param([string]$Text, [string]$Key)
+    if ($Text -notmatch "(?m)^$([regex]::Escape($Key))=\S") {
+        throw "$Key has no value in smoke report"
+    }
+}
+
 function Assert-NonEmptyFile {
     param([string]$Path, [string]$Label)
     if (-not (Test-Path $Path)) {
@@ -94,12 +101,6 @@ function Assert-PngDimensions {
 
 $requiredReportPatterns = @(
     'installApk=',
-    'serial=',
-    'installedApk=',
-    'model=',
-    'sdk=',
-    'abis=',
-    'gpu=',
     'logcatCleared=true',
     'forceStopBeforeColdStart=true',
     'startSample=cold-start',
@@ -113,6 +114,16 @@ $requiredReportPatterns = @(
     'startSample=recreate-after-force-stop',
     'startSampleEnd=recreate-after-force-stop',
     'uiDumpContainsPackage=com\.vectorra\.sample'
+)
+
+$requiredMetadataKeys = @(
+    'serial',
+    'installedApk',
+    'model',
+    'sdk',
+    'abis',
+    'gpu',
+    'vulkan'
 )
 
 $requiredActions = @(
@@ -138,6 +149,9 @@ $requiredActions = @(
 
 foreach ($pattern in $requiredReportPatterns) {
     Assert-Contains $reportText $pattern $pattern
+}
+foreach ($key in $requiredMetadataKeys) {
+    Assert-ReportValue $reportText $key
 }
 foreach ($action in $requiredActions) {
     Assert-Contains $reportText "actionStart=$([regex]::Escape($action))" "actionStart $action"
