@@ -7,7 +7,7 @@ class VectorraResourceStatusTest {
     @Test
     fun createsLoadingStatusPayload() {
         val status = VectorraResourceStatus(
-            kind = VectorraResourceKind.RASTER,
+            kind = VectorraResourceKind.VECTOR,
             sourceId = "imagery-source",
             layerId = "imagery-layer",
             generation = 1L,
@@ -15,7 +15,7 @@ class VectorraResourceStatusTest {
             eventSource = VectorraResourceEventSource.ENGINE
         )
 
-        assertEquals(VectorraResourceKind.RASTER, status.kind)
+        assertEquals(VectorraResourceKind.VECTOR, status.kind)
         assertEquals("imagery-source", status.sourceId)
         assertEquals("imagery-layer", status.layerId)
         assertEquals(1L, status.generation)

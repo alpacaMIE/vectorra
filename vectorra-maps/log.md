@@ -853,3 +853,40 @@ Results:
 - `:vectorra-maps:testDebugUnitTest` passed.
 - `:vectorra-sample:assembleDebug` passed.
 - Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+### P2.T1 Vector Tile API
+
+Continued Phase 2 by adding the public vector tile source/layer API surface without introducing Mapbox Style JSON compatibility or starting the runtime tile store early.
+
+Completed:
+
+- Added `VectorraVectorTileSource` with XYZ/TMS helpers, template URL, tile size, zoom range, scheme, and headers.
+- Added simplified `VectorraVectorTileLayer` variants for `Line`, `Fill`, `Circle`, and `Symbol`.
+- Added style options for line color/opacity/width, fill color/opacity, circle color/opacity/radius, and symbol text field/color/opacity/size.
+- Added validation for source identity, URL, zoom ranges, unsupported WMTS vector sources, source-layer identity, opacity, widths, radii, and symbol text fields.
+- Added `VectorraResourceKind.VECTOR`.
+- Added `VectorraMap.addVectorTileLayer(source, layer)` and `removeVectorTileLayer(id)`.
+- Registered vector tile source/layer pairs inside `VectorraMapEngine` as the P2.T2 runtime store entry point.
+- Emitted unified resource statuses for vector layer add/remove through the existing resource status contract.
+- Kept tile loading, decode ownership, native render handles, and query index ownership out of P2.T1; those remain P2.T2/P2.T3.
+- Added unit tests for vector source/layer defaults and validation, plus resource status support for `VECTOR`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 2 work:
+
+- P2.T2: add the Kotlin MVT runtime tile store as the single owner of decoded tiles, native render handles, and query state.
+- P2.T3: load vector tiles through the proxy/fetcher/cache path.
+- P2.T5/P2.T6: implement visible MVT rendering and query behavior.

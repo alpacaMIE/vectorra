@@ -54,6 +54,8 @@ import com.vectorra.maps.tiles3d.Vectorra3DTilesTilesetLoader
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversal
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversalOptions
 import com.vectorra.maps.tiles3d.VectorraTileset3D
+import com.vectorra.maps.vector.VectorraVectorTileLayer
+import com.vectorra.maps.vector.VectorraVectorTileSource
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -129,6 +131,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val tiles3DLayers = linkedMapOf<String, Vectorra3DTilesRuntimeLayer>()
     private val tiles3DLoadGenerationByLayerId = linkedMapOf<String, Long>()
     private var tiles3DTraversalScheduled = false
+    private val vectorTileRuntimeLock = Any()
+    private val vectorTileLayers = linkedMapOf<String, VectorraVectorTileRuntimeLayer>()
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -766,6 +770,49 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             }
             runtimeLayer?.contentLifecycle?.cancelAll()
             emitRemovedStatusForLayer(id)
+        }
+    }
+
+    override fun addVectorTileLayer(
+        source: VectorraVectorTileSource,
+        layer: VectorraVectorTileLayer
+    ) {
+        require(layer.sourceId == source.id) {
+            "Vector tile layer sourceId must match source id."
+        }
+        ifOpen {
+            emitResourceStatus(
+                kind = VectorraResourceKind.VECTOR,
+                sourceId = source.id,
+                layerId = layer.id,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
+            synchronized(vectorTileRuntimeLock) {
+                vectorTileLayers[layer.id] = VectorraVectorTileRuntimeLayer(
+                    source = source,
+                    layer = layer
+                )
+            }
+            emitResourceStatus(
+                kind = VectorraResourceKind.VECTOR,
+                sourceId = source.id,
+                layerId = layer.id,
+                state = VectorraResourceLoadState.LOADED,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
+        }
+    }
+
+    override fun removeVectorTileLayer(id: String) {
+        require(id.isNotBlank()) { "Vector tile layer id must not be blank." }
+        ifOpen {
+            val removed = synchronized(vectorTileRuntimeLock) {
+                vectorTileLayers.remove(id)
+            }
+            if (removed != null) {
+                emitRemovedStatusForLayer(id)
+            }
         }
     }
 
@@ -1448,6 +1495,9 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 tiles3DLoadGenerationByLayerId.clear()
                 tiles3DTraversalScheduled = false
             }
+            synchronized(vectorTileRuntimeLock) {
+                vectorTileLayers.clear()
+            }
             VectorraNative.destroy(nativeHandle)
         }
     }
@@ -1591,6 +1641,11 @@ private data class Vectorra3DTilesRuntimeContentTask(
     val layerId: String,
     val loadGeneration: Long,
     val task: Vectorra3DTilesContentLoadTask
+)
+
+private data class VectorraVectorTileRuntimeLayer(
+    val source: VectorraVectorTileSource,
+    val layer: VectorraVectorTileLayer
 )
 
 private data class EcefPoint(
