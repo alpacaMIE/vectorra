@@ -19,7 +19,7 @@ class VectorraMapEngineCameraRangeTest {
         val metersPerPixel = EARTH_CIRCUMFERENCE_METERS * cos(Math.toRadians(latitude)) /
             (WEB_MERCATOR_TILE_SIZE * 2.0.pow(zoom))
         val expected = metersPerPixel * DEFAULT_VIEWPORT_HEIGHT_PIXELS /
-            (2.0 * tan(Math.toRadians(VECTORRA_CAMERA_FOVY_DEGREES) * 0.5))
+            (2.0 * tan(Math.toRadians(VECTORRA_NATIVE_CAMERA_FOVY_DEGREES) * 0.5))
 
         assertEquals(
             expected,
@@ -98,7 +98,6 @@ class VectorraMapEngineCameraRangeTest {
 
     private companion object {
         const val DEFAULT_VIEWPORT_HEIGHT_PIXELS = 1080
-        const val VECTORRA_CAMERA_FOVY_DEGREES = 45.0
         const val WEB_MERCATOR_TILE_SIZE = 512.0
         const val EARTH_CIRCUMFERENCE_METERS = 40_075_016.68557849
     }

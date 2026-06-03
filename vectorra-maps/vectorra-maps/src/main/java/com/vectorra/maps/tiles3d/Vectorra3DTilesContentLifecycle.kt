@@ -258,7 +258,29 @@ internal class Vectorra3DTilesContentLifecycle(
             contentKind = content.kind,
             renderUri = renderUri,
             payloadSource = Vectorra3DTilesRendererContentInput.expectedPayloadSource(content.kind),
-            transform = Vectorra3DTilesRendererTransform.Matrix(transform)
+            transform = rendererTransform(transform)
+        )
+    }
+
+    private fun rendererTransform(transform: List<Double>): Vectorra3DTilesRendererTransform {
+        require(transform.size == MATRIX_4_SIZE) {
+            "3D Tiles renderer transform matrix must contain 16 numbers."
+        }
+        require(transform.all(Double::isFinite)) {
+            "3D Tiles renderer transform matrix values must be finite."
+        }
+        val localTransform = transform.toMutableList()
+        val x = localTransform[12]
+        val y = localTransform[13]
+        val z = localTransform[14]
+        localTransform[12] = 0.0
+        localTransform[13] = 0.0
+        localTransform[14] = 0.0
+        return Vectorra3DTilesRendererTransform.Ecef(
+            x = x,
+            y = y,
+            z = z,
+            localTransform = localTransform
         )
     }
 
@@ -402,4 +424,8 @@ internal class Vectorra3DTilesContentLifecycle(
         val renderUri: String,
         val transform: List<Double>
     )
+
+    private companion object {
+        const val MATRIX_4_SIZE = 16
+    }
 }

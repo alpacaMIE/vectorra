@@ -2119,3 +2119,37 @@ Known remaining work:
 
 - Run the `geojson`, `draw`, and `clear-draw` adb smokes on a real device once adb returns to `device`.
 - P4.T3 still needs explicit sample controls/actions for location.
+
+### 3D Tiles Close-Zoom Visibility Stabilization
+
+Investigated the sample 3D Tiles disappearance when zooming in.
+
+Completed:
+
+- Confirmed the sample `TilesetWithDiscreteLOD` content is a transformed `dragon_low/medium/high.b3dm` model tileset, not a building tileset.
+- Aligned Kotlin camera range math with the native camera FOV by changing the shared Kotlin FOV constant to `30.0`.
+- Changed 3D Tiles traversal camera creation to use the same native FOV constant instead of an independent `60.0` value.
+- Changed renderer content submission to split the final tile transform into an ECEF origin plus a local matrix with translation removed, avoiding large global ECEF translation inside model local matrices.
+- Added unit coverage for camera range FOV alignment and renderer transform splitting, including RTC_CENTER-composed b3dm content.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps` and `D:\workspace\code\vectorra`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.VectorraMapEngineCameraRangeTest" --tests "com.vectorra.maps.tiles3d.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+& "$env:ANDROID_HOME\platform-tools\adb.exe" devices -l
+```
+
+Results:
+
+- Camera range and 3D Tiles unit tests passed.
+- `:vectorra-sample:assembleDebug` passed, including native CMake build for `arm64-v8a` and `x86_64`.
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`, so real-device 3D Tiles zoom smoke remains unverified.
+
+Known remaining work:
+
+- Re-run the `3dtiles-zoom` adb smoke and inspect screenshots/logcat after the device returns to `device`.
+- Replace the sample 3D Tiles asset with a representative building/model tileset for P1/P4 smoke coverage if the sample is meant to validate map SDK building rendering rather than generic b3dm rendering.

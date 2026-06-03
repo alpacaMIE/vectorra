@@ -57,12 +57,54 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(listOf("3d-layer:root"), renderer.added.map { it.nativeContentId })
         assertEquals(VectorraTileset3DContentKind.GLB, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLB_URI, renderer.added.single().payloadSource)
-        assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
+        assertEquals(Vectorra3DTilesRendererTransformKind.ECEF, renderer.added.single().transform.kind)
+        assertEquals(Vectorra3DTilesSpatial.IDENTITY_MATRIX, renderer.added.single().nativeMatrix().toList())
+        assertEquals(listOf(1.0, 2.0, 3.0), renderer.added.single().nativeEcefOrigin().toList())
         assertFalse(renderer.added.single().renderUri.startsWith("file:"))
         assertTrue(File(renderer.added.single().renderUri).readBytes().contentEquals(byteArrayOf(1, 2, 3)))
         assertEquals(
             mapOf("root" to Vectorra3DTilesRuntimeTileLoadState.LOADED),
             lifecycle.tileLoadStates()
+        )
+    }
+
+    @Test
+    fun rendererTransformSplitsEcefOriginAndPreservesLocalMatrix() {
+        val renderer = RecordingRenderer()
+        val lifecycle = lifecycle(renderer)
+        val traversal = traversalResult(
+            request(
+                tileId = "root",
+                content = remoteContent("model.glb"),
+                transform = listOf(
+                    2.0, 0.0, 0.0, 0.0,
+                    0.0, 3.0, 0.0, 0.0,
+                    0.0, 0.0, 4.0, 0.0,
+                    1_215_107.761, -4_736_682.902, 4_081_926.095, 1.0
+                )
+            )
+        )
+        val task = lifecycle.applyTraversal(traversal).loadTasks.single()
+
+        lifecycle.completeRemoteLoad(
+            task,
+            TileResponse(request = task.request, statusCode = 200, body = byteArrayOf(1, 2, 3))
+        )
+
+        val added = renderer.added.single()
+        assertEquals(Vectorra3DTilesRendererTransformKind.ECEF, added.transform.kind)
+        assertEquals(
+            listOf(
+                2.0, 0.0, 0.0, 0.0,
+                0.0, 3.0, 0.0, 0.0,
+                0.0, 0.0, 4.0, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            ),
+            added.nativeMatrix().toList()
+        )
+        assertEquals(
+            listOf(1_215_107.761, -4_736_682.902, 4_081_926.095),
+            added.nativeEcefOrigin().toList()
         )
     }
 
@@ -103,7 +145,8 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(listOf("3d-layer:root"), renderer.added.map { it.nativeContentId })
         assertEquals(VectorraTileset3DContentKind.GLTF, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLTF_URI, renderer.added.single().payloadSource)
-        assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
+        assertEquals(Vectorra3DTilesSpatial.IDENTITY_MATRIX, renderer.added.single().nativeMatrix().toList())
+        assertEquals(listOf(1.0, 2.0, 3.0), renderer.added.single().nativeEcefOrigin().toList())
         assertEquals(localFile.absolutePath, renderer.added.single().renderUri)
     }
 
@@ -198,9 +241,10 @@ class Vectorra3DTilesContentLifecycleTest {
                 .contentEquals(Vectorra3DTilesB3dmParserTest.glbBytes())
         )
         assertEquals(
-            Vectorra3DTilesSpatial.translation(11.0, 22.0, 33.0),
+            Vectorra3DTilesSpatial.IDENTITY_MATRIX,
             renderer.added.single().nativeMatrix().toList()
         )
+        assertEquals(listOf(11.0, 22.0, 33.0), renderer.added.single().nativeEcefOrigin().toList())
     }
 
     @Test
@@ -298,13 +342,14 @@ class Vectorra3DTilesContentLifecycleTest {
     private fun request(
         tileId: String,
         content: VectorraTileset3DContent,
+        transform: List<Double> = Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0),
         priority: Int = 42
     ): Vectorra3DTilesRequest {
         return Vectorra3DTilesRequest(
             tileId = tileId,
             content = content,
             priority = priority,
-            transform = Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0)
+            transform = transform
         )
     }
 

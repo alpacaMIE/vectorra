@@ -16,12 +16,12 @@ internal fun vectorraNativeCameraRangeMetersForZoom(
     val metersPerPixel = EARTH_CIRCUMFERENCE_METERS * latitudeScale /
         (NATIVE_CAMERA_TILE_SIZE * 2.0.pow(clampedZoom))
     val visibleGroundMeters = metersPerPixel * viewportHeightPixels.coerceAtLeast(1)
-    val halfFovyRadians = Math.toRadians(VECTORRA_CAMERA_FOVY_DEGREES) * 0.5
+    val halfFovyRadians = Math.toRadians(VECTORRA_NATIVE_CAMERA_FOVY_DEGREES) * 0.5
     return (visibleGroundMeters / (2.0 * tan(halfFovyRadians)))
         .coerceIn(MIN_NATIVE_CAMERA_RANGE_METERS, MAX_NATIVE_CAMERA_RANGE_METERS)
 }
 
-private const val VECTORRA_CAMERA_FOVY_DEGREES = 45.0
+internal const val VECTORRA_NATIVE_CAMERA_FOVY_DEGREES = 30.0
 private const val NATIVE_CAMERA_TILE_SIZE = 512.0
 private const val EARTH_CIRCUMFERENCE_METERS = 40_075_016.68557849
 private const val MIN_NATIVE_CAMERA_RANGE_METERS = 100.0

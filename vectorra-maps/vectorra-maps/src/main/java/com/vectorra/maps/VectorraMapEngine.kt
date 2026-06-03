@@ -1420,7 +1420,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             directionX = (target.x - position.x) / directionLength,
             directionY = (target.y - position.y) / directionLength,
             directionZ = (target.z - position.z) / directionLength,
-            verticalFovDegrees = 60.0,
+            verticalFovDegrees = VECTORRA_NATIVE_CAMERA_FOVY_DEGREES,
             viewportHeightPixels = viewportHeight
         )
     }
