@@ -3676,3 +3676,33 @@ Results:
 Known remaining work:
 
 - Physical device `4tqoz9bmfu8t8pr8` still reports `offline`; Android 1.0 release readiness still requires a real Vulkan-capable device smoke pass.
+
+### MVT MBTiles Instrumentation Emulator Verification
+
+Completed:
+
+- Ran the targeted Android instrumentation test for `VectorraMbTilesVectorSourceInstrumentedTest` on `emulator-5554`.
+- Updated the Android 1.0 acceptance record to show that real Android SQLite MBTiles vector reads are now verified on emulator.
+- Updated the 0.8.0 beta development notes so the instrumentation test is no longer listed as completely unrun.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+$env:ANDROID_SERIAL='emulator-5554'
+$argsList=@('-g','.\.gradle-agent-home',':vectorra-maps:connectedDebugAndroidTest','-Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest')
+& .\gradlew.bat @argsList
+```
+
+Results:
+
+- `adb devices -l` showed `emulator-5554` as `device`; physical device `4tqoz9bmfu8t8pr8` remained `offline`.
+- Gradle ran `Starting 1 tests on Rocky_Vulkan_API36_1(AVD) - 16`.
+- `VectorraMbTilesVectorSourceInstrumentedTest` passed with `BUILD SUCCESSFUL`.
+- HTML report: `vectorra-maps/build/reports/androidTests/connected/debug/com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest.html`.
+- The first attempt used a raw `-Pandroid.testInstrumentationRunnerArguments.class=...` argument and PowerShell passed it incorrectly; the successful run used an argument array.
+
+Known remaining work:
+
+- Rerun connected instrumentation and full smoke on a physical Vulkan Android device once `4tqoz9bmfu8t8pr8` reports `device`.

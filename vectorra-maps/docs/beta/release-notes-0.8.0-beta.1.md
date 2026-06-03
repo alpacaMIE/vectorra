@@ -105,6 +105,7 @@ The following local checks have passed during this development slice:
 ```powershell
 .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:assembleDebugAndroidTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.mvt.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
@@ -119,12 +120,12 @@ Targeted tests added or expanded include:
 - `VectorraPrefetchTaskRunnerTest`
 - `TileCacheAndSchedulerTest`
 - `VectorraMbTilesVectorSourceTest`
-- `VectorraMbTilesVectorSourceInstrumentedTest`
+- `VectorraMbTilesVectorSourceInstrumentedTest`, passed on `emulator-5554`
 
 ## Known Gaps Before Publishing
 
 - Emulator device smoke for `offline-prefetch` and `cancel-prefetch` passed on `emulator-5554`; physical-device smoke still has not run because adb reported `4tqoz9bmfu8t8pr8` as `offline`.
-- `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` still needs to be rerun on a device once adb returns to `device`.
+- `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` passed on `emulator-5554`; rerun on a physical device remains part of the real-device release gate once adb returns to `device`.
 - Android 1.0 local acceptance gates have passed, but runtime release readiness is still blocked by the device gate recorded in [Android 1.0 acceptance record](android-1.0-acceptance.md).
 - A published-AAR verification pass was run successfully against the current Gradle project version `0.5.0-beta.1`:
 

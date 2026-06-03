@@ -36,6 +36,7 @@ Latest local evidence:
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
 - `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, native renderer startup failure rejection, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT pan query, hidden no-features, removed no-features, MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
+- `VectorraMbTilesVectorSourceInstrumentedTest`: passed on `emulator-5554` through `:vectorra-maps:connectedDebugAndroidTest`, proving the Android SQLite MBTiles vector source can open and read a real MBTiles file
 
 Validated outputs:
 
@@ -51,6 +52,13 @@ Validated outputs:
 ## Runtime Device Gate
 
 Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-060442.txt`.
+
+The emulator also passed the targeted Android instrumentation MBTiles vector source test:
+
+```powershell
+$env:ANDROID_SERIAL='emulator-5554'
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest
+```
 
 Latest emulator evidence includes:
 
