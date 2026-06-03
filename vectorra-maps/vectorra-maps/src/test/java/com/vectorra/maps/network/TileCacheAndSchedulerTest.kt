@@ -62,6 +62,52 @@ class TileCacheAndSchedulerTest {
     }
 
     @Test
+    fun tileCacheStoreReportsMemoryAndDiskStatus() {
+        val root = Files.createTempDirectory("vectorra-tile-cache-status").toFile()
+        try {
+            val store = TileCacheStore(
+                memoryCache = TileMemoryCache(maxBytes = 1024),
+                diskCache = TileDiskCache(root, maxBytes = 1024)
+            )
+            val request = TileRequest(url = "https://tiles.example/status.png")
+
+            store.put(TileResponse(request = request, statusCode = 200, body = "status".toByteArray()))
+
+            val status = store.status()
+            assertEquals(1, status.memoryEntryCount)
+            assertEquals(6L, status.memoryBytes)
+            assertEquals(1, status.diskEntryCount)
+            assertEquals(6L, status.diskBytes)
+            assertEquals(2, status.totalEntryCount)
+            assertEquals(12L, status.totalBytes)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun tileCacheStoreClearRemovesMemoryAndDiskEntries() {
+        val root = Files.createTempDirectory("vectorra-tile-cache-clear").toFile()
+        try {
+            val store = TileCacheStore(
+                memoryCache = TileMemoryCache(maxBytes = 1024),
+                diskCache = TileDiskCache(root, maxBytes = 1024)
+            )
+            val request = TileRequest(url = "https://tiles.example/clear.png")
+            store.put(TileResponse(request = request, statusCode = 200, body = "clear".toByteArray()))
+
+            store.clear()
+
+            val status = store.status()
+            assertEquals(0, status.totalEntryCount)
+            assertEquals(0L, status.totalBytes)
+            assertNull(store.get(request))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun tileCacheStoreSkipsUncacheableRequest() {
         val memoryCache = TileMemoryCache(maxBytes = 1024)
         val store = TileCacheStore(memoryCache = memoryCache)

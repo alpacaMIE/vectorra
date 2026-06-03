@@ -2,6 +2,19 @@ package com.vectorra.maps.network
 
 import java.io.File
 
+internal data class TileCacheStoreStatus(
+    val memoryEntryCount: Int,
+    val memoryBytes: Long,
+    val diskEntryCount: Int,
+    val diskBytes: Long
+) {
+    val totalEntryCount: Int
+        get() = memoryEntryCount + diskEntryCount
+
+    val totalBytes: Long
+        get() = memoryBytes + diskBytes
+}
+
 internal class TileCacheStore(
     private val memoryCache: TileMemoryCache? = null,
     private val diskCache: TileDiskCache? = null,
@@ -44,5 +57,19 @@ internal class TileCacheStore(
         val key = TileCacheKeys.from(request)
         memoryCache?.put(key, response)
         diskCache?.put(key, response.body)
+    }
+
+    fun status(): TileCacheStoreStatus {
+        return TileCacheStoreStatus(
+            memoryEntryCount = memoryCache?.entryCount() ?: 0,
+            memoryBytes = memoryCache?.sizeBytes() ?: 0L,
+            diskEntryCount = diskCache?.entryCount() ?: 0,
+            diskBytes = diskCache?.sizeBytes() ?: 0L
+        )
+    }
+
+    fun clear() {
+        memoryCache?.clear()
+        diskCache?.clear()
     }
 }

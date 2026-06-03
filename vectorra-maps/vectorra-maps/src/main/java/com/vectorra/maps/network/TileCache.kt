@@ -118,6 +118,13 @@ class TileDiskCache(
             .sumOf { it.length() }
     }
 
+    @Synchronized
+    fun entryCount(): Int {
+        return rootDirectory.listFiles()
+            .orEmpty()
+            .count { it.isFile }
+    }
+
     private fun trimToSize() {
         var total = sizeBytes()
         if (total <= maxBytes) return

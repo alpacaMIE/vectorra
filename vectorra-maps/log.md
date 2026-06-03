@@ -1547,3 +1547,34 @@ Known remaining work:
 
 - Once adb returns to `device`, run `com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt-mbtiles` and verify native MVT registration plus non-empty center query.
 - Re-run the SQLite instrumentation test now that the androidTest APK size issue has been resolved.
+
+### P3.T1 TileCacheStore Status and Cleanup
+
+Continued cache productization by making the internal cache owner report and clear its current state.
+
+Completed:
+
+- Added `TileCacheStoreStatus` with memory/disk entry counts and byte totals.
+- Added `TileCacheStore.status()` to aggregate memory and disk cache state from the single cache owner.
+- Added `TileCacheStore.clear()` to clear memory and disk entries together.
+- Added `TileDiskCache.entryCount()` so disk cache status no longer has to infer count from byte size.
+- Added tests for status aggregation and clear behavior across both memory and disk caches.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.TileCacheAndSchedulerTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.mvt.*"
+```
+
+Results:
+
+- Tile cache/scheduler tests passed.
+- Network, offline, and MVT unit tests passed.
+
+Known remaining work:
+
+- Surface this internal cache status/cleanup through the future `VectorraOfflineManager` public API.
+- Unify product-level cache status ownership between `TileProxyServer` and `TileResourceFetcher` around the same store contract.
