@@ -288,6 +288,21 @@ foreach ($pattern in $mvtMbTilesPatterns) {
     }
 }
 
+$mvtRuntimePatterns = @(
+    'registered MVT render tile handle=.*source=sample-mvt.*features=[1-9]\d*.*visible=1',
+    'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*',
+    'MVT smoke: camera pan lon=-122\.3',
+    'MVT pan center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt.*source-layer=transportation',
+    'MVT hidden center query: Click: no features',
+    'MVT smoke: removed layer',
+    'MVT readd center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt.*source-layer=transportation'
+)
+foreach ($pattern in $mvtRuntimePatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+
 $offlinePrefetchPatterns = @(
     'Offline prefetch smoke: cache before entries=0 bytes=0 proxy=0/0 resources=0/0',
     'Offline prefetch progress state=RUNNING finished=[1-9]\d*/[1-9]\d* failed=0 bytes=[1-9]\d*',

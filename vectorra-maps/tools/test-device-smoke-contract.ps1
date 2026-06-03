@@ -88,6 +88,14 @@ if ($checkerText -notmatch 'MVT MBTiles smoke: requested file=Vectorra Sample MV
 if ($checkerTestText -notmatch 'missing MVT MBTiles query') {
     throw "test-device-smoke-result-checker.ps1 missing MVT MBTiles failure fixture"
 }
+if ($checkerText -notmatch 'MVT pan center query: Click:' -or
+    $checkerText -notmatch 'MVT hidden center query: Click: no features' -or
+    $checkerText -notmatch 'MVT readd center query: Click:') {
+    throw "check-device-smoke-result.ps1 missing MVT pan/hidden/readd log requirements"
+}
+if ($checkerTestText -notmatch 'missing MVT hidden no-features evidence') {
+    throw "test-device-smoke-result-checker.ps1 missing MVT hidden failure fixture"
+}
 if ($checkerText -notmatch 'Offline prefetch result status=SUCCESS' -or
     $checkerText -notmatch 'state=CANCELED' -or
     $checkerText -notmatch 'cache cleared entries=0') {
