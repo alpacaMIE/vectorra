@@ -50,12 +50,21 @@ internal class VectorraAnnotationHitTester {
     }
 
     fun query(screenPoint: VectorraScreenPoint, options: VectorraQueryOptions): List<VectorraQueriedFeature> {
+        return queryFeatures(features.values, screenPoint, options)
+    }
+
+    fun queryFeatures(
+        candidates: Iterable<VectorraAnnotationFeature>,
+        screenPoint: VectorraScreenPoint,
+        options: VectorraQueryOptions
+    ): List<VectorraQueriedFeature> {
         val radiusOverride = options.radiusPixels.takeIf { it > 0.0 && it.isFinite() }
-        return features.values.asSequence()
+        return candidates.asSequence()
             .filter { it.visible }
             .filter { it.opacity > OPACITY_THRESHOLD }
             .filter { cameraState.zoom >= it.minZoom && cameraState.zoom <= it.maxZoom }
             .filter { options.layerIds.isEmpty() || it.layerId in options.layerIds }
+            .filter { options.sourceLayerIds.isEmpty() || it.properties["source-layer"] in options.sourceLayerIds }
             .mapNotNull { feature ->
                 val threshold = radiusOverride ?: feature.radiusPixels
                 val distance = distanceToFeature(screenPoint, feature)
@@ -73,6 +82,7 @@ internal class VectorraAnnotationHitTester {
                     geometryType = hit.feature.geometry.geometryType,
                     properties = hit.feature.properties,
                     distancePixels = hit.distancePixels,
+                    sourceId = hit.feature.sourceId,
                     zIndex = hit.feature.zIndex
                 )
             }

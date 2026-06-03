@@ -29,6 +29,7 @@ data class VectorraAnnotationFeature(
     val layerId: String,
     val geometry: VectorraAnnotationGeometry,
     val properties: Map<String, String> = emptyMap(),
+    val sourceId: String? = null,
     val radiusPixels: Double = 16.0,
     val zIndex: Int = 0,
     val visible: Boolean = true,
@@ -76,6 +77,7 @@ data class VectorraGeoJsonLayer(
 
 data class VectorraQueryOptions(
     val layerIds: Set<String> = emptySet(),
+    val sourceLayerIds: Set<String> = emptySet(),
     val radiusPixels: Double = 16.0
 )
 

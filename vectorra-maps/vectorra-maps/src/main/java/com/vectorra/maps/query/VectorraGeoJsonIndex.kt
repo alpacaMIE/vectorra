@@ -81,7 +81,9 @@ internal class VectorraGeoJsonIndex(
             }
         }
 
-        return entries.mapNotNull { entry ->
+        return entries
+            .filter { options.sourceLayerIds.isEmpty() || it.feature.properties["source-layer"] in options.sourceLayerIds }
+            .mapNotNull { entry ->
             val bounds = screenBounds(entry.geometry)
             if (!bounds.intersects(screenPoint, radius)) return@mapNotNull null
             val distance = distanceToGeometry(screenPoint, entry.geometry)

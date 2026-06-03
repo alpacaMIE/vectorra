@@ -27,6 +27,12 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
         assertEquals("roads-line:0/0/0", runtimeTile.nativeTileHandle)
         assertEquals(listOf("1"), store.queryFeatures().map { it.id })
+        val hitFeature = store.queryHitFeatures().single()
+        assertEquals("1", hitFeature.id)
+        assertEquals("roads-line", hitFeature.layerId)
+        assertEquals("vector", hitFeature.sourceId)
+        assertEquals("roads", hitFeature.properties["source-layer"])
+        assertEquals("Main", hitFeature.properties["name"])
         assertEquals(listOf("roads-line:0/0/0"), renderer.renderedHandles)
         assertEquals(VectorraMvtRenderLayerKind.LINE, renderer.renderedInputs.single().style.kind)
         assertEquals(listOf("1"), renderer.renderedInputs.single().features.map { it.featureId })
@@ -76,6 +82,7 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(tileId, removed?.tileId)
         assertTrue(store.loadedTileIds().isEmpty())
         assertTrue(store.queryFeatures().isEmpty())
+        assertTrue(store.queryHitFeatures().isEmpty())
         assertEquals(listOf("land-fill:0/0/0"), renderer.removedTileHandles)
     }
 
@@ -99,6 +106,7 @@ class VectorraMvtRuntimeTileStoreTest {
         assertTrue(store.loadedTileIds().isEmpty())
         assertTrue(store.nativeTileHandles().isEmpty())
         assertTrue(store.queryFeatures().isEmpty())
+        assertTrue(store.queryHitFeatures().isEmpty())
         assertEquals(listOf("place-labels"), renderer.removedLayers)
     }
 

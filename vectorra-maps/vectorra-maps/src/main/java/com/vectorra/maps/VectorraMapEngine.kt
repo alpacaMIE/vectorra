@@ -438,8 +438,24 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         screenPoint: VectorraScreenPoint,
         options: VectorraQueryOptions
     ): List<VectorraQueriedFeature> {
-        return (hitTester.query(screenPoint, options) + geoJsonIndex.query(screenPoint, options))
+        return (
+            hitTester.query(screenPoint, options) +
+                geoJsonIndex.query(screenPoint, options) +
+                queryVectorTileFeatures(screenPoint, options)
+            )
             .sortedWith(compareByDescending<VectorraQueriedFeature> { it.zIndex }.thenBy { it.distancePixels })
+    }
+
+    private fun queryVectorTileFeatures(
+        screenPoint: VectorraScreenPoint,
+        options: VectorraQueryOptions
+    ): List<VectorraQueriedFeature> {
+        val candidates = synchronized(vectorTileRuntimeLock) {
+            vectorTileLayers.values.flatMap { runtimeLayer ->
+                runtimeLayer.store.queryHitFeatures()
+            }
+        }
+        return hitTester.queryFeatures(candidates, screenPoint, options)
     }
 
     override fun pixelForCoordinate(coordinate: VectorraCoordinate): VectorraScreenPoint {
@@ -1827,6 +1843,7 @@ private data class VectorraVectorTileRuntimeLayer(
         ).toInt().coerceIn(0, tileCount - 1)
         return VectorraMvtTileId(z = z, x = x, y = y)
     }
+
 }
 
 private data class VectorraVectorTileRuntimeTask(

@@ -112,6 +112,79 @@ class VectorraAnnotationHitTesterTest {
     }
 
     @Test
+    fun externalCandidatesUseSameHitLogicAndReturnSourceId() {
+        val tester = newTester()
+        val center = VectorraCoordinate(104.0, 30.0)
+        val screen = tester.pixelForCoordinate(center)
+        val results = tester.queryFeatures(
+            candidates = listOf(
+                VectorraAnnotationFeature(
+                    id = "mvt-road-1",
+                    sourceId = "openmaptiles",
+                    layerId = "roads-line",
+                    geometry = VectorraAnnotationGeometry.LineString(
+                        listOf(
+                            VectorraCoordinate(103.99, 30.0),
+                            VectorraCoordinate(104.01, 30.0)
+                        )
+                    ),
+                    properties = mapOf("source-layer" to "transportation"),
+                    radiusPixels = 10.0
+                )
+            ),
+            screenPoint = screen,
+            options = VectorraQueryOptions(layerIds = setOf("roads-line"))
+        )
+
+        val result = results.single()
+        assertEquals("mvt-road-1", result.id)
+        assertEquals("openmaptiles", result.sourceId)
+        assertEquals("transportation", result.properties["source-layer"])
+        assertEquals(
+            "mvt-road-1",
+            tester.queryFeatures(
+                candidates = listOf(
+                    VectorraAnnotationFeature(
+                        id = "mvt-road-1",
+                        layerId = "roads-line",
+                        geometry = VectorraAnnotationGeometry.Point(center),
+                        properties = mapOf("source-layer" to "transportation")
+                    )
+                ),
+                screenPoint = screen,
+                options = VectorraQueryOptions(sourceLayerIds = setOf("transportation"))
+            ).single().id
+        )
+        assertTrue(
+            tester.queryFeatures(
+                candidates = listOf(
+                    VectorraAnnotationFeature(
+                        id = "mvt-road-1",
+                        layerId = "roads-line",
+                        geometry = VectorraAnnotationGeometry.Point(center)
+                    )
+                ),
+                screenPoint = screen,
+                options = VectorraQueryOptions(layerIds = setOf("water-fill"))
+            ).isEmpty()
+        )
+        assertTrue(
+            tester.queryFeatures(
+                candidates = listOf(
+                    VectorraAnnotationFeature(
+                        id = "mvt-road-1",
+                        layerId = "roads-line",
+                        geometry = VectorraAnnotationGeometry.Point(center),
+                        properties = mapOf("source-layer" to "transportation")
+                    )
+                ),
+                screenPoint = screen,
+                options = VectorraQueryOptions(sourceLayerIds = setOf("water"))
+            ).isEmpty()
+        )
+    }
+
+    @Test
     fun zIndexSortsBeforeDistance() {
         val tester = newTester()
         val center = VectorraCoordinate(104.0, 30.0)

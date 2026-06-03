@@ -1093,3 +1093,52 @@ Known remaining Phase 2 work:
 
 - P2.T5 still needs manual visual pan/zoom smoke to confirm tile replacement on device beyond the center-tile log path.
 - P2.T6: wire `queryRenderedFeatures` to loaded MVT query store entries and cover source-layer/cross-tile behavior.
+
+### P2.T6 MVT Query Store Integration
+
+Continued Phase 2 by wiring loaded MVT store entries into `queryRenderedFeatures`.
+
+Completed:
+
+- Added `sourceId` to `VectorraAnnotationFeature` with a default value so shared hit-testing can preserve source identity for MVT candidates.
+- Added `sourceLayerIds` to `VectorraQueryOptions` with a default empty set.
+- Extended `VectorraAnnotationHitTester` to query external candidates using the same projection, distance, layer, source-layer, visibility, opacity, zoom, and z-index logic used for annotations.
+- Updated `VectorraGeoJsonIndex` to respect `sourceLayerIds`, preventing non-MVT results from leaking into source-layer-filtered queries.
+- Added `VectorraMvtRuntimeTileStore.queryHitFeatures()` so the store remains the owner of decoded, native, and queryable hit state for loaded MVT tiles.
+- `VectorraMapEngine.queryRenderedFeatures()` now merges annotation, GeoJSON, and current loaded MVT store query results.
+- Removed/cleared MVT tiles no longer contribute query candidates because the candidates are derived only from `VectorraMvtRuntimeTileStore.loadedTiles`.
+- Added tests for MVT hit-feature conversion, source id/source-layer propagation, remove/clear query cleanup, external candidate hit-testing, layer filtering, and source-layer filtering.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the MVT sample action.
+- Logcat showed `registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt style=LINE features=2904 coordinates=6748 visible=1`.
+- Logcat showed `applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`.
+
+Known remaining Phase 2 work:
+
+- Add a device/UI smoke that performs an actual click/query assertion against the visible MVT layer.
+- Broaden P2.T6 fixtures for cross-tile query ordering and cache-hit tile loads.
+- P2.T7 device smoke remains open for pan/zoom, query, visibility, and remove/re-add.

@@ -1,5 +1,6 @@
 package com.vectorra.maps.mvt
 
+import com.vectorra.maps.query.VectorraAnnotationFeature
 import com.vectorra.maps.query.VectorraAnnotationGeometry
 import com.vectorra.maps.vector.VectorraVectorTileLayer
 
@@ -29,6 +30,23 @@ internal class VectorraMvtRuntimeTileStore(
     fun nativeTileHandles(): Set<String> = loadedTiles.values.mapTo(linkedSetOf()) { it.nativeTileHandle }
 
     fun queryFeatures(): List<VectorraMvtDecodedFeature> = loadedTiles.values.flatMap { it.queryFeatures }
+
+    fun queryHitFeatures(): List<VectorraAnnotationFeature> {
+        return queryFeatures().map { feature ->
+            VectorraAnnotationFeature(
+                id = feature.id,
+                layerId = layer.id,
+                geometry = feature.geometry,
+                properties = feature.properties + mapOf("source-layer" to feature.layerName),
+                sourceId = sourceId,
+                radiusPixels = layer.hitRadiusPixels(),
+                visible = layer.visible,
+                opacity = layer.layerOpacity(),
+                minZoom = layer.minZoom.toDouble(),
+                maxZoom = layer.maxZoom.toDouble()
+            )
+        }
+    }
 
     fun putDecodedTile(tileId: VectorraMvtTileId, decodedTile: VectorraMvtTile): VectorraMvtRuntimeTile {
         val renderInput = decodedTile.toRenderInput(tileId)
@@ -151,6 +169,24 @@ internal class VectorraMvtRuntimeTileStore(
             is VectorraVectorTileLayer.Fill -> VectorraMvtRenderGeometryType.POLYGON
             is VectorraVectorTileLayer.Circle -> VectorraMvtRenderGeometryType.POINT
             is VectorraVectorTileLayer.Symbol -> VectorraMvtRenderGeometryType.POINT
+        }
+    }
+
+    private fun VectorraVectorTileLayer.hitRadiusPixels(): Double {
+        return when (this) {
+            is VectorraVectorTileLayer.Circle -> radiusPixels
+            is VectorraVectorTileLayer.Line -> maxOf(16.0, widthPixels)
+            is VectorraVectorTileLayer.Fill -> 16.0
+            is VectorraVectorTileLayer.Symbol -> 16.0
+        }
+    }
+
+    private fun VectorraVectorTileLayer.layerOpacity(): Double {
+        return when (this) {
+            is VectorraVectorTileLayer.Circle -> opacity
+            is VectorraVectorTileLayer.Line -> opacity
+            is VectorraVectorTileLayer.Fill -> opacity
+            is VectorraVectorTileLayer.Symbol -> textOpacity
         }
     }
 
