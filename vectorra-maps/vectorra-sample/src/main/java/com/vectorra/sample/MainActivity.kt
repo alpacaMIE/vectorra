@@ -375,6 +375,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun reloadSample3DTiles() {
+        loadSample3DTiles()
+        statusText.postDelayed({
+            removeSample3DTiles()
+            statusText.postDelayed({
+                loadSample3DTiles()
+            }, SAMPLE_3D_TILES_READD_DELAY_MS)
+        }, SAMPLE_3D_TILES_REMOVE_DELAY_MS)
+    }
+
     private fun runPendingSmokeAction() {
         val action = pendingSmokeAction ?: return
         pendingSmokeAction = null
@@ -383,6 +393,7 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
                 SAMPLE_ACTION_BAD_3D_TILES -> loadBrokenSample3DTiles()
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
+                SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
                 else -> statusText.text = "Unknown sample action: $action"
             }
         }
@@ -478,9 +489,12 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
         const val SAMPLE_3D_TILES_LATITUDE = 39.853105846881554
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
+        const val SAMPLE_3D_TILES_REMOVE_DELAY_MS = 16_000L
+        const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
         const val SAMPLE_ACTION_3D_TILES = "3dtiles"
         const val SAMPLE_ACTION_BAD_3D_TILES = "bad-3dtiles"
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
+        const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
     }
 }

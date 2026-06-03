@@ -517,3 +517,50 @@ Known remaining Phase 1 work:
 - Run add/remove/re-add smoke validation against renderer unload logs.
 - Run bad tileset failure smoke validation.
 - Run rotate or pause/resume lifecycle smoke validation.
+
+### P1.T7 Add/Remove/Re-add 3D Tiles Smoke
+
+Continued Phase 1 by adding and running a deterministic add/remove/re-add smoke sequence for formal `Vectorra3DTiles*` layers.
+
+Completed:
+
+- Added a `readd-3dtiles` `vectorra.sample.action` in `vectorra-sample`.
+- The action loads the sample 3D Tiles layer, waits for content registration, removes the layer, then re-adds the same formal source/layer path.
+- The existing `3dtiles`, `bad-3dtiles`, and manual button paths remain unchanged.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Device smoke was run on `2312DRAABC` with:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+$apk='D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+& $adb shell settings put global verifier_verify_adb_installs 0
+& $adb install -r -d $apk
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action readd-3dtiles
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Device install succeeded.
+- First traversal emitted `requests=1`, `unloads=0`, and `failures=0` for `sample-3d-tiles-layer`.
+- JNI registered `sample-3d-tiles-layer:root`.
+- The remove step logged JNI removal for `sample-3d-tiles-layer:root`.
+- The re-add step emitted another traversal request and registered `sample-3d-tiles-layer:root` again.
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-readd-smoke-2026-06-03-retry.png` showed `tiles3d sample-3d-tiles-layer loaded` after re-add.
+- The exact crash search found no `FATAL EXCEPTION`, `AndroidRuntime`, `ANR`, `Application Not Responding`, or `failed to register`.
+
+Known remaining Phase 1 work:
+
+- Run bad tileset failure smoke validation.
+- Run rotate or pause/resume lifecycle smoke validation.
