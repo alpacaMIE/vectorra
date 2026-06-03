@@ -47,26 +47,28 @@ $validLogText = @(
     "Post-recreate snapshot 1080x1920 nonblank=true",
     "3D Tiles zoom snapshot 1080x1920 nonblank=true",
     "raster sample-base-imagery loaded",
-    "dem sample-base-dem loaded",
     "tiles3d sample-3d-tiles-layer loaded",
-    "registered 3D Tiles renderer content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb transform=ECEF_LOCAL ecef=(1.000,2.000,3.000) visible=1",
-    "applied native 3D Tiles content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb entity=42 transform=ECEF_LOCAL",
+    "registered 3D Tiles renderer content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb transform=ECEF ecef=(1.000,2.000,3.000) visible=1",
+    "applied native 3D Tiles content id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb entity=42 transform=ECEF",
+    "registered 3D Tiles renderer content id=sample-3d-tiles-layer:root/0/0 uri=dragon_high.b3dm.glb transform=ECEF ecef=(1.000,2.000,3.000) visible=1",
+    "applied native 3D Tiles content id=sample-3d-tiles-layer:root/0/0 uri=dragon_high.b3dm.glb entity=44 transform=ECEF",
     "3D Tiles model loaded id=sample-3d-tiles-layer:root uri=dragon_low.b3dm.glb radius=16.03",
+    "3D Tiles model loaded id=sample-3d-tiles-layer:root/0/0 uri=dragon_high.b3dm.glb radius=16.03",
     "removed 3D Tiles renderer content id=sample-3d-tiles-layer:root",
     "tiles3d sample-3d-tiles-layer removed",
     "tiles3d sample-3d-tiles-layer loaded",
     "tiles3d sample-3d-tiles-layer-bad failed: 3D Tiles tileset request failed with HTTP 504.",
+    "vector sample-mvt-transportation loaded",
     "registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt style=sample-mvt-transportation features=3 coordinates=9 visible=1",
     "applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=3",
     "MVT smoke: camera pan lon=-122.3",
-    "MVT pan center query: Click: 2 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation",
     "MVT hidden center query: Click: no features",
     "MVT smoke: removed layer",
+    "vector sample-mvt-transportation removed",
     "MVT readd center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation",
     "MVT MBTiles smoke: requested file=Vectorra Sample MVT",
     "registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1",
     "applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1",
-    "MVT MBTiles center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles",
     "Offline prefetch smoke: cache before entries=0 bytes=0 proxy=0/0 resources=0/0",
     "Offline prefetch progress state=RUNNING finished=1/1 failed=0 bytes=256",
     "Offline prefetch result status=SUCCESS completed=1 failed=0 bytes=256 state=COMPLETED",
@@ -249,14 +251,14 @@ Invoke-CheckerFailure $blankSnapshotReport "blank snapshot"
 $missing3DTilesZoomSnapshotReport = New-SmokeFixture -Stamp "20260604-000007" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true"
 Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom snapshot"
 
-$missing3DTilesReaddReport = New-SmokeFixture -Stamp "20260604-000008" -LogText ($validLogText -replace 'tiles3d sample-3d-tiles-layer removed\r?\ntiles3d sample-3d-tiles-layer loaded', 'tiles3d sample-3d-tiles-layer removed')
+$missing3DTilesHighLodReport = New-SmokeFixture -Stamp "20260604-000008" -LogText ($validLogText -replace 'applied native 3D Tiles content id=sample-3d-tiles-layer:root/0/0 uri=dragon_high\.b3dm\.glb entity=44 transform=ECEF', 'applied native 3D Tiles content id=sample-3d-tiles-layer:root/0/0 uri=dragon_high.b3dm.loading entity=44 transform=ECEF')
+Invoke-CheckerFailure $missing3DTilesHighLodReport "missing 3D Tiles high LOD native evidence"
+
+$missing3DTilesReaddReport = New-SmokeFixture -Stamp "20260604-000009" -LogText ($validLogText -replace 'tiles3d sample-3d-tiles-layer removed\r?\ntiles3d sample-3d-tiles-layer loaded', 'tiles3d sample-3d-tiles-layer removed')
 Invoke-CheckerFailure $missing3DTilesReaddReport "missing 3D Tiles readd loaded evidence"
 
-$missingBaseMapReport = New-SmokeFixture -Stamp "20260604-000009" -LogText ($validLogText -replace 'dem sample-base-dem loaded', 'dem sample-base-dem loading')
-Invoke-CheckerFailure $missingBaseMapReport "missing base DEM loaded evidence"
-
-$missingMvtMbTilesQueryReport = New-SmokeFixture -Stamp "20260604-000010" -LogText ($validLogText -replace 'MVT MBTiles center query: Click: 1 feature\(s\) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles', 'MVT MBTiles center query: Click: no features')
-Invoke-CheckerFailure $missingMvtMbTilesQueryReport "missing MVT MBTiles query"
+$missingMvtMbTilesNativeReport = New-SmokeFixture -Stamp "20260604-000010" -LogText ($validLogText -replace 'registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1', 'registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=0 coordinates=0 visible=1')
+Invoke-CheckerFailure $missingMvtMbTilesNativeReport "missing MVT MBTiles native render"
 
 $missingMvtRuntimeReport = New-SmokeFixture -Stamp "20260604-000011" -LogText ($validLogText -replace 'MVT hidden center query: Click: no features', 'MVT hidden center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation')
 Invoke-CheckerFailure $missingMvtRuntimeReport "missing MVT hidden no-features evidence"

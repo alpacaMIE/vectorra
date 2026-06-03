@@ -177,7 +177,7 @@ Start-Sample "recreate-after-force-stop" 10
 Smoke-Action "post-recreate-snapshot" 4
 $screenshotDevice = "/sdcard/vectorra-smoke-$stamp.png"
 $screenshotHost = Join-Path $out "vectorra-smoke-$stamp.png"
-Invoke-Adb shell screencap -p $screenshotDevice | Out-Null
+Invoke-Adb shell screencap '-p' $screenshotDevice | Out-Null
 Invoke-Adb pull $screenshotDevice $screenshotHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $screenshotDevice | Out-Null
 
@@ -188,8 +188,8 @@ Invoke-Adb pull $uiDevice $uiHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $uiDevice | Out-Null
 
 $logHost = Join-Path $out "device-smoke-$stamp.log"
-Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra AndroidRuntime libc DEBUG ActivityManager ActivityTaskManager |
-    Tee-Object -FilePath $logHost
+Invoke-Adb logcat '-d' '-s' VectorraSample VectorraMapEngine vectorra_jni AndroidRuntime libc DEBUG ActivityManager:E ActivityTaskManager:E |
+    Set-Content -Path $logHost
 
 Assert-NonEmptyFile $screenshotHost "screenshot"
 Assert-NonEmptyFile $uiHost "uiDump"

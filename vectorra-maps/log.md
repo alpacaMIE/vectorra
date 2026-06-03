@@ -3005,6 +3005,42 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Emulator 3D Tiles Close Zoom Smoke Hardening
+
+Completed:
+
+- Used Android Emulator `emulator-5554` because physical device `4tqoz9bmfu8t8pr8` still reported `offline`.
+- Fixed sample smoke action dispatch for repeated `am start` actions by adding `singleTop` plus `onNewIntent`, and added action log output.
+- Changed the 3D Tiles close-zoom smoke from zoom 16.25/16.5 to zoom 20/22 so `TilesetWithDiscreteLOD` actually selects and renders the high-LOD `dragon_high.b3dm.glb` content.
+- Hardened the device smoke runner by quoting adb shell/logcat options, using the actual `VectorraMapEngine` and `vectorra_jni` log tags, and writing logcat artifacts without streaming the whole log to the console.
+- Hardened the result checker metadata parsing, required base raster instead of DEM because startup terrain is disabled, required 3D Tiles high-LOD native render evidence, and made MVT/MBTiles checks assert native render evidence instead of unstable center-line query hits.
+- Added sample network security config that permits cleartext only for `127.0.0.1` and `localhost`, allowing the local MBTiles proxy to load on Android.
+- Added one PixelCopy snapshot retry for transient post-recreate surface timing.
+- Updated beta ABI/device and Android 1.0 acceptance docs with the emulator smoke evidence while keeping real-device release readiness blocked.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+.\tools\run-device-smoke.ps1 -DeviceSerial emulator-5554 -ActionDelaySeconds 8
+.\tools\check-device-smoke-result.ps1 -Report .\build\device-smoke\device-smoke-20260604-043659.txt
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\test-device-smoke-contract.ps1
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Full emulator smoke passed on `sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`.
+- Report: `build/device-smoke/device-smoke-20260604-043659.txt`.
+- 3D Tiles close zoom logged `3D Tiles zoom snapshot 1080x2219 nonblank=true` plus native registered/applied high-LOD `dragon_high.b3dm.glb`.
+- MVT MBTiles loaded through the localhost proxy and reached native render registration/application.
+- `test-device-smoke-result-checker.ps1`, `test-device-smoke-contract.ps1`, and `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Real-device release smoke remains blocked until `4tqoz9bmfu8t8pr8` reports `device` instead of `offline`.
+- Emulator lifecycle still logs transient `Number of vsg:Device allocated exceeds number supported` during home/resume, then recovers and passes post-recreate snapshot; track separately if it reproduces on hardware.
+
 ### Base Raster DEM Smoke Result Evidence Gate
 
 Tightened the Android device smoke result contract so the cold-start base raster and DEM layers must prove loaded resource status through logcat before a device smoke run can pass.

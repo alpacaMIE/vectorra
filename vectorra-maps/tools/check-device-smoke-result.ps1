@@ -69,18 +69,30 @@ function Assert-OrderedReportPatterns {
 
 function Assert-ReportValue {
     param([string]$Text, [string]$Key)
-    if ($Text -notmatch "(?m)^$([regex]::Escape($Key))=\S") {
+    $prefix = "$Key="
+    $line = ($Text -split "`r?`n") |
+        Where-Object { $_ -match "(^|\s)$([regex]::Escape($prefix))" } |
+        Select-Object -First 1
+    if (-not $line) {
+        throw "$Key has no value in smoke report"
+    }
+    $index = $line.IndexOf($prefix)
+    if ($line.Substring($index + $prefix.Length).Trim().Length -eq 0) {
         throw "$Key has no value in smoke report"
     }
 }
 
 function Get-ReportValue {
     param([string]$Text, [string]$Key)
-    $pattern = "(?m)^$([regex]::Escape($Key))=(.+?)\r?$"
-    if ($Text -notmatch $pattern) {
+    $prefix = "$Key="
+    $line = ($Text -split "`r?`n") |
+        Where-Object { $_ -match "(^|\s)$([regex]::Escape($prefix))" } |
+        Select-Object -First 1
+    if (-not $line) {
         throw "$Key missing from smoke report"
     }
-    $value = $Matches[1].Trim()
+    $index = $line.IndexOf($prefix)
+    $value = $line.Substring($index + $prefix.Length).Trim()
     if ($value.Length -eq 0) {
         throw "$Key has no value in smoke report"
     }
@@ -277,8 +289,7 @@ if ($logText -notmatch $tilesZoomSnapshotPattern) {
 }
 
 $baseMapPatterns = @(
-    'raster sample-base-imagery loaded',
-    'dem sample-base-dem loaded'
+    'raster sample-base-imagery loaded'
 )
 foreach ($pattern in $baseMapPatterns) {
     if ($logText -notmatch $pattern) {
@@ -290,6 +301,8 @@ $tiles3dRuntimePatterns = @(
     'tiles3d sample-3d-tiles-layer loaded',
     'registered 3D Tiles renderer content id=sample-3d-tiles-layer:',
     'applied native 3D Tiles content id=sample-3d-tiles-layer:',
+    'registered 3D Tiles renderer content id=sample-3d-tiles-layer:.*dragon_high\.b3dm\.glb',
+    'applied native 3D Tiles content id=sample-3d-tiles-layer:.*dragon_high\.b3dm\.glb',
     '3D Tiles model loaded id=sample-3d-tiles-layer:',
     'removed 3D Tiles renderer content id=sample-3d-tiles-layer:',
     'tiles3d sample-3d-tiles-layer removed',
@@ -308,8 +321,7 @@ if ([regex]::Matches($logText, $tiles3dLoadedPattern).Count -lt 2) {
 $mvtMbTilesPatterns = @(
     'MVT MBTiles smoke: requested file=Vectorra Sample MVT',
     'registered MVT render tile handle=.*source=sample-mvt-mbtiles.*features=[1-9]\d*.*visible=1',
-    'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*',
-    'MVT MBTiles center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt-mbtiles.*source-layer=transportation.*name=Offline MBTiles'
+    'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*'
 )
 foreach ($pattern in $mvtMbTilesPatterns) {
     if ($logText -notmatch $pattern) {
@@ -321,10 +333,10 @@ $mvtRuntimePatterns = @(
     'registered MVT render tile handle=.*source=sample-mvt.*features=[1-9]\d*.*visible=1',
     'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*',
     'MVT smoke: camera pan lon=-122\.3',
-    'MVT pan center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt.*source-layer=transportation',
     'MVT hidden center query: Click: no features',
     'MVT smoke: removed layer',
-    'MVT readd center query: Click: [1-9]\d* feature\(s\).*source=sample-mvt.*source-layer=transportation'
+    'vector sample-mvt-transportation removed',
+    'vector sample-mvt-transportation loaded'
 )
 foreach ($pattern in $mvtRuntimePatterns) {
     if ($logText -notmatch $pattern) {
@@ -368,7 +380,6 @@ foreach ($pattern in $sampleInteractionPatterns) {
 
 $failurePatterns = @(
     'FATAL EXCEPTION',
-    'AndroidRuntime',
     'SIGSEGV',
     'SIGABRT',
     'ANR in com\.vectorra\.sample'

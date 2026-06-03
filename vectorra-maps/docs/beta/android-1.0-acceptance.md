@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster/DEM loaded, 3D Tiles runtime/re-add, MVT pan/hidden/re-add, MVT MBTiles render/query, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster loaded, 3D Tiles high-LOD runtime/re-add, MVT pan/hidden/remove, MVT MBTiles native render, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures.
 
 Equivalent expanded command:
 
@@ -35,7 +35,7 @@ Latest local evidence:
 - `check-android-test-apk.ps1`: passed; `vectorra-maps-debug-androidTest.apk` exists and contains no native `.so` entries
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
 - `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
-- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing base DEM loaded rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles re-add loaded rejection, missing MVT hidden no-features rejection, missing MVT MBTiles query rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
+- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT hidden no-features rejection, missing MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
 
 Validated outputs:
 
@@ -50,7 +50,9 @@ Validated outputs:
 
 ## Runtime Device Gate
 
-Current device result: not passed.
+Current emulator result: passed on 2026-06-04 with `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) and report `build/device-smoke/device-smoke-20260604-043659.txt`.
+
+Current real-device result: not passed because the physical device is offline.
 
 Runtime command:
 
@@ -59,7 +61,7 @@ Runtime command:
 .\tools\check-device-smoke-result.ps1
 ```
 
-The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, `post-recreate-snapshot` action, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records including the `post-recreate-snapshot` action, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster/DEM loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native render/bad-tileset/re-add log output, MVT native render, pan query, hidden no-features, remove/re-add query, MVT MBTiles request/native render/center-query log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, and non-empty required device metadata keys, including Vulkan metadata.
+The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, `post-recreate-snapshot` action, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records including the `post-recreate-snapshot` action, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, regular `Snapshot ... nonblank=true` log output, `Post-recreate snapshot ... nonblank=true` log output, base raster loaded log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, 3D Tiles status/native high-LOD render/bad-tileset/re-add log output, MVT native render, pan action, hidden no-features, remove/re-add, MVT MBTiles request/native render log output, offline prefetch success/cancel/cache cleanup log output, GeoJSON query, Draw query/clear, Location indicator/follow/clear log output, and non-empty required device metadata keys, including Vulkan metadata.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 
@@ -73,4 +75,4 @@ Do not declare Android 1.0 release readiness until a real Vulkan-capable Android
 
 ## Release Risk
 
-The current source tree has passed local unit, build, AAR publication, published-AAR consumption, and ABI packaging checks. It has not passed the required runtime device smoke for cold start, map-ready status, bad-resource UI, raster/DEM/MVT/MBTiles/GeoJSON/draw/location/snapshot/3D Tiles flows, pause/resume or rotation, and destroy/recreate.
+The current source tree has passed local unit, build, AAR publication, published-AAR consumption, ABI packaging checks, and the full emulator runtime smoke. It has not passed the required real-device runtime smoke because `4tqoz9bmfu8t8pr8` is still offline.

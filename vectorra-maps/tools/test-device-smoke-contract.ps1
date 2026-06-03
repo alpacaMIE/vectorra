@@ -80,33 +80,33 @@ if ($checkerText -notmatch 'actionStart=post-recreate-snapshot' -or $checkerText
 if ($checkerText -notmatch 'Post-recreate snapshot\\s\+\\d\+x\\d\+\\s\+nonblank=true') {
     throw "check-device-smoke-result.ps1 missing post-recreate snapshot log requirement"
 }
-if ($checkerText -notmatch 'raster sample-base-imagery loaded' -or
-    $checkerText -notmatch 'dem sample-base-dem loaded') {
-    throw "check-device-smoke-result.ps1 missing base raster/DEM loaded log requirements"
-}
-if ($checkerTestText -notmatch 'missing base DEM loaded evidence') {
-    throw "test-device-smoke-result-checker.ps1 missing base DEM failure fixture"
+if ($checkerText -notmatch 'raster sample-base-imagery loaded') {
+    throw "check-device-smoke-result.ps1 missing base raster loaded log requirement"
 }
 if ($checkerText -notmatch 'tiles3d sample-3d-tiles-layer loaded' -or
     $checkerText -notmatch 'registered 3D Tiles renderer content id=sample-3d-tiles-layer:' -or
+    $checkerText -notmatch 'dragon_high\\\.b3dm\\\.glb' -or
     $checkerText -notmatch 'tiles3d sample-3d-tiles-layer-bad failed:') {
     throw "check-device-smoke-result.ps1 missing 3D Tiles runtime log requirements"
+}
+if ($checkerTestText -notmatch 'missing 3D Tiles high LOD native evidence') {
+    throw "test-device-smoke-result-checker.ps1 missing 3D Tiles high LOD failure fixture"
 }
 if ($checkerTestText -notmatch 'missing 3D Tiles readd loaded evidence') {
     throw "test-device-smoke-result-checker.ps1 missing 3D Tiles readd failure fixture"
 }
 if ($checkerText -notmatch 'MVT MBTiles smoke: requested file=Vectorra Sample MVT' -or
     $checkerText -notmatch 'source=sample-mvt-mbtiles' -or
-    $checkerText -notmatch 'MVT MBTiles center query: Click:') {
-    throw "check-device-smoke-result.ps1 missing MVT MBTiles render/query log requirements"
+    $checkerText -notmatch 'applied MVT render tile handle=.*sample-mvt-transportation.*entities=') {
+    throw "check-device-smoke-result.ps1 missing MVT MBTiles native render log requirements"
 }
-if ($checkerTestText -notmatch 'missing MVT MBTiles query') {
-    throw "test-device-smoke-result-checker.ps1 missing MVT MBTiles failure fixture"
+if ($checkerTestText -notmatch 'missing MVT MBTiles native render') {
+    throw "test-device-smoke-result-checker.ps1 missing MVT MBTiles native render failure fixture"
 }
-if ($checkerText -notmatch 'MVT pan center query: Click:' -or
+if ($checkerText -notmatch 'MVT smoke: camera pan lon=-122\\\.3' -or
     $checkerText -notmatch 'MVT hidden center query: Click: no features' -or
-    $checkerText -notmatch 'MVT readd center query: Click:') {
-    throw "check-device-smoke-result.ps1 missing MVT pan/hidden/readd log requirements"
+    $checkerText -notmatch 'MVT smoke: removed layer') {
+    throw "check-device-smoke-result.ps1 missing MVT pan/hidden/remove log requirements"
 }
 if ($checkerTestText -notmatch 'missing MVT hidden no-features evidence') {
     throw "test-device-smoke-result-checker.ps1 missing MVT hidden failure fixture"

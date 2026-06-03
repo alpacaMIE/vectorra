@@ -1,6 +1,7 @@
 package com.vectorra.sample
 
 import android.app.Activity
+import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -152,6 +153,12 @@ class MainActivity : Activity() {
             mapView.map.close()
         }
         super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingSmokeAction = intent.getStringExtra(EXTRA_SAMPLE_ACTION)
+        runPendingSmokeAction()
     }
 
     private fun createControls(): View {
@@ -667,9 +674,15 @@ class MainActivity : Activity() {
         logSnapshotSmoke(label = "Post-recreate snapshot", updateStatus = true)
     }
 
-    private fun logSnapshotSmoke(label: String, updateStatus: Boolean) {
+    private fun logSnapshotSmoke(label: String, updateStatus: Boolean, attempt: Int = 1) {
         mapView.snapshot { bitmap, error ->
             if (error != null || bitmap == null) {
+                if (attempt < SNAPSHOT_SMOKE_MAX_ATTEMPTS) {
+                    statusText.postDelayed({
+                        logSnapshotSmoke(label, updateStatus, attempt + 1)
+                    }, SNAPSHOT_SMOKE_RETRY_DELAY_MS)
+                    return@snapshot
+                }
                 val text = "$label error: ${error?.message ?: "empty bitmap"}"
                 if (updateStatus) {
                     statusText.text = text
@@ -995,6 +1008,7 @@ class MainActivity : Activity() {
         val action = pendingSmokeAction ?: return
         pendingSmokeAction = null
         statusText.post {
+            Log.i(LOG_TAG, "Smoke action: $action")
             when (action) {
                 SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
                 SAMPLE_ACTION_MVT -> loadSampleMvt()
@@ -1256,8 +1270,8 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
         const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
         const val SAMPLE_3D_TILES_LATITUDE = 40.04253061142592
-        const val SAMPLE_3D_TILES_ZOOM_CLOSE = 16.25
-        const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 16.5
+        const val SAMPLE_3D_TILES_ZOOM_CLOSE = 20.0
+        const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 22.0
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
         const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
@@ -1282,6 +1296,8 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS = 7_000L
         const val SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS = 14_000L
         const val SAMPLE_3D_TILES_ZOOM_SNAPSHOT_DELAY_MS = 20_000L
+        const val SNAPSHOT_SMOKE_MAX_ATTEMPTS = 2
+        const val SNAPSHOT_SMOKE_RETRY_DELAY_MS = 1_500L
         const val SAMPLE_MVT_REMOVE_DELAY_MS = 6_000L
         const val SAMPLE_MVT_READD_DELAY_MS = 2_000L
         const val SAMPLE_MVT_PAN_DELAY_MS = 7_000L
