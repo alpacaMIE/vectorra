@@ -41,6 +41,7 @@ Runtime command:
 
 ```powershell
 .\tools\run-device-smoke.ps1
+.\tools\check-device-smoke-result.ps1
 ```
 
 The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, non-empty artifact checks, and action/lifecycle start-end reporting.

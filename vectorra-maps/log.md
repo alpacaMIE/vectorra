@@ -2488,3 +2488,30 @@ Results:
 Known remaining work:
 
 - Confirm action/lifecycle report output on an online runtime smoke.
+
+### Device Smoke Result Checker
+
+Added a standalone checker for completed runtime smoke artifacts.
+
+Completed:
+
+- Added `tools/check-device-smoke-result.ps1`.
+- The checker verifies the latest `build/device-smoke/device-smoke-*.txt` report by default.
+- It requires install/logcat/cold-start/lifecycle markers, start/end records for every sample smoke action, non-empty screenshot/UI/logcat artifacts, `com.vectorra.sample` in the UI dump, and no common crash patterns in logcat.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` to run the checker after `tools/run-device-smoke.ps1`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\check-device-smoke-result.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1` and `check-device-smoke-result.ps1`.
+- Running the checker without a completed runtime smoke failed early as expected because `build/device-smoke` does not exist.
+
+Known remaining work:
+
+- Run `.\tools\run-device-smoke.ps1` and `.\tools\check-device-smoke-result.ps1` after adb reports the physical device as `device`.

@@ -47,6 +47,14 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 
 The script installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if the screenshot, UI dump, or logcat artifact is missing or empty. The text report includes start/end records for every sample action and lifecycle step.
 
+After a run completes, verify the generated artifacts:
+
+```powershell
+.\tools\check-device-smoke-result.ps1
+```
+
+This validates action and lifecycle completion records, screenshot/UI/log artifacts, UI package ownership, and common crash patterns.
+
 By default the script selects the split sample APK from the device ABI list:
 
 - `arm64-v8a` device -> `vectorra-sample-arm64-v8a-debug.apk`
