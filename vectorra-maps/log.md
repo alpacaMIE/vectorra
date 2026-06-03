@@ -2542,3 +2542,29 @@ Results:
 Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
+
+### Android Acceptance Script Smoke Checker Self-Test
+
+Aligned the local acceptance script with the documented Android 1.0 gate.
+
+Completed:
+
+- Updated `tools/check-android-acceptance.ps1` to run `tools/test-device-smoke-result-checker.ps1` after `tools/check-native-libs.ps1`.
+- The documented one-command local gate now includes Gradle/unit/build/published-AAR checks, native library checks, and the runtime smoke result checker self-test.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-android-acceptance.ps1','.\tools\check-native-libs.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for the local acceptance, native-lib, smoke-result, and smoke-result self-test scripts.
+- `test-device-smoke-result-checker.ps1` passed.
+
+Known remaining work:
+
+- Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
+- Run the real device smoke and result checker after adb reports the physical device as `device`.

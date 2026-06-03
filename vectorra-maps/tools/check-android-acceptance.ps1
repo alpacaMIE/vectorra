@@ -22,6 +22,7 @@ try {
         :vectorra-sample:assembleDebug
 
     & (Join-Path $PSScriptRoot "check-native-libs.ps1")
+    & (Join-Path $PSScriptRoot "test-device-smoke-result-checker.ps1")
 
     Write-Host "Android local acceptance gate passed."
 }
