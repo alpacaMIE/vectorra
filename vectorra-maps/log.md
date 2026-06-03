@@ -3005,6 +3005,31 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### ABI Matrix Smoke Contract Command
+
+Aligned the documented runtime device-smoke command block with the local acceptance gate.
+
+Completed:
+
+- Updated `docs/beta/abi-device-matrix.md` so the runtime smoke command sequence includes `tools/test-device-smoke-contract.ps1` before the smoke result checker and real device runner.
+- Extended `tools/test-device-smoke-contract.ps1` to verify the ABI/device matrix documents the contract self-test command.
+
+Verification commands run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\test-device-smoke-contract.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-contract.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser check passed for `tools/test-device-smoke-contract.ps1`.
+- Initial contract self-test failed because an over-escaped regex did not match the documented PowerShell command; replaced it with a direct `.Contains(...)` command check.
+- `tools/test-device-smoke-contract.ps1` passed.
+- `tools/check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home` passed.
+- Physical-device smoke remains blocked because adb still reports the attached device as `offline`.
+
 ### Device Smoke Script Contract Self-Test
 
 Added a local self-test for the device smoke script contract so runner, checker, fixtures, and sample action constants cannot silently drift.

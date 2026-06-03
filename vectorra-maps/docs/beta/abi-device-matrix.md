@@ -42,6 +42,7 @@ At least one real Vulkan-capable Android device must run the full smoke before r
 Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entry:
 
 ```powershell
+.\tools\test-device-smoke-contract.ps1
 .\tools\test-device-smoke-result-checker.ps1
 .\tools\run-device-smoke.ps1
 ```

@@ -5,8 +5,9 @@ $runner = Join-Path $PSScriptRoot "run-device-smoke.ps1"
 $checker = Join-Path $PSScriptRoot "check-device-smoke-result.ps1"
 $checkerTest = Join-Path $PSScriptRoot "test-device-smoke-result-checker.ps1"
 $sample = Join-Path $repoRoot "vectorra-sample/src/main/java/com/vectorra/sample/MainActivity.kt"
+$abiMatrixDoc = Join-Path $repoRoot "docs/beta/abi-device-matrix.md"
 
-foreach ($path in @($runner, $checker, $checkerTest, $sample)) {
+foreach ($path in @($runner, $checker, $checkerTest, $sample, $abiMatrixDoc)) {
     if (-not (Test-Path $path)) {
         throw "Required smoke contract file not found: $path"
     }
@@ -47,6 +48,7 @@ $runnerText = Get-Content -Path $runner -Raw
 $checkerText = Get-Content -Path $checker -Raw
 $checkerTestText = Get-Content -Path $checkerTest -Raw
 $sampleText = Get-Content -Path $sample -Raw
+$abiMatrixText = Get-Content -Path $abiMatrixDoc -Raw
 
 $runnerActionsBlock = [regex]::Match($runnerText, '(?s)\$actions\s*=\s*@\((.*?)\)')
 if (-not $runnerActionsBlock.Success) {
@@ -77,6 +79,9 @@ if ($checkerText -notmatch 'actionStart=post-recreate-snapshot' -or $checkerText
 }
 if ($checkerText -notmatch 'Post-recreate snapshot\\s\+\\d\+x\\d\+\\s\+nonblank=true') {
     throw "check-device-smoke-result.ps1 missing post-recreate snapshot log requirement"
+}
+if (-not $abiMatrixText.Contains(".\tools\test-device-smoke-contract.ps1")) {
+    throw "ABI/device matrix missing test-device-smoke-contract.ps1 runtime gate command"
 }
 
 Write-Host "Device smoke script contract self-test passed."
