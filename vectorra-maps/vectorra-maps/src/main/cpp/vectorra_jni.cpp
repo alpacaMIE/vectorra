@@ -748,7 +748,13 @@ namespace
             __android_log_print(ANDROID_LOG_INFO, TAG, "resize %dx%d", surfaceWidth, surfaceHeight);
         }
 
-        void setCamera(double longitude, double latitude, double zoom, double pitch, double bearing)
+        void setCamera(
+            double longitude,
+            double latitude,
+            double zoom,
+            double pitch,
+            double bearing,
+            double targetHeightMeters)
         {
             std::lock_guard<std::mutex> lock(mutex);
             cameraLongitude = longitude;
@@ -756,6 +762,7 @@ namespace
             cameraZoom = zoom;
             cameraPitch = pitch;
             cameraBearing = bearing;
+            cameraTargetHeightMeters = std::isfinite(targetHeightMeters) ? targetHeightMeters : 0.0;
             if (app)
             {
                 queueLatestCameraUpdateLocked();
@@ -3163,7 +3170,11 @@ namespace
         rocky::Viewpoint currentViewpoint() const
         {
             rocky::Viewpoint viewpoint;
-            viewpoint.point = rocky::GeoPoint(rocky::SRS::WGS84, cameraLongitude, cameraLatitude, 0.0);
+            viewpoint.point = rocky::GeoPoint(
+                rocky::SRS::WGS84,
+                cameraLongitude,
+                cameraLatitude,
+                cameraTargetHeightMeters);
             viewpoint.range = rocky::Distance(cameraRangeMeters(), rocky::Units::METERS);
             viewpoint.heading = rocky::Angle(cameraBearing, rocky::Units::DEGREES);
             viewpoint.pitch = rocky::Angle(std::clamp(cameraPitch - 90.0, -90.0, -5.0), rocky::Units::DEGREES);
@@ -3200,9 +3211,10 @@ namespace
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
-                "camera applied lon=%.6f lat=%.6f zoom=%.2f range=%.1f pitch=%.1f bearing=%.1f",
+                "camera applied lon=%.6f lat=%.6f height=%.1f zoom=%.2f range=%.1f pitch=%.1f bearing=%.1f",
                 cameraLongitude,
                 cameraLatitude,
+                cameraTargetHeightMeters,
                 cameraZoom,
                 cameraRangeMeters(),
                 cameraPitch - 90.0,
@@ -3225,6 +3237,7 @@ namespace
                 double zoom = 0.0;
                 double pitch = 0.0;
                 double bearing = 0.0;
+                double targetHeightMeters = 0.0;
                 int viewportHeight = 1;
                 {
                     std::lock_guard<std::mutex> lock(mutex);
@@ -3234,6 +3247,7 @@ namespace
                     zoom = cameraZoom;
                     pitch = cameraPitch;
                     bearing = cameraBearing;
+                    targetHeightMeters = cameraTargetHeightMeters;
                     viewportHeight = effectiveRenderHeight();
                 }
 
@@ -3259,7 +3273,7 @@ namespace
                 const double rangeMeters = cameraRangeMeters(zoom, latitude, viewportHeight);
 
                 rocky::Viewpoint viewpoint;
-                viewpoint.point = rocky::GeoPoint(rocky::SRS::WGS84, longitude, latitude, 0.0);
+                viewpoint.point = rocky::GeoPoint(rocky::SRS::WGS84, longitude, latitude, targetHeightMeters);
                 viewpoint.range = rocky::Distance(rangeMeters, rocky::Units::METERS);
                 viewpoint.heading = rocky::Angle(bearing, rocky::Units::DEGREES);
                 viewpoint.pitch = rocky::Angle(std::clamp(pitch - 90.0, -90.0, -5.0), rocky::Units::DEGREES);
@@ -3268,6 +3282,17 @@ namespace
                 {
                     activeApp->vsgcontext->requestFrame();
                 }
+                __android_log_print(
+                    ANDROID_LOG_INFO,
+                    TAG,
+                    "camera applied lon=%.6f lat=%.6f height=%.1f zoom=%.2f range=%.1f pitch=%.1f bearing=%.1f",
+                    longitude,
+                    latitude,
+                    targetHeightMeters,
+                    zoom,
+                    rangeMeters,
+                    pitch - 90.0,
+                    bearing);
             });
         }
 
@@ -3285,6 +3310,7 @@ namespace
         double cameraZoom = 2.0;
         double cameraPitch = 0.0;
         double cameraBearing = 0.0;
+        double cameraTargetHeightMeters = 0.0;
         bool cameraUpdateQueued = false;
         float terrainExaggeration = 1.0f;
         bool terrainExaggerationUpdateQueued = false;
@@ -3556,11 +3582,19 @@ Java_com_vectorra_maps_internal_VectorraNative_resize(JNIEnv*, jobject, jlong ha
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_vectorra_maps_internal_VectorraNative_setCamera(
-    JNIEnv*, jobject, jlong handle, jdouble longitude, jdouble latitude, jdouble zoom, jdouble pitch, jdouble bearing)
+    JNIEnv*,
+    jobject,
+    jlong handle,
+    jdouble longitude,
+    jdouble latitude,
+    jdouble zoom,
+    jdouble pitch,
+    jdouble bearing,
+    jdouble targetHeightMeters)
 {
     if (auto* engine = fromHandle(handle))
     {
-        engine->setCamera(longitude, latitude, zoom, pitch, bearing);
+        engine->setCamera(longitude, latitude, zoom, pitch, bearing, targetHeightMeters);
     }
 }
 

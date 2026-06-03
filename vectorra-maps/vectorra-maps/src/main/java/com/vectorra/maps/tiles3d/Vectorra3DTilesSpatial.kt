@@ -10,6 +10,12 @@ internal data class Vectorra3DTilesPoint3D(
     val z: Double
 )
 
+internal data class Vectorra3DTilesGeodetic(
+    val longitudeDegrees: Double,
+    val latitudeDegrees: Double,
+    val heightMeters: Double
+)
+
 internal data class Vectorra3DTilesBoundingSphere(
     val center: Vectorra3DTilesPoint3D,
     val radius: Double
@@ -170,6 +176,43 @@ internal object Vectorra3DTilesSpatial {
             x = (primeVerticalRadius + height) * cosLatitude * cos(longitude),
             y = (primeVerticalRadius + height) * cosLatitude * sin(longitude),
             z = (primeVerticalRadius * (1.0 - WGS84_FIRST_ECCENTRICITY_SQUARED) + height) * sinLatitude
+        )
+    }
+
+    fun ecefToWgs84(point: Vectorra3DTilesPoint3D): Vectorra3DTilesGeodetic {
+        require(point.x.isFinite() && point.y.isFinite() && point.z.isFinite()) {
+            "3D Tiles ECEF point must be finite."
+        }
+        val semiMinorAxis = WGS84_SEMI_MAJOR_AXIS_METERS * (1.0 - WGS84_FLATTENING)
+        val secondEccentricitySquared = (
+            WGS84_SEMI_MAJOR_AXIS_METERS * WGS84_SEMI_MAJOR_AXIS_METERS -
+                semiMinorAxis * semiMinorAxis
+            ) / (semiMinorAxis * semiMinorAxis)
+        val horizontal = sqrt(point.x * point.x + point.y * point.y)
+        val theta = kotlin.math.atan2(
+            point.z * WGS84_SEMI_MAJOR_AXIS_METERS,
+            horizontal * semiMinorAxis
+        )
+        val sinTheta = sin(theta)
+        val cosTheta = cos(theta)
+        val latitude = kotlin.math.atan2(
+            point.z + secondEccentricitySquared * semiMinorAxis * sinTheta * sinTheta * sinTheta,
+            horizontal - WGS84_FIRST_ECCENTRICITY_SQUARED *
+                WGS84_SEMI_MAJOR_AXIS_METERS * cosTheta * cosTheta * cosTheta
+        )
+        val longitude = kotlin.math.atan2(point.y, point.x)
+        val sinLatitude = sin(latitude)
+        val primeVerticalRadius = WGS84_SEMI_MAJOR_AXIS_METERS /
+            sqrt(1.0 - WGS84_FIRST_ECCENTRICITY_SQUARED * sinLatitude * sinLatitude)
+        val height = if (horizontal > 0.0) {
+            horizontal / cos(latitude) - primeVerticalRadius
+        } else {
+            kotlin.math.abs(point.z) - semiMinorAxis
+        }
+        return Vectorra3DTilesGeodetic(
+            longitudeDegrees = Math.toDegrees(longitude),
+            latitudeDegrees = Math.toDegrees(latitude),
+            heightMeters = height
         )
     }
 

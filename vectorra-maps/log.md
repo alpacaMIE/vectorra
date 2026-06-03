@@ -1424,3 +1424,49 @@ Known remaining Phase 3 work:
 
 - The current tile-read fixture uses a fake reader because JVM unit tests do not include Robolectric or sqlite-jdbc. A real SQLite MBTiles fixture still needs androidTest coverage or a dedicated test dependency.
 - Sample UI/device smoke for real MVT MBTiles remains open.
+
+### P1 3D Tiles Elevated Camera Target Fix
+
+Fixed the close-zoom disappearance observed with the sample Cesium dragon tileset.
+
+Completed:
+
+- Added ECEF-to-WGS84 height conversion for 3D Tiles spatial calculations.
+- Derived an internal 3D Tiles camera target height from the transformed root bounding volume.
+- Used that target height for both Kotlin traversal camera construction and the native rocky viewpoint target.
+- Re-applied the native camera after a 3D Tiles layer finishes loading so an already-positioned camera updates from ground height to the tileset height without requiring a user gesture.
+- Extended native camera logging to include the applied target height.
+- Added unit coverage for elevated ECEF round-trip height and for the Cesium dragon-style box + root transform target height.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.tiles3d.*" --tests "com.vectorra.maps.VectorraMapEngineCameraRangeTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- 3D Tiles spatial/traversal and camera range unit tests passed.
+- `:vectorra-sample:assembleDebug` passed, including arm64-v8a and x86_64 native builds.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action zoom-3dtiles
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the zoom smoke action.
+- Logcat showed `cameraTargetHeightMeters=503.75000000279397` for `sample-3d-tiles-layer`.
+- Native camera application used the elevated target at zoom 14, 18.0, and 18.5: `height=503.8`.
+- Root and high LOD 3D Tiles content were applied and loaded, including `sample-3d-tiles-layer:root/0/0 ... dragon_high.b3dm.glb`.
+
+Known remaining work:
+
+- The current target height is layer-level and derived from the root bounding volume. Future multi-layer or off-center inspection needs explicit camera fit/target APIs instead of choosing the first visible 3D Tiles layer.
+- A visual screenshot assertion for close-zoom 3D Tiles visibility would make the smoke less dependent on logcat.

@@ -29,7 +29,8 @@ internal object VectorraNative {
         latitude: Double,
         zoom: Double,
         pitch: Double,
-        bearing: Double
+        bearing: Double,
+        targetHeightMeters: Double
     )
 
     external fun addRasterLayer(

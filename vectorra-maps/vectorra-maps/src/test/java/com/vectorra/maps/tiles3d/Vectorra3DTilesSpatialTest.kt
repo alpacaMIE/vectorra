@@ -96,6 +96,21 @@ class Vectorra3DTilesSpatialTest {
         assertEquals(4_081_926.095098698, point.z, 0.001)
     }
 
+    @Test
+    fun ecefToWgs84PreservesElevatedTilesetHeight() {
+        val point = Vectorra3DTilesSpatial.wgs84DegreesToEcef(
+            longitude = -75.61209430782448,
+            latitude = 40.04253061142592,
+            height = 503.75
+        )
+
+        val geodetic = Vectorra3DTilesSpatial.ecefToWgs84(point)
+
+        assertEquals(-75.61209430782448, geodetic.longitudeDegrees, 1e-9)
+        assertEquals(40.04253061142592, geodetic.latitudeDegrees, 1e-9)
+        assertEquals(503.75, geodetic.heightMeters, 0.001)
+    }
+
     private fun assertClose(expected: Double, actual: Double) {
         assertEquals(expected, actual, 0.000001)
     }

@@ -1229,13 +1229,15 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     private fun applyCamera(camera: CameraState) {
         ifOpen {
+            val targetHeightMeters = tiles3DCameraTargetHeightMeters()
             VectorraNative.setCamera(
                 nativeHandle,
                 camera.longitude,
                 camera.latitude,
                 camera.zoom,
                 camera.pitch,
-                camera.bearing
+                camera.bearing,
+                targetHeightMeters
             )
         }
     }
@@ -1293,7 +1295,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 }
                 val traversalResult = tiles3DTraversal.traverse(
                     tileset = runtimeLayer.tileset,
-                    camera = camera.to3DTilesCamera(),
+                    camera = camera.to3DTilesCamera(runtimeLayer.cameraTargetHeightMeters),
                     options = Vectorra3DTilesTraversalOptions(
                         maximumScreenSpaceError = runtimeLayer.layer.options.maximumScreenSpaceError,
                         maximumLoadedTiles = runtimeLayer.layer.options.maximumLoadedTiles
@@ -1378,28 +1380,42 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         )
     }
 
-    private fun CameraState.to3DTilesCamera(): Vectorra3DTilesCamera {
+    private fun CameraState.to3DTilesCamera(targetHeightMeters: Double = 0.0): Vectorra3DTilesCamera {
         val viewportHeight = viewportHeightPixels.coerceAtLeast(1)
+        val target = Vectorra3DTilesSpatial.wgs84DegreesToEcef(
+            longitude,
+            latitude,
+            targetHeightMeters
+        )
         val position = Vectorra3DTilesSpatial.wgs84DegreesToEcef(
             longitude,
             latitude,
-            cameraRangeMetersForZoom(zoom, latitude, viewportHeight)
+            targetHeightMeters + cameraRangeMetersForZoom(zoom, latitude, viewportHeight)
         )
         val directionLength = sqrt(
-            position.x * position.x +
-                position.y * position.y +
-                position.z * position.z
+            (target.x - position.x) * (target.x - position.x) +
+                (target.y - position.y) * (target.y - position.y) +
+                (target.z - position.z) * (target.z - position.z)
         ).coerceAtLeast(1.0)
         return Vectorra3DTilesCamera(
             positionX = position.x,
             positionY = position.y,
             positionZ = position.z,
-            directionX = -position.x / directionLength,
-            directionY = -position.y / directionLength,
-            directionZ = -position.z / directionLength,
+            directionX = (target.x - position.x) / directionLength,
+            directionY = (target.y - position.y) / directionLength,
+            directionZ = (target.z - position.z) / directionLength,
             verticalFovDegrees = 60.0,
             viewportHeightPixels = viewportHeight
         )
+    }
+
+    private fun tiles3DCameraTargetHeightMeters(): Double {
+        return synchronized(tiles3DRuntimeLock) {
+            tiles3DLayers.values
+                .firstOrNull { it.layer.options.visible }
+                ?.cameraTargetHeightMeters
+                ?: 0.0
+        }
     }
 
     private inner class Native3DTilesContentRenderer : Vectorra3DTilesContentRenderer {
@@ -1497,11 +1513,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 if (tiles3DLoadGenerationByLayerId[layer.id] != loadGeneration) {
                     return
                 } else {
+                    val cameraTargetHeightMeters = tileset.cameraTargetHeightMeters()
                     tiles3DLayers[layer.id] = Vectorra3DTilesRuntimeLayer(
                         source = source,
                         layer = layer,
                         tileset = tileset,
                         loadGeneration = loadGeneration,
+                        cameraTargetHeightMeters = cameraTargetHeightMeters,
                         contentLifecycle = Vectorra3DTilesContentLifecycle(
                             layerId = layer.id,
                             sourceId = source.id,
@@ -1509,6 +1527,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                             contentCacheDirectory = File(tiles3DContentCacheDirectory, layer.id),
                             renderer = tiles3DContentRenderer
                         )
+                    )
+                    Log.i(
+                        LOG_TAG,
+                        "3D Tiles layer=${layer.id} cameraTargetHeightMeters=$cameraTargetHeightMeters"
                     )
                     emitResourceStatus(
                         kind = VectorraResourceKind.TILES3D,
@@ -1519,6 +1541,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     )
                 }
             }
+            mainHandler.post { applyCamera(cameraState) }
             schedule3DTilesTraversal()
         } catch (error: Throwable) {
             if (closed.get()) {
@@ -1816,11 +1839,20 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 }
 
+internal fun VectorraTileset3D.cameraTargetHeightMeters(): Double {
+    val sphere = Vectorra3DTilesSpatial.boundingSphere(
+        root.boundingVolume,
+        root.transform ?: Vectorra3DTilesSpatial.IDENTITY_MATRIX
+    )
+    return Vectorra3DTilesSpatial.ecefToWgs84(sphere.center).heightMeters.takeIf(Double::isFinite) ?: 0.0
+}
+
 private data class Vectorra3DTilesRuntimeLayer(
     val source: Vectorra3DTilesSource,
     val layer: Vectorra3DTilesLayer,
     val tileset: VectorraTileset3D,
     val loadGeneration: Long,
+    val cameraTargetHeightMeters: Double,
     val contentLifecycle: Vectorra3DTilesContentLifecycle
 )
 
