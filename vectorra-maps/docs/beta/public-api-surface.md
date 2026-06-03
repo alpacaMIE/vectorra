@@ -4,7 +4,7 @@ This page is the current Android Beta public API inventory. It separates the sou
 
 Published coordinates still point at `0.5.0-beta.1`. APIs marked with a later `@VectorraBetaApi` value are source-tree development APIs until `VECTORRA_VERSION` is bumped and the published-AAR gates are rerun.
 
-## Current Source SDK Entry Points
+## Published Baseline SDK Entry Points
 
 Core map view and lifecycle:
 
@@ -25,14 +25,6 @@ Camera:
 - `CameraOptions`
 - `CameraAnimationOptions`
 
-Status and diagnostics:
-
-- `VectorraResourceKind`
-- `VectorraResourceLoadState`
-- `VectorraResourceEventSource`
-- `VectorraResourceErrorType`
-- `VectorraResourceLoadError`
-- `VectorraResourceStatus`
 - `TileNetworkConfig`
 - `TileCachePolicy`
 
@@ -153,6 +145,12 @@ Offline prefetch and cache:
 
 Diagnostics:
 
+- `VectorraResourceKind`
+- `VectorraResourceLoadState`
+- `VectorraResourceEventSource`
+- `VectorraResourceErrorType`
+- `VectorraResourceLoadError`
+- `VectorraResourceStatus`
 - `TileLogEvent`
 - `TileRequestLogger`
 - `RedactingTileLogger`

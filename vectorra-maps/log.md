@@ -1996,7 +1996,7 @@ Added an explicit public API inventory for the Android Beta hardening pass.
 Completed:
 
 - Added `docs/beta/public-api-surface.md`.
-- Grouped current source SDK entry points by core map/lifecycle, camera, diagnostics, raster/terrain, models, location, annotations/query, MBTiles raster, 3D Tiles parsing, MVT decoding, and SDK metadata.
+- Grouped published baseline SDK entry points by core map/lifecycle, camera, raster/terrain, models, location, annotations/query, MBTiles raster, 3D Tiles parsing, MVT decoding, and SDK metadata.
 - Separated unpublished development APIs for 3D Tiles runtime, vector tile runtime, offline prefetch/cache, MVT MBTiles, and redacted diagnostics.
 - Documented that `VectorraMap.add3DTilesModelLayer(...)` is deprecated experimental smoke-only API and not the Android 1.0 3D Tiles integration path.
 - Documented implementation-public areas that apps must not treat as stable contracts.
@@ -2006,7 +2006,7 @@ Completed:
 Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
 
 ```powershell
-rg -n "public-api-surface|Public API surface|Current Source SDK Entry Points|Unpublished Development APIs|Shared resource status APIs|RedactingTileLogger|VectorraResourceStatus|add3DTilesModelLayer" .\vectorra-maps\README.md .\vectorra-maps\docs\beta .\vectorra-maps\vectorra-maps\src\main\java
+rg -n "public-api-surface|Public API surface|Published Baseline SDK Entry Points|Unpublished Development APIs|Shared resource status APIs|RedactingTileLogger|VectorraResourceStatus|add3DTilesModelLayer" .\vectorra-maps\README.md .\vectorra-maps\docs\beta .\vectorra-maps\vectorra-maps\src\main\java
 $env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*"
