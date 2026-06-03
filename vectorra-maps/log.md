@@ -890,3 +890,39 @@ Known remaining Phase 2 work:
 - P2.T2: add the Kotlin MVT runtime tile store as the single owner of decoded tiles, native render handles, and query state.
 - P2.T3: load vector tiles through the proxy/fetcher/cache path.
 - P2.T5/P2.T6: implement visible MVT rendering and query behavior.
+
+### P2.T2 Kotlin MVT Runtime Tile Store
+
+Continued Phase 2 by adding the internal Kotlin runtime tile store that owns decoded MVT tiles, native render handles, and query features together.
+
+Completed:
+
+- Added `VectorraMvtRuntimeTileStore` as the single owner for a vector layer's decoded tile state.
+- Added `VectorraMvtRuntimeTile` entries containing `tileId`, decoded tile, native tile handle, and query features.
+- Converted decoded MVT features for the configured `sourceLayer` into `VectorraMvtRenderTileInput` for the P2.T0 native renderer contract.
+- Converted the same decoded tile into query features from the same store entry so unload removes render and query state together.
+- Implemented tile replacement so an old native handle is removed when the same z/x/y tile is replaced.
+- Implemented tile unload and layer clear so store state and native renderer state are removed from one owner.
+- Wired `VectorraMapEngine` vector layer registration to create and clear the store instead of keeping only source/layer metadata.
+- Kept network loading, tile selection, cache hits, and sample-visible MVT rendering out of P2.T2; those remain P2.T3/P2.T5.
+- Added focused unit tests for put/replace/remove/clear ownership behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 2 work:
+
+- P2.T3: load vector tiles through the proxy/fetcher/cache path and write decoded results into `VectorraMvtRuntimeTileStore`.
+- P2.T4: complete renderer geometry conversion fixtures around extent, Y-down coordinates, tile boundaries, and polygon rings.
+- P2.T5/P2.T6: implement visible MVT rendering and query behavior over loaded store entries.

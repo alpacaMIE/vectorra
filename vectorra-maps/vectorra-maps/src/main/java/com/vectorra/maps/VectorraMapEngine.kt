@@ -20,6 +20,8 @@ import com.vectorra.maps.location.VectorraLocationComponent
 import com.vectorra.maps.location.VectorraLocationComponentImpl
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
+import com.vectorra.maps.mvt.VectorraMvtJniRenderer
+import com.vectorra.maps.mvt.VectorraMvtRuntimeTileStore
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
 import com.vectorra.maps.network.TileResourceFetcher
@@ -789,9 +791,15 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 eventSource = VectorraResourceEventSource.ENGINE
             )
             synchronized(vectorTileRuntimeLock) {
+                vectorTileLayers.remove(layer.id)?.store?.clear()
                 vectorTileLayers[layer.id] = VectorraVectorTileRuntimeLayer(
                     source = source,
-                    layer = layer
+                    layer = layer,
+                    store = VectorraMvtRuntimeTileStore(
+                        sourceId = source.id,
+                        layer = layer,
+                        nativeRenderer = VectorraMvtJniRenderer(nativeHandle)
+                    )
                 )
             }
             emitResourceStatus(
@@ -811,6 +819,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 vectorTileLayers.remove(id)
             }
             if (removed != null) {
+                removed.store.clear()
                 emitRemovedStatusForLayer(id)
             }
         }
@@ -1496,6 +1505,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 tiles3DTraversalScheduled = false
             }
             synchronized(vectorTileRuntimeLock) {
+                vectorTileLayers.values.forEach { it.store.clear() }
                 vectorTileLayers.clear()
             }
             VectorraNative.destroy(nativeHandle)
@@ -1645,7 +1655,8 @@ private data class Vectorra3DTilesRuntimeContentTask(
 
 private data class VectorraVectorTileRuntimeLayer(
     val source: VectorraVectorTileSource,
-    val layer: VectorraVectorTileLayer
+    val layer: VectorraVectorTileLayer,
+    val store: VectorraMvtRuntimeTileStore
 )
 
 private data class EcefPoint(
