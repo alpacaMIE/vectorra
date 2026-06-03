@@ -564,3 +564,33 @@ Known remaining Phase 1 work:
 
 - Run bad tileset failure smoke validation.
 - Run rotate or pause/resume lifecycle smoke validation.
+
+### P1.T7 Bad 3D Tiles Smoke
+
+Continued Phase 1 by running the bad tileset device smoke path through the formal `Vectorra3DTiles*` API.
+
+Completed:
+
+- Reused the `bad-3dtiles` `vectorra.sample.action` in `vectorra-sample`.
+- Verified that a missing remote tileset does not attempt renderer content registration.
+- Verified that the failed tileset load reaches the sample through the unified `tiles3d` resource status UI.
+
+Device smoke was run on `2312DRAABC` with:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action bad-3dtiles
+```
+
+Results:
+
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-bad-smoke-2026-06-03.png` showed `tiles3d sample-3d-tiles-layer-bad failed: 3D Tiles tileset request failed with HTTP 504.`
+- `uiautomator` dump contained the same visible failure text from the `TextView`.
+- Filtered logcat showed no `registered 3D Tiles` renderer content for the bad layer.
+- The exact crash search found no `FATAL EXCEPTION`, `AndroidRuntime`, `ANR`, `Application Not Responding`, or `failed to register`.
+
+Known remaining Phase 1 work:
+
+- Run rotate or pause/resume lifecycle smoke validation.
