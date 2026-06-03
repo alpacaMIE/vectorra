@@ -24,8 +24,15 @@ import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
+import com.vectorra.maps.offline.VectorraCacheStatus
+import com.vectorra.maps.offline.VectorraOfflineBounds
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.offline.VectorraMbTilesVectorSource
+import com.vectorra.maps.offline.VectorraOfflineRegion
+import com.vectorra.maps.offline.VectorraOfflineTileSource
+import com.vectorra.maps.offline.VectorraPrefetchOptions
+import com.vectorra.maps.offline.VectorraPrefetchTask
+import com.vectorra.maps.offline.VectorraPrefetchTaskState
 import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
@@ -39,6 +46,7 @@ import com.vectorra.maps.vector.VectorraVectorTileSource
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : Activity() {
     private lateinit var mapView: VectorraMapView
@@ -221,6 +229,15 @@ class MainActivity : Activity() {
                 },
                 sampleButton("MVT Hide") {
                     hiddenSampleMvt()
+                }
+            ))
+
+            addView(controlRow(
+                sampleButton("Offline PF") {
+                    runOfflinePrefetchSmoke(cancelAfterFirst = false)
+                },
+                sampleButton("Cancel PF") {
+                    runOfflinePrefetchSmoke(cancelAfterFirst = true)
                 }
             ))
 
@@ -555,6 +572,80 @@ class MainActivity : Activity() {
         }, SAMPLE_MVT_QUERY_DELAY_MS)
     }
 
+    private fun runOfflinePrefetchSmoke(cancelAfterFirst: Boolean) {
+        runCatching {
+            val offline = mapView.map.offline
+            offline.clearCache()
+            val before = offline.cacheStatus()
+            Log.i(LOG_TAG, "Offline prefetch smoke: cache before ${before.toSmokeText()}")
+
+            val taskRef = AtomicReference<VectorraPrefetchTask>()
+            val task = offline.prefetchRegionAsync(
+                region = sampleOfflineRegion(),
+                sources = listOf(VectorraOfflineTileSource.vector(sampleOfflineMvtSource())),
+                options = VectorraPrefetchOptions(maxAttempts = 2)
+            ) { progress ->
+                val text = "Offline prefetch progress state=${progress.state} " +
+                    "finished=${progress.finishedCount}/${progress.totalCount} " +
+                    "failed=${progress.failedCount} bytes=${progress.totalBytes}"
+                Log.i(LOG_TAG, text)
+                statusText.post { statusText.text = text }
+                if (cancelAfterFirst && progress.finishedCount >= 1 && progress.state == VectorraPrefetchTaskState.RUNNING) {
+                    val canceled = taskRef.get()?.cancel() ?: false
+                    Log.i(LOG_TAG, "Offline prefetch smoke: cancel requested=$canceled")
+                }
+            }
+            taskRef.set(task)
+            statusText.text = if (cancelAfterFirst) "Offline prefetch cancel smoke" else "Offline prefetch smoke"
+            Thread({
+                val result = task.await()
+                val after = offline.cacheStatus()
+                val resultText = "Offline prefetch result status=${result.status} " +
+                    "completed=${result.completedCount} failed=${result.failedCount} " +
+                    "bytes=${result.totalBytes} state=${task.state}"
+                Log.i(LOG_TAG, resultText)
+                Log.i(LOG_TAG, "Offline prefetch smoke: cache after ${after.toSmokeText()}")
+                offline.clearCache()
+                val cleared = offline.cacheStatus()
+                Log.i(LOG_TAG, "Offline prefetch smoke: cache cleared ${cleared.toSmokeText()}")
+                statusText.post {
+                    statusText.text = "$resultText cache=${after.totalEntryCount}->${cleared.totalEntryCount}"
+                }
+            }, "VectorraSampleOfflinePrefetch").start()
+        }.onFailure { error ->
+            statusText.text = "Offline prefetch error: ${error.message}"
+            Log.e(LOG_TAG, "Offline prefetch smoke error", error)
+        }
+    }
+
+    private fun sampleOfflineMvtSource(): VectorraVectorTileSource {
+        return VectorraVectorTileSource.xyz(
+            id = "$SAMPLE_MVT_SOURCE_ID-offline-prefetch",
+            templateUrl = SAMPLE_MVT_TEMPLATE_URL,
+            minZoom = 12,
+            maxZoom = 12
+        )
+    }
+
+    private fun sampleOfflineRegion(): VectorraOfflineRegion {
+        return VectorraOfflineRegion(
+            bounds = VectorraOfflineBounds(
+                west = -122.45,
+                south = 37.75,
+                east = -122.25,
+                north = 37.80
+            ),
+            minZoom = 12,
+            maxZoom = 12
+        )
+    }
+
+    private fun VectorraCacheStatus.toSmokeText(): String {
+        return "entries=$totalEntryCount bytes=$totalBytes " +
+            "proxy=${proxy.totalEntryCount}/${proxy.totalBytes} " +
+            "resources=${resources.totalEntryCount}/${resources.totalBytes}"
+    }
+
     private fun loadBrokenSample3DTiles() {
         runCatching {
             val source = Vectorra3DTilesSource(
@@ -659,6 +750,8 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
                 SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
                 SAMPLE_ACTION_ZOOM_3D_TILES -> zoomSample3DTiles()
+                SAMPLE_ACTION_OFFLINE_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = false)
+                SAMPLE_ACTION_CANCEL_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = true)
                 else -> statusText.text = "Unknown sample action: $action"
             }
         }
@@ -917,6 +1010,8 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
         const val SAMPLE_ACTION_ZOOM_3D_TILES = "zoom-3dtiles"
+        const val SAMPLE_ACTION_OFFLINE_PREFETCH = "offline-prefetch"
+        const val SAMPLE_ACTION_CANCEL_PREFETCH = "cancel-prefetch"
         const val PBF_WIRE_VARINT = 0
         const val PBF_WIRE_LENGTH_DELIMITED = 2
         const val MVT_TILE_LAYERS_FIELD = 3

@@ -1751,3 +1751,40 @@ Known remaining work:
 
 - Add sample UI/device smoke for prefetch progress, cancel, cache status, and cleanup once adb is stable.
 - Add product-facing documentation for offline region prefetch and cache lifecycle.
+
+### P3.T8 Offline Prefetch Sample Smoke Entry
+
+Continued Phase 3 smoke coverage by adding sample-app entry points for offline prefetch progress, cancel, cache status, and cleanup.
+
+Completed:
+
+- Added `Offline PF` and `Cancel PF` buttons to the sample app.
+- Added adb smoke actions:
+  - `offline-prefetch`
+  - `cancel-prefetch`
+- The `offline-prefetch` path clears cache, prefetches a San Francisco MVT region through `prefetchRegionAsync(...)`, logs progress/result/cache status, then clears cache again.
+- The `cancel-prefetch` path uses the same region and task API, requesting cancel after the first completed tile progress event so completed results and cache writes can be observed.
+- Sample log output now includes prefetch progress, final result status/counts/bytes, cache status before/after, and cache status after cleanup.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed.
+- Offline and network unit tests passed.
+
+Device result:
+
+- `adb devices -l` still reported device `4tqoz9bmfu8t8pr8` as `offline`, so the new `offline-prefetch` and `cancel-prefetch` actions could not be executed on device in this pass.
+
+Known remaining work:
+
+- Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
+- Add product-facing documentation for offline region prefetch and cache lifecycle.
