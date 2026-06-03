@@ -21,6 +21,9 @@ import com.vectorra.maps.location.VectorraLocationComponentImpl
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.mvt.VectorraMvtJniRenderer
+import com.vectorra.maps.mvt.VectorraMvtTileId
+import com.vectorra.maps.mvt.VectorraMvtTileLoadResult
+import com.vectorra.maps.mvt.asMvtTileLoader
 import com.vectorra.maps.mvt.VectorraMvtRuntimeTileStore
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
@@ -799,7 +802,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                         sourceId = source.id,
                         layer = layer,
                         nativeRenderer = VectorraMvtJniRenderer(nativeHandle)
-                    )
+                    ),
+                    tileLoader = tileResourceFetcher.asMvtTileLoader()
                 )
             }
             emitResourceStatus(
@@ -838,6 +842,38 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         ifOpen {
             VectorraNative.setLayerVisible(nativeHandle, id, visible)
         }
+    }
+
+    internal fun loadVectorTileIntoStore(layerId: String, tileId: VectorraMvtTileId): VectorraMvtTileLoadResult? {
+        val runtimeLayer = synchronized(vectorTileRuntimeLock) {
+            vectorTileLayers[layerId]
+        } ?: return null
+        val result = runtimeLayer.tileLoader.loadTile(
+            source = runtimeLayer.source,
+            layerId = runtimeLayer.layer.id,
+            tileId = tileId
+        )
+        when (result) {
+            is VectorraMvtTileLoadResult.Loaded -> {
+                synchronized(vectorTileRuntimeLock) {
+                    vectorTileLayers[layerId]?.store?.putDecodedTile(tileId, result.decodedTile)
+                }
+            }
+            is VectorraMvtTileLoadResult.Failed -> {
+                emitResourceStatus(
+                    kind = VectorraResourceKind.VECTOR,
+                    sourceId = runtimeLayer.source.id,
+                    layerId = runtimeLayer.layer.id,
+                    state = VectorraResourceLoadState.FAILED,
+                    eventSource = VectorraResourceEventSource.ENGINE,
+                    error = VectorraResourceLoadError(
+                        type = result.errorType,
+                        message = result.message
+                    )
+                )
+            }
+        }
+        return result
     }
 
     override fun clearAnnotations() {
@@ -1656,7 +1692,8 @@ private data class Vectorra3DTilesRuntimeContentTask(
 private data class VectorraVectorTileRuntimeLayer(
     val source: VectorraVectorTileSource,
     val layer: VectorraVectorTileLayer,
-    val store: VectorraMvtRuntimeTileStore
+    val store: VectorraMvtRuntimeTileStore,
+    val tileLoader: com.vectorra.maps.mvt.VectorraMvtTileLoader
 )
 
 private data class EcefPoint(

@@ -926,3 +926,39 @@ Known remaining Phase 2 work:
 - P2.T3: load vector tiles through the proxy/fetcher/cache path and write decoded results into `VectorraMvtRuntimeTileStore`.
 - P2.T4: complete renderer geometry conversion fixtures around extent, Y-down coordinates, tile boundaries, and polygon rings.
 - P2.T5/P2.T6: implement visible MVT rendering and query behavior over loaded store entries.
+
+### P2.T3 Vector Tile Load Path
+
+Continued Phase 2 by adding the internal MVT tile request/decode path and wiring it to the runtime tile store.
+
+Completed:
+
+- Added `VectorraMvtTileLoader` for per-tile vector requests.
+- Built `TileRequest` values with vector source/layer identity, headers, tile id, `TileResourceType.VECTOR`, and MVT metadata.
+- Supported XYZ and TMS URL templates; TMS flips the request URL Y while preserving the store/query tile id.
+- Reused `TileResourceFetcher` through `asMvtTileLoader()`, so requests go through interceptors and `TileCacheStore`.
+- Decoded successful responses with `VectorraMvtDecoder`.
+- Returned explicit loaded/failed results with `NETWORK` errors for HTTP/request failures and `RESOURCE` errors for decode failures.
+- Added `VectorraMapEngine.loadVectorTileIntoStore(...)` as the internal bridge that writes loaded decoded tiles into the `VectorraMvtRuntimeTileStore` and emits vector failure status on load failure.
+- Kept camera-driven tile selection and automatic viewport scheduling out of this task; that remains for P2.T5/P2.T6 integration.
+- Added unit tests for XYZ requests, TMS Y flipping, headers/resource type propagation, HTTP failures, decode failures, and zoom range validation.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 2 work:
+
+- P2.T4: complete geometry conversion fixtures around extent, Y-down coordinates, tile boundaries, and polygon rings.
+- P2.T5: schedule visible vector tiles from the camera and render line/fill/circle output.
+- P2.T6: query loaded store entries through `queryRenderedFeatures`.
