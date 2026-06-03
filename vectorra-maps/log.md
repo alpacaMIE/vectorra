@@ -2431,3 +2431,30 @@ Results:
 Known remaining work:
 
 - Run `.\tools\run-device-smoke.ps1` on an online `arm64-v8a` device and, if available, an online `x86_64` emulator to exercise automatic APK selection.
+
+### Device Smoke Artifact Validation
+
+Tightened the runtime smoke pass criteria.
+
+Completed:
+
+- Added non-empty file assertions for the pulled screenshot, UI dump, and logcat artifacts in `tools/run-device-smoke.ps1`.
+- Added a UI dump check that requires `com.vectorra.sample` to be present before the runtime smoke is accepted.
+- Appended artifact paths and byte counts to the smoke report.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the artifact validation behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\run-device-smoke.ps1), [ref]$null, [ref]$errors)
+.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+```
+
+Results:
+
+- PowerShell parser check passed for `run-device-smoke.ps1`.
+- The script still failed early as expected because adb reported `4tqoz9bmfu8t8pr8 offline`.
+
+Known remaining work:
+
+- Validate the new artifact checks on an online real device.

@@ -43,7 +43,7 @@ Runtime command:
 .\tools\run-device-smoke.ps1
 ```
 
-The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, and logcat export.
+The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, and non-empty artifact checks.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided.
 

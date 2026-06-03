@@ -78,6 +78,18 @@ function Lifecycle-Step {
     Start-Sleep -Seconds $DelaySeconds
 }
 
+function Assert-NonEmptyFile {
+    param([string]$Path, [string]$Label)
+    if (-not (Test-Path $Path)) {
+        throw "$Label was not created: $Path"
+    }
+    $item = Get-Item $Path
+    if ($item.Length -le 0) {
+        throw "$Label is empty: $Path"
+    }
+    "$Label=$Path bytes=$($item.Length)" | Tee-Object -FilePath $report -Append
+}
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $report = Join-Path $out "device-smoke-$stamp.txt"
 
@@ -138,6 +150,17 @@ Invoke-Adb shell uiautomator dump $uiDevice | Tee-Object -FilePath $report -Appe
 Invoke-Adb pull $uiDevice $uiHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $uiDevice | Out-Null
 
-Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra | Tee-Object -FilePath (Join-Path $out "device-smoke-$stamp.log")
+$logHost = Join-Path $out "device-smoke-$stamp.log"
+Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra | Tee-Object -FilePath $logHost
+
+Assert-NonEmptyFile $screenshotHost "screenshot"
+Assert-NonEmptyFile $uiHost "uiDump"
+Assert-NonEmptyFile $logHost "logcat"
+
+$uiText = Get-Content -Path $uiHost -Raw
+if ($uiText -notmatch "com\.vectorra\.sample") {
+    throw "UI dump does not contain com.vectorra.sample: $uiHost"
+}
+"uiDumpContainsPackage=com.vectorra.sample" | Tee-Object -FilePath $report -Append
 
 Write-Host "Device smoke completed. Report: $report"
