@@ -56,9 +56,7 @@ Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x
 The emulator also passed the targeted Android instrumentation MBTiles vector source test:
 
 ```powershell
-$env:ANDROID_SERIAL='emulator-5554'
-$argsList=@('-g','.\.gradle-agent-home',':vectorra-maps:connectedDebugAndroidTest','-Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest')
-& .\gradlew.bat @argsList
+.\tools\run-mbtiles-vector-instrumentation.ps1 -DeviceSerial emulator-5554
 ```
 
 Latest emulator evidence includes:

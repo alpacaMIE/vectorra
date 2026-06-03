@@ -3733,3 +3733,30 @@ Results:
 Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
+### MBTiles Vector Instrumentation Runner Script
+
+Completed:
+
+- Added `tools/run-mbtiles-vector-instrumentation.ps1`.
+- The script validates adb device state, supports `-DeviceSerial`, sets Android SDK environment variables, and runs the targeted `VectorraMbTilesVectorSourceInstrumentedTest` with a safe Gradle argument array.
+- Updated the Android 1.0 acceptance record and 0.8.0 beta development notes to call the script instead of embedding the low-level Gradle `-Pandroid.testInstrumentationRunnerArguments.class=...` argument.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-mbtiles-vector-instrumentation.ps1','.\tools\run-device-smoke.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }
+rg -n "run-mbtiles-vector-instrumentation|testInstrumentationRunnerArguments\.class|connectedDebugAndroidTest -Pandroid" docs\beta tools log.md
+.\tools\run-mbtiles-vector-instrumentation.ps1 -DeviceSerial emulator-5554
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- Docs now expose `.\tools\run-mbtiles-vector-instrumentation.ps1 -DeviceSerial emulator-5554`; the raw instrumentation runner property remains only inside the script and historical log entries.
+- The script ran one `VectorraMbTilesVectorSourceInstrumentedTest` test on `Rocky_Vulkan_API36_1(AVD) - 16`.
+- Gradle reported `BUILD SUCCESSFUL` and the script reported `MBTiles vector instrumentation test passed on emulator-5554.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.

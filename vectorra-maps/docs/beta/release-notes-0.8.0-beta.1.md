@@ -105,9 +105,7 @@ The following local checks have passed during this development slice:
 ```powershell
 .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:assembleDebugAndroidTest
-$env:ANDROID_SERIAL='emulator-5554'
-$argsList=@('-g','.\.gradle-agent-home',':vectorra-maps:connectedDebugAndroidTest','-Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest')
-& .\gradlew.bat @argsList
+.\tools\run-mbtiles-vector-instrumentation.ps1 -DeviceSerial emulator-5554
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.mvt.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
