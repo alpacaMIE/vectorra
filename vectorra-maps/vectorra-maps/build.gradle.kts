@@ -13,6 +13,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "VECTORRA_VERSION", "\"${project.version}\"")
         buildConfigField("String", "VECTORRA_API_STATUS", "\"beta\"")
@@ -74,9 +75,18 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withName("debug")) { variant ->
+        // This source-only SQLite instrumentation fixture does not load the native renderer.
+        variant.androidTest?.packaging?.jniLibs?.excludes?.add("**/*.so")
+    }
+}
+
 dependencies {
     implementation(libs.gson)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 afterEvaluate {

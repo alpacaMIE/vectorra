@@ -1470,3 +1470,44 @@ Known remaining work:
 
 - The current target height is layer-level and derived from the root bounding volume. Future multi-layer or off-center inspection needs explicit camera fit/target APIs instead of choosing the first visible 3D Tiles layer.
 - A visual screenshot assertion for close-zoom 3D Tiles visibility would make the smoke less dependent on logcat.
+
+### P3.T7 MVT MBTiles SQLite Instrumentation Fixture
+
+Continued MVT MBTiles validation by adding an Android instrumentation fixture that exercises the production SQLite reader path.
+
+Completed:
+
+- Added AndroidX instrumentation runner dependencies for `:vectorra-maps`.
+- Added `VectorraMbTilesVectorSourceInstrumentedTest`, which generates a real SQLite MBTiles file under the target context cache directory.
+- The fixture creates `metadata` and `tiles` tables, writes vector metadata with `format=pbf` and `scheme=tms`, stores a generated MVT byte payload, then opens it through `VectorraMbTilesVectorSource.open()`.
+- The test verifies metadata, TMS row conversion, `TileCacheStatus.DISK`, protobuf content type, HTTP 200 response, and exact tile bytes.
+- Configured only the `debug` variant's `androidTest` packaging to exclude JNI `.so` files, because this SQLite source fixture does not load the native renderer. This shrinks the androidTest APK from about 203MB to about 14MB and avoids ddmlib upload timeouts for this test target.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:compileDebugAndroidTestKotlin
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:assembleDebugAndroidTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:compileDebugAndroidTestKotlin` passed.
+- `:vectorra-maps:assembleDebugAndroidTest` passed.
+- The generated `vectorra-maps-debug-androidTest.apk` is about 13.97MB and contains no `lib/*.so` entries.
+- Offline JVM unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Device result:
+
+- `connectedDebugAndroidTest` initially failed before executing tests because Gradle/ddmlib timed out installing the 203MB androidTest APK.
+- After shrinking the androidTest APK, the connected run could not be completed because device `4tqoz9bmfu8t8pr8` remained in adb `offline` state after adb reconnect/server restart attempts.
+
+Known remaining work:
+
+- Re-run `connectedDebugAndroidTest` for `com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest` once the device is back online.
+- Add sample UI/device smoke for real MVT MBTiles rendering through `addMbTilesVectorLayer`.
