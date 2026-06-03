@@ -55,6 +55,9 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 function Invoke-Adb {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
     & $adb -s $DeviceSerial @Args
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb command failed with exit code $LASTEXITCODE on ${DeviceSerial}: $($Args -join ' ')"
+    }
 }
 
 function Write-Report {
