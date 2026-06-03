@@ -1394,3 +1394,33 @@ Known remaining Phase 3 work:
 - Add an actual MVT MBTiles fixture or generated SQLite fixture that exercises `VectorraMbTilesVectorSource.open()` and tile reads on Android/JVM-compatible test infrastructure.
 - Add sample UI/device smoke for loading a real MVT MBTiles file.
 - Offline manager, prefetch, cache status, cleanup, cancel, partial failure, and published offline API remain open Phase 3 work.
+
+### P3.T7 MVT MBTiles Tile Read Unit Coverage
+
+Continued MVT MBTiles source work by adding JVM-testable tile-read coverage for the new vector source.
+
+Completed:
+
+- Introduced internal `VectorraMbTilesTileReader` so raster/vector MBTiles sources depend on a reader contract while the existing Android `SQLiteDatabase` reader remains the production implementation.
+- Added vector MBTiles source tests for successful tile reads, missing/invalid tile 404 responses, `TileCacheStatus.DISK`, content type, row scheme propagation, and source close behavior.
+- Kept the production SQLite reader and source open paths unchanged apart from implementing the new reader contract.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Offline unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining Phase 3 work:
+
+- The current tile-read fixture uses a fake reader because JVM unit tests do not include Robolectric or sqlite-jdbc. A real SQLite MBTiles fixture still needs androidTest coverage or a dedicated test dependency.
+- Sample UI/device smoke for real MVT MBTiles remains open.

@@ -56,7 +56,7 @@ class VectorraMbTilesRasterSource internal constructor(
     val id: String,
     val file: File,
     val metadata: VectorraMbTilesMetadata,
-    private val reader: VectorraMbTilesReader
+    private val reader: VectorraMbTilesTileReader
 ) : Closeable {
     val minZoom: Int
         get() = metadata.minZoom
@@ -128,7 +128,7 @@ class VectorraMbTilesVectorSource internal constructor(
     val id: String,
     val file: File,
     val metadata: VectorraMbTilesMetadata,
-    private val reader: VectorraMbTilesReader
+    private val reader: VectorraMbTilesTileReader
 ) : Closeable {
     val minZoom: Int
         get() = metadata.minZoom
@@ -313,10 +313,16 @@ internal object VectorraMbTilesTileRows {
     }
 }
 
+internal interface VectorraMbTilesTileReader : Closeable {
+    fun readMetadata(): Map<String, String>
+    fun readZoomRange(): Pair<Int, Int>
+    fun readTile(tileId: TileId, scheme: VectorraMbTilesTileRowScheme): ByteArray?
+}
+
 internal class VectorraMbTilesReader private constructor(
     private val database: SQLiteDatabase
-) : Closeable {
-    fun readMetadata(): Map<String, String> {
+) : VectorraMbTilesTileReader {
+    override fun readMetadata(): Map<String, String> {
         val values = linkedMapOf<String, String>()
         database.rawQuery("SELECT name, value FROM metadata", null).use { cursor ->
             while (cursor.moveToNext()) {
@@ -326,7 +332,7 @@ internal class VectorraMbTilesReader private constructor(
         return values
     }
 
-    fun readZoomRange(): Pair<Int, Int> {
+    override fun readZoomRange(): Pair<Int, Int> {
         database.rawQuery("SELECT MIN(zoom_level), MAX(zoom_level) FROM tiles", null).use { cursor ->
             require(cursor.moveToFirst() && !cursor.isNull(0) && !cursor.isNull(1)) {
                 "MBTiles package contains no tiles."
@@ -335,7 +341,7 @@ internal class VectorraMbTilesReader private constructor(
         }
     }
 
-    fun readTile(tileId: TileId, scheme: VectorraMbTilesTileRowScheme): ByteArray? {
+    override fun readTile(tileId: TileId, scheme: VectorraMbTilesTileRowScheme): ByteArray? {
         val storageRow = VectorraMbTilesTileRows.storageRow(tileId.z, tileId.y, scheme)
         database.rawQuery(
             "SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1",
