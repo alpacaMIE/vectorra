@@ -3005,6 +3005,35 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Android Instrumentation APK Packaging Check
+
+Added a local acceptance check for the SDK instrumentation APK packaging policy.
+
+Completed:
+
+- Added `tools/check-android-test-apk.ps1`.
+- The script fails if `vectorra-maps-debug-androidTest.apk` is missing, empty, or contains any native `.so` entry.
+- Wired the script into `tools/check-android-acceptance.ps1` after the SDK/sample native library content check.
+- Updated the Android 1.0 acceptance record, release versioning checklist, and 0.8.0 beta development notes to document the new instrumentation APK no-native-library gate.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-android-test-apk.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\check-android-test-apk.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-android-test-apk.ps1` and `check-android-acceptance.ps1`.
+- `check-android-test-apk.ps1` passed and reported `Android instrumentation APK check passed.`
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### 3D Tiles Close-Zoom Snapshot Smoke Evidence
 
 Tightened the device smoke gate around the 3D Tiles close-zoom disappearance investigation.

@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
 
 Equivalent expanded command:
 
@@ -19,6 +19,7 @@ $env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-maps:assembleDebugAndroidTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
 .\tools\check-native-libs.ps1
+.\tools\check-android-test-apk.ps1
 .\tools\test-device-smoke-result-checker.ps1
 ```
 
@@ -29,6 +30,7 @@ Latest local evidence:
 - Gradle local gate: `BUILD SUCCESSFUL`
 - `:vectorra-maps:assembleDebugAndroidTest`: passed
 - `check-native-libs.ps1`: passed
+- `check-android-test-apk.ps1`: passed; `vectorra-maps-debug-androidTest.apk` exists and contains no native `.so` entries
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
 
 Validated outputs:
