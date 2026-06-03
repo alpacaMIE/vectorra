@@ -10,14 +10,14 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
 
 Equivalent expanded command:
 
 ```powershell
 $env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
-.\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
+.\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-maps:assembleDebugAndroidTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
 .\tools\check-native-libs.ps1
 .\tools\test-device-smoke-result-checker.ps1
 ```
@@ -27,6 +27,7 @@ Current local result: passed with `.\tools\check-android-acceptance.ps1 -GradleU
 Latest local evidence:
 
 - Gradle local gate: `BUILD SUCCESSFUL`
+- `:vectorra-maps:assembleDebugAndroidTest`: passed
 - `check-native-libs.ps1`: passed
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
 
@@ -39,6 +40,7 @@ Validated outputs:
 - `vectorra-sample-arm64-v8a-debug.apk`
 - `vectorra-sample-x86_64-debug.apk`
 - `vectorra-sample-universal-debug.apk`
+- `vectorra-maps-debug-androidTest.apk`
 
 ## Runtime Device Gate
 

@@ -104,12 +104,13 @@ The following local checks have passed during this development slice:
 
 ```powershell
 .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:assembleDebugAndroidTest
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.mvt.*"
 .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
 ```
 
-The full local Android acceptance gate includes unit tests, sample and aggregate debug builds, release publication to Maven local, sample rebuild from the published AARs, native library content checks, and the runtime smoke result checker self-test. The smoke checker self-test covers the complete fixture plus crash logs, missing or out-of-order action markers, missing or empty metadata, APK/ABI mismatches, missing or mismatched artifact records, invalid screenshots, blank snapshots, and missing 3D Tiles close-zoom snapshots.
+The full local Android acceptance gate includes unit tests, the SDK instrumentation APK build, sample and aggregate debug builds, release publication to Maven local, sample rebuild from the published AARs, native library content checks, and the runtime smoke result checker self-test. The smoke checker self-test covers the complete fixture plus crash logs, missing or out-of-order action markers, missing or empty metadata, APK/ABI mismatches, missing or mismatched artifact records, invalid screenshots, blank snapshots, and missing 3D Tiles close-zoom snapshots.
 
 Targeted tests added or expanded include:
 

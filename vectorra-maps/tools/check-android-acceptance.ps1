@@ -14,6 +14,7 @@ try {
     .\gradlew.bat -g $GradleUserHome `
         :vectorra-maps:testDebugUnitTest `
         :vectorra-maps-turf:testDebugUnitTest `
+        :vectorra-maps:assembleDebugAndroidTest `
         :vectorra-sample:assembleDebug `
         assembleDebug `
         :vectorra-maps:publishReleasePublicationToMavenLocal `

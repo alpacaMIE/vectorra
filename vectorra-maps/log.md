@@ -2576,6 +2576,39 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
 
+### Android Acceptance Instrumentation APK Build
+
+Expanded the local Android 1.0 acceptance gate to cover the SDK instrumentation APK.
+
+Completed:
+
+- Added `:vectorra-maps:assembleDebugAndroidTest` to `tools/check-android-acceptance.ps1`.
+- This validates that `VectorraMbTilesVectorSourceInstrumentedTest` and the SDK androidTest package compile and package before release readiness is considered locally green.
+- Updated `docs/beta/android-1.0-acceptance.md`, `docs/beta/release-versioning.md`, and `docs/beta/release-notes-0.8.0-beta.1.md` so the documented local gate includes the instrumentation APK build.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-android-acceptance.ps1'), [ref]$tokens, [ref]$errors)
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:assembleDebugAndroidTest
+rg -n "assembleDebugAndroidTest|instrumentation APK|instrumentation" docs\beta\android-1.0-acceptance.md docs\beta\release-versioning.md docs\beta\release-notes-0.8.0-beta.1.md tools\check-android-acceptance.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser check passed for `check-android-acceptance.ps1`.
+- `:vectorra-maps:assembleDebugAndroidTest` passed and produced the debug androidTest package.
+- Documentation search found the instrumentation APK build in the acceptance, release/versioning, release notes, and acceptance script.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` and the real device smoke once adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Android Acceptance Smoke Checker Documentation Sync
 
 Aligned the release and acceptance documentation with the current runtime smoke result checker self-test coverage.
