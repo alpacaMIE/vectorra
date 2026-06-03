@@ -306,6 +306,22 @@ if ([regex]::Matches($logText, $cacheClearedPattern).Count -lt 2) {
     throw "Required logcat pattern missing at least twice: $cacheClearedPattern"
 }
 
+$sampleInteractionPatterns = @(
+    'GeoJSON smoke: source=sample-geojson features=2',
+    'GeoJSON center query: Click: [1-9]\d* feature\(s\).*layer=sample-geojson-layer.*source=sample-geojson.*name=GeoJSON point',
+    'Draw smoke: point line polygon requested',
+    'Draw center query: Click: [1-9]\d* feature\(s\).*layer=draw-point',
+    'Draw smoke: cleared',
+    'Location smoke: indicator requested',
+    'Location smoke: follow heading requested',
+    'Location smoke: cleared'
+)
+foreach ($pattern in $sampleInteractionPatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+
 $failurePatterns = @(
     'FATAL EXCEPTION',
     'AndroidRuntime',

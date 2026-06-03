@@ -96,6 +96,14 @@ if ($checkerText -notmatch 'Offline prefetch result status=SUCCESS' -or
 if ($checkerTestText -notmatch 'missing offline prefetch cleanup') {
     throw "test-device-smoke-result-checker.ps1 missing offline prefetch cleanup failure fixture"
 }
+if ($checkerText -notmatch 'GeoJSON center query: Click:' -or
+    $checkerText -notmatch 'Draw center query: Click:' -or
+    $checkerText -notmatch 'Location smoke: follow heading requested') {
+    throw "check-device-smoke-result.ps1 missing GeoJSON/Draw/Location interaction log requirements"
+}
+if ($checkerTestText -notmatch 'missing sample interaction query') {
+    throw "test-device-smoke-result-checker.ps1 missing sample interaction failure fixture"
+}
 if (-not $abiMatrixText.Contains(".\tools\test-device-smoke-contract.ps1")) {
     throw "ABI/device matrix missing test-device-smoke-contract.ps1 runtime gate command"
 }
