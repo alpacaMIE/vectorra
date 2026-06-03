@@ -142,9 +142,9 @@ $props.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Tee-Object
 
 $actions = @(
     @{ name = "mvt"; delay = $ActionDelaySeconds },
-    @{ name = "pan-mvt"; delay = 10 },
+    @{ name = "pan-mvt"; delay = 12 },
     @{ name = "hidden-mvt"; delay = $ActionDelaySeconds },
-    @{ name = "readd-mvt"; delay = 10 },
+    @{ name = "readd-mvt"; delay = 12 },
     @{ name = "mvt-mbtiles"; delay = $ActionDelaySeconds },
     @{ name = "geojson"; delay = $ActionDelaySeconds },
     @{ name = "draw"; delay = $ActionDelaySeconds },

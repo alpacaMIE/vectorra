@@ -333,9 +333,12 @@ $mvtRuntimePatterns = @(
     'registered MVT render tile handle=.*source=sample-mvt.*features=[1-9]\d*.*visible=1',
     'applied MVT render tile handle=.*sample-mvt-transportation.*entities=[1-9]\d*',
     'MVT smoke: camera pan lon=-122\.3',
+    'MVT pan center query: Click: [1-9]\d* feature\(s\).*layer=sample-mvt-transportation.*source=sample-mvt.*source-layer=transportation',
     'MVT hidden center query: Click: no features',
     'MVT smoke: removed layer',
     'vector sample-mvt-transportation removed',
+    'MVT removed center query: Click: no features',
+    'MVT readd center query: Click: [1-9]\d* feature\(s\).*layer=sample-mvt-transportation.*source=sample-mvt.*source-layer=transportation',
     'vector sample-mvt-transportation loaded'
 )
 foreach ($pattern in $mvtRuntimePatterns) {

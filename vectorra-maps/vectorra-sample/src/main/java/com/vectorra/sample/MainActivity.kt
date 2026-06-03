@@ -583,10 +583,11 @@ class MainActivity : Activity() {
         statusText.postDelayed({
             removeSampleMvt()
             statusText.postDelayed({
+                logCenterMvtQuery("MVT removed center query")
                 loadSampleMvt()
                 statusText.postDelayed({
                     logCenterMvtQuery("MVT readd center query")
-                }, SAMPLE_MVT_QUERY_DELAY_MS)
+                }, SAMPLE_MVT_READD_QUERY_DELAY_MS)
             }, SAMPLE_MVT_READD_DELAY_MS)
         }, SAMPLE_MVT_REMOVE_DELAY_MS)
     }
@@ -607,7 +608,7 @@ class MainActivity : Activity() {
             Log.i(LOG_TAG, "MVT smoke: camera pan lon=$SAMPLE_MVT_PAN_LONGITUDE")
             statusText.postDelayed({
                 logCenterMvtQuery("MVT pan center query")
-            }, SAMPLE_MVT_QUERY_DELAY_MS)
+            }, SAMPLE_MVT_PAN_QUERY_DELAY_MS)
         }, SAMPLE_MVT_PAN_DELAY_MS)
     }
 
@@ -1301,6 +1302,8 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_REMOVE_DELAY_MS = 6_000L
         const val SAMPLE_MVT_READD_DELAY_MS = 2_000L
         const val SAMPLE_MVT_PAN_DELAY_MS = 7_000L
+        const val SAMPLE_MVT_PAN_QUERY_DELAY_MS = 2_000L
+        const val SAMPLE_MVT_READD_QUERY_DELAY_MS = 2_000L
         const val SAMPLE_MVT_QUERY_DELAY_MS = 7_000L
         const val SAMPLE_QUERY_DELAY_MS = 2_000L
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"

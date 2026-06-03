@@ -62,9 +62,11 @@ $validLogText = @(
     "registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt style=sample-mvt-transportation features=3 coordinates=9 visible=1",
     "applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=3",
     "MVT smoke: camera pan lon=-122.3",
+    "MVT pan center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation",
     "MVT hidden center query: Click: no features",
     "MVT smoke: removed layer",
     "vector sample-mvt-transportation removed",
+    "MVT removed center query: Click: no features",
     "MVT readd center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation",
     "MVT MBTiles smoke: requested file=Vectorra Sample MVT",
     "registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1",
@@ -265,6 +267,12 @@ Invoke-CheckerFailure $missingMvtMbTilesNativeReport "missing MVT MBTiles native
 
 $missingMvtRuntimeReport = New-SmokeFixture -Stamp "20260604-000011" -LogText ($validLogText -replace 'MVT hidden center query: Click: no features', 'MVT hidden center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation')
 Invoke-CheckerFailure $missingMvtRuntimeReport "missing MVT hidden no-features evidence"
+
+$missingMvtPanQueryReport = New-SmokeFixture -Stamp "20260604-000022" -LogText ($validLogText -replace 'MVT pan center query: Click: 1 feature\(s\) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation', 'MVT pan center query: Click: no features')
+Invoke-CheckerFailure $missingMvtPanQueryReport "missing MVT pan query evidence"
+
+$missingMvtRemovedQueryReport = New-SmokeFixture -Stamp "20260604-000023" -LogText ($validLogText -replace 'MVT removed center query: Click: no features', 'MVT removed center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation')
+Invoke-CheckerFailure $missingMvtRemovedQueryReport "missing MVT removed no-features evidence"
 
 $missingOfflineCleanupReport = New-SmokeFixture -Stamp "20260604-000012" -LogText ($validLogText -replace 'Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0', 'Offline prefetch smoke: cache cleared entries=1 bytes=256 proxy=0/0 resources=1/256')
 Invoke-CheckerFailure $missingOfflineCleanupReport "missing offline prefetch cleanup"

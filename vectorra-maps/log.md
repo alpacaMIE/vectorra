@@ -3620,3 +3620,34 @@ Known remaining work:
 
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
+
+### MVT Pan/Remove Query Smoke Evidence
+
+Completed:
+
+- Tightened the MVT smoke checker so it requires center-query evidence after pan, remove, and re-add.
+- Updated the sample MVT smoke timings so pan/re-add queries run before the next smoke action can hide or replace the layer.
+- Updated the device smoke runner action windows for the MVT pan and re-add actions.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\run-device-smoke.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\tools\run-device-smoke.ps1 -DeviceSerial emulator-5554 -ActionDelaySeconds 8 *> build/device-smoke/run-device-smoke-20260604-mvt-query-output-2.txt
+.\tools\check-device-smoke-result.ps1 -Report D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\device-smoke-20260604-060442.txt
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-device-smoke-result-checker.ps1` passed, including failure fixtures for missing MVT pan-hit and removed-no-features evidence.
+- `:vectorra-sample:assembleDebug` passed.
+- Emulator smoke passed on `emulator-5554`; report: `build/device-smoke/device-smoke-20260604-060442.txt`.
+- Smoke log included `MVT pan center query: Click: 9 feature(s)`, `MVT removed center query: Click: no features`, and `MVT readd center query: Click: 424 feature(s)`.
+- The same emulator smoke also verified 3D Tiles close-zoom evidence, including `dragon_high.b3dm.glb` native application and `3D Tiles zoom snapshot ... nonblank=true`.
+
+Known remaining work:
+
+- Physical device `4tqoz9bmfu8t8pr8` still reports `offline`; use `emulator-5554` for device smoke until adb reports the physical device as `device`.
