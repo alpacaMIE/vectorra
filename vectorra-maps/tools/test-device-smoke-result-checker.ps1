@@ -44,7 +44,7 @@ $requiredActions = @(
 function New-SmokeFixture {
     param(
         [string]$Stamp,
-        [string]$LogText = "VectorraSample smoke completed",
+        [string]$LogText = "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true",
         [string]$OmitAction = "",
         [switch]$InvalidPng,
         [string]$OmitMetadata = ""
@@ -147,7 +147,7 @@ function Invoke-CheckerFailure {
 $validReport = New-SmokeFixture "20260604-000000"
 Invoke-CheckerSuccess $validReport
 
-$crashReport = New-SmokeFixture "20260604-000001" "AndroidRuntime FATAL EXCEPTION"
+$crashReport = New-SmokeFixture "20260604-000001" "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nAndroidRuntime FATAL EXCEPTION"
 Invoke-CheckerFailure $crashReport "crash log"
 
 $missingActionReport = New-SmokeFixture "20260604-000002" "VectorraSample smoke completed" "cancel-prefetch"
@@ -163,5 +163,8 @@ $emptyMetadataReport = New-SmokeFixture -Stamp "20260604-000005"
 (Get-Content -Path $emptyMetadataReport -Raw) -replace '(?m)^vulkan=.*$', 'vulkan=' |
     Set-Content -Path $emptyMetadataReport -Encoding utf8
 Invoke-CheckerFailure $emptyMetadataReport "empty metadata"
+
+$blankSnapshotReport = New-SmokeFixture -Stamp "20260604-000006" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=false"
+Invoke-CheckerFailure $blankSnapshotReport "blank snapshot"
 
 Write-Host "Device smoke result checker self-test passed."

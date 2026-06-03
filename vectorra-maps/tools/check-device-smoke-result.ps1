@@ -169,6 +169,15 @@ if ($uiText -notmatch 'com\.vectorra\.sample') {
 }
 
 $logText = Get-Content -Path $logcat -Raw
+$requiredLogPatterns = @(
+    'Snapshot\s+\d+x\d+\s+nonblank=true'
+)
+foreach ($pattern in $requiredLogPatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+
 $failurePatterns = @(
     'FATAL EXCEPTION',
     'AndroidRuntime',
