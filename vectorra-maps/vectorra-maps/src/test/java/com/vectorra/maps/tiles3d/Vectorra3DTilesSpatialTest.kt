@@ -83,6 +83,19 @@ class Vectorra3DTilesSpatialTest {
         assertTrue(sphere.radius > 100.0)
     }
 
+    @Test
+    fun wgs84EcefUsesEllipsoidGeodeticLatitude() {
+        val point = Vectorra3DTilesSpatial.wgs84DegreesToEcef(
+            longitude = -75.61209430782448,
+            latitude = 40.04253061142592,
+            height = 503.75
+        )
+
+        assertEquals(1_215_107.7612304366, point.x, 0.001)
+        assertEquals(-4_736_682.902037748, point.y, 0.001)
+        assertEquals(4_081_926.095098698, point.z, 0.001)
+    }
+
     private fun assertClose(expected: Double, actual: Double) {
         assertEquals(expected, actual, 0.000001)
     }

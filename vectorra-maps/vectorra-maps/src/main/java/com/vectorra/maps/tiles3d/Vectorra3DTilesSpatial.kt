@@ -144,18 +144,32 @@ internal object Vectorra3DTilesSpatial {
         return Vectorra3DTilesBoundingSphere(center, radius)
     }
 
-    private fun wgs84RadiansToEcef(
+    fun wgs84DegreesToEcef(
+        longitude: Double,
+        latitude: Double,
+        height: Double
+    ): Vectorra3DTilesPoint3D {
+        return wgs84RadiansToEcef(
+            longitude = Math.toRadians(longitude),
+            latitude = Math.toRadians(latitude),
+            height = height
+        )
+    }
+
+    fun wgs84RadiansToEcef(
         longitude: Double,
         latitude: Double,
         height: Double
     ): Vectorra3DTilesPoint3D {
         val clampedLatitude = latitude.coerceIn(-HALF_PI, HALF_PI)
-        val radius = WGS84_RADIUS_METERS + height
+        val sinLatitude = sin(clampedLatitude)
         val cosLatitude = cos(clampedLatitude)
+        val primeVerticalRadius = WGS84_SEMI_MAJOR_AXIS_METERS /
+            sqrt(1.0 - WGS84_FIRST_ECCENTRICITY_SQUARED * sinLatitude * sinLatitude)
         return Vectorra3DTilesPoint3D(
-            x = radius * cosLatitude * cos(longitude),
-            y = radius * cosLatitude * sin(longitude),
-            z = radius * sin(clampedLatitude)
+            x = (primeVerticalRadius + height) * cosLatitude * cos(longitude),
+            y = (primeVerticalRadius + height) * cosLatitude * sin(longitude),
+            z = (primeVerticalRadius * (1.0 - WGS84_FIRST_ECCENTRICITY_SQUARED) + height) * sinLatitude
         )
     }
 
@@ -174,6 +188,10 @@ internal object Vectorra3DTilesSpatial {
     }
 
     private const val MATRIX_SIZE = 16
-    private const val WGS84_RADIUS_METERS = 6_378_137.0
+    private const val WGS84_SEMI_MAJOR_AXIS_METERS = 6_378_137.0
+    private const val WGS84_INVERSE_FLATTENING = 298.257223563
+    private const val WGS84_FLATTENING = 1.0 / WGS84_INVERSE_FLATTENING
+    private const val WGS84_FIRST_ECCENTRICITY_SQUARED =
+        WGS84_FLATTENING * (2.0 - WGS84_FLATTENING)
     private const val HALF_PI = Math.PI / 2.0
 }

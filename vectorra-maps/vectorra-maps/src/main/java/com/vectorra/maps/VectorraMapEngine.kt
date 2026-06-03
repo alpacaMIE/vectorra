@@ -55,6 +55,7 @@ import com.vectorra.maps.tiles3d.Vectorra3DTilesContentLoadCompletion
 import com.vectorra.maps.tiles3d.Vectorra3DTilesContentLoadTask
 import com.vectorra.maps.tiles3d.Vectorra3DTilesContentRenderer
 import com.vectorra.maps.tiles3d.Vectorra3DTilesRendererContentInput
+import com.vectorra.maps.tiles3d.Vectorra3DTilesSpatial
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTilesetLoader
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversal
 import com.vectorra.maps.tiles3d.Vectorra3DTilesTraversalOptions
@@ -137,6 +138,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val tiles3DLayers = linkedMapOf<String, Vectorra3DTilesRuntimeLayer>()
     private val tiles3DLoadGenerationByLayerId = linkedMapOf<String, Long>()
     private var tiles3DTraversalScheduled = false
+    private var viewportHeightPixels = DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS
     private val vectorTileRuntimeLock = Any()
     private val vectorTileLayers = linkedMapOf<String, VectorraVectorTileRuntimeLayer>()
     private val vectorTileLoadGenerationByLayerId = linkedMapOf<String, Long>()
@@ -157,6 +159,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
 
         hitTester.setViewport(width, height)
+        viewportHeightPixels = height.coerceAtLeast(1)
         loadState = VectorraMapLoadState.LOADING
         val failure = try {
             VectorraNative.setSurface(nativeHandle, surface, width, height)
@@ -198,6 +201,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     fun resize(width: Int, height: Int) {
         hitTester.setViewport(width, height)
+        viewportHeightPixels = height.coerceAtLeast(1)
         ifOpen {
             VectorraNative.resize(nativeHandle, width, height)
         }
@@ -1348,7 +1352,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     private fun CameraState.to3DTilesCamera(): Vectorra3DTilesCamera {
-        val position = wgs84DegreesToEcef(longitude, latitude, cameraRangeMetersForZoom(zoom, latitude))
+        val viewportHeight = viewportHeightPixels.coerceAtLeast(1)
+        val position = Vectorra3DTilesSpatial.wgs84DegreesToEcef(
+            longitude,
+            latitude,
+            cameraRangeMetersForZoom(zoom, latitude, viewportHeight)
+        )
         val directionLength = sqrt(
             position.x * position.x +
                 position.y * position.y +
@@ -1362,7 +1371,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             directionY = -position.y / directionLength,
             directionZ = -position.z / directionLength,
             verticalFovDegrees = 60.0,
-            viewportHeightPixels = 1080
+            viewportHeightPixels = viewportHeight
         )
     }
 
@@ -1666,7 +1675,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MIN_PITCH = 0.0
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
-        const val WGS84_RADIUS_METERS = 6_378_137.0
         const val LOG_TAG = "VectorraMapEngine"
 
         data class WorldPoint(val x: Double, val y: Double)
@@ -1763,22 +1771,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
         fun Map<String, String>.toValueArray(): Array<String> = values.toTypedArray()
 
-        fun wgs84DegreesToEcef(
-            longitudeDegrees: Double,
-            latitudeDegrees: Double,
-            heightMeters: Double
-        ): EcefPoint {
-            val longitude = Math.toRadians(longitudeDegrees)
-            val latitude = Math.toRadians(latitudeDegrees)
-            val radius = WGS84_RADIUS_METERS + heightMeters
-            val cosLatitude = cos(latitude)
-            return EcefPoint(
-                x = radius * cosLatitude * cos(longitude),
-                y = radius * cosLatitude * sin(longitude),
-                z = radius * sin(latitude)
-            )
-        }
-
         fun cameraRangeMetersForZoom(
             zoom: Double,
             latitude: Double,
@@ -1858,9 +1850,3 @@ private fun Int.floorMod(modulus: Int): Int {
 
 private const val MIN_LATITUDE_FOR_MVT_TILE = -85.0511287798066
 private const val MAX_LATITUDE_FOR_MVT_TILE = 85.0511287798066
-
-private data class EcefPoint(
-    val x: Double,
-    val y: Double,
-    val z: Double
-)

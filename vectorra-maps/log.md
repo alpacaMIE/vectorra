@@ -1230,3 +1230,50 @@ Known remaining work:
 
 - Add a deterministic 3D Tiles zoom-in smoke action that waits for native readiness, applies close camera, and captures traversal/content logs.
 - Add native renderer readiness feedback if we want strict REPLACE unloading without parent/child overlap.
+
+### 3D Tiles Geodetic ECEF and Zoom Smoke
+
+Continued the 3D Tiles zoom-in investigation and fixed the coordinate cause behind unreliable close-camera traversal.
+
+Completed:
+
+- Replaced the Kotlin 3D Tiles camera/region WGS84-to-ECEF conversion with a WGS84 ellipsoid geodetic formula instead of the previous spherical radius approximation.
+- Reused `Vectorra3DTilesSpatial.wgs84DegreesToEcef()` from `VectorraMapEngine` so traversal camera position and 3D Tiles bounds use the same spatial model.
+- Updated traversal camera construction to use the current surface viewport height instead of a fixed `1080`, keeping SSE consistent with the actual device viewport.
+- Corrected the sample Cesium `TilesetWithDiscreteLOD` center latitude from geocentric latitude to geodetic latitude.
+- Added a `zoom-3dtiles` sample action and a visible `3D Zoom` button that loads root content, waits, then zooms to close levels that trigger replacement LOD requests without putting the elevated dragon behind the camera.
+- Added a regression test proving the sample geodetic lon/lat/height converts to the tileset transform translation.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.tiles3d.*" :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Results:
+
+- 3D Tiles unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action zoom-3dtiles
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the zoom smoke action.
+- Logcat showed root traversal/load: `3D Tiles traversal layer=sample-3d-tiles-layer requests=1 unloads=0`, `3D Tiles model loaded id=sample-3d-tiles-layer:root ... radius=16.03`.
+- Logcat showed close-camera LOD traversal after `VectorraSample: 3D Tiles zoom smoke: camera zoom=18.0`.
+- Logcat showed high LOD content registered/applied/loaded: `sample-3d-tiles-layer:root/0/0 ... dragon_high.b3dm.glb`, `3D Tiles model loaded id=sample-3d-tiles-layer:root/0/0 ... radius=15.96`.
+
+Known remaining work:
+
+- The Cesium sample content is a dragon tileset elevated about 503.75m above the ellipsoid; zooming past the safe close range can still place it behind a ground-targeted map camera. A future camera height/target-height API is needed for arbitrary elevated 3D Tiles close inspection.
+- Continue P2.T7 MVT device smoke for pan/zoom stale-feature coverage plus visibility and remove/re-add.
