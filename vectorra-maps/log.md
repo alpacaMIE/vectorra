@@ -3651,3 +3651,28 @@ Results:
 Known remaining work:
 
 - Physical device `4tqoz9bmfu8t8pr8` still reports `offline`; use `emulator-5554` for device smoke until adb reports the physical device as `device`.
+
+### Emulator Runtime Smoke Acceptance Docs Refresh
+
+Completed:
+
+- Updated `docs/beta/android-1.0-acceptance.md` so the runtime gate records the latest passing emulator smoke instead of the older home/resume failure.
+- Updated `docs/beta/abi-device-matrix.md` with the verified emulator smoke command, report path, and current evidence scope.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` so offline prefetch/cancel smoke is recorded as passing on emulator while physical-device smoke remains open.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "emulator.*not passed|home/resume still hits|Number of vsg:Device allocated exceeds|stricter result checker now rejects|Device smoke for `offline-prefetch` and `cancel-prefetch` has not run" docs\beta
+rg -n "device-smoke-20260604-060442|MVT pan center query|MVT removed center query|dragon_high|emulator runtime gate|physical-device smoke" docs\beta\android-1.0-acceptance.md docs\beta\abi-device-matrix.md docs\beta\release-notes-0.8.0-beta.1.md
+```
+
+Results:
+
+- No stale emulator-failure or unrun offline-prefetch/cancel wording remains in `docs/beta`.
+- The docs now point at `build/device-smoke/device-smoke-20260604-060442.txt` for the passing emulator smoke.
+- The emulator evidence now records 3D Tiles high LOD, MVT pan/remove/re-add query, MVT MBTiles, offline prefetch/cancel cleanup, GeoJSON/Draw/Location, and clean home/resume coverage.
+
+Known remaining work:
+
+- Physical device `4tqoz9bmfu8t8pr8` still reports `offline`; Android 1.0 release readiness still requires a real Vulkan-capable device smoke pass.

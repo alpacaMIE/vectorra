@@ -35,7 +35,7 @@ Latest local evidence:
 - `check-android-test-apk.ps1`: passed; `vectorra-maps-debug-androidTest.apk` exists and contains no native `.so` entries
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
 - `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
-- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, native renderer startup failure rejection, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT hidden no-features rejection, missing MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
+- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, native renderer startup failure rejection, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT pan query, hidden no-features, removed no-features, MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
 
 Validated outputs:
 
@@ -50,7 +50,19 @@ Validated outputs:
 
 ## Runtime Device Gate
 
-Current emulator result: not passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence, but the stricter checker rejects the run because home/resume logs `failed to start rocky renderer: vsg::Exception result=1 message=Number of vsg:Device allocated exceeds number supported`.
+Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-060442.txt`.
+
+Latest emulator evidence includes:
+
+- `3D Tiles zoom snapshot 1080x2219 nonblank=true`
+- native application of high-LOD `dragon_high.b3dm.glb`
+- `MVT pan center query: Click: 9 feature(s)`
+- `MVT removed center query: Click: no features`
+- `MVT readd center query: Click: 424 feature(s)`
+- MVT MBTiles native render evidence
+- offline prefetch success, cancel, and cleanup evidence
+- GeoJSON, Draw, and Location interaction evidence
+- no native renderer startup failure during home/resume
 
 Current real-device result: not passed because the physical device is offline.
 
@@ -75,4 +87,4 @@ Do not declare Android 1.0 release readiness until a real Vulkan-capable Android
 
 ## Release Risk
 
-The current source tree has passed local unit, build, AAR publication, published-AAR consumption, and ABI packaging checks. It has not passed emulator or real-device runtime smoke: emulator home/resume still hits a native renderer startup failure, and `4tqoz9bmfu8t8pr8` is still offline.
+The current source tree has passed local unit, build, AAR publication, published-AAR consumption, ABI packaging checks, and emulator runtime smoke. Release readiness remains blocked on the real-device runtime gate because `4tqoz9bmfu8t8pr8` is still offline.

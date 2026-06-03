@@ -49,7 +49,7 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 
 The script first requires `adb devices -l` to complete successfully, then installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, runs a `post-recreate-snapshot` action, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
 The smoke contract self-test verifies that the runner action list, result-checker required action list, fixture action list, sample action constants, and post-recreate snapshot markers stay aligned.
-The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, native renderer startup failure, missing-action, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot logs, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, missing base raster loaded evidence, missing 3D Tiles zoom-snapshot, missing 3D Tiles high-LOD native render evidence, missing 3D Tiles runtime/re-add evidence, missing MVT pan/hidden/remove evidence, missing MVT MBTiles native render evidence, missing offline prefetch cleanup evidence, and missing GeoJSON/Draw/Location interaction evidence failures before the device run.
+The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, native renderer startup failure, missing-action, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot logs, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, missing base raster loaded evidence, missing 3D Tiles zoom-snapshot, missing 3D Tiles high-LOD native render evidence, missing 3D Tiles runtime/re-add evidence, missing MVT pan query, hidden no-features, removed no-features evidence, missing MVT MBTiles native render evidence, missing offline prefetch cleanup evidence, and missing GeoJSON/Draw/Location interaction evidence failures before the device run.
 
 After a run completes, verify the generated artifacts:
 
@@ -100,6 +100,15 @@ If adb reports the device as `offline`, do not mark this gate passed. Record it 
 
 ## Latest Emulator Evidence
 
-On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence, but the stricter result checker now rejects the run because home/resume logs native renderer startup failures: `failed to start rocky renderer: vsg::Exception result=1 message=Number of vsg:Device allocated exceeds number supported`.
+On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence and passed the stricter result checker.
 
-Evidence before the lifecycle failure includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, native registration/application of `dragon_high.b3dm.glb`, MVT MBTiles native render, offline prefetch success/cancel cleanup, and GeoJSON/Draw/Location interactions. The emulator runtime gate and physical real-device release gate both remain open; the physical device `4tqoz9bmfu8t8pr8` still reported `offline`.
+Verified command:
+
+```powershell
+.\tools\run-device-smoke.ps1 -DeviceSerial emulator-5554 -ActionDelaySeconds 8
+.\tools\check-device-smoke-result.ps1 -Report D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\device-smoke-20260604-060442.txt
+```
+
+Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs.
+
+The emulator runtime gate is accepted as development evidence. The physical real-device release gate remains open; the physical device `4tqoz9bmfu8t8pr8` still reported `offline`.
