@@ -72,6 +72,9 @@ adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.act
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action geojson
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action draw
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-draw
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action location
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action location-follow
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-location
 ```
 
 Sample UI additions:
@@ -83,8 +86,11 @@ Sample UI additions:
 - `GeoJSON`
 - `Draw`
 - `Clear Draw`
+- `Location`
+- `Follow`
+- `Clear Loc`
 
-The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag. The snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check. The GeoJSON smoke installs a query-only source/layer and logs a center query. The Draw smoke renders point, line, and polygon annotations and logs a center query.
+The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag. The snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check. The GeoJSON smoke installs a query-only source/layer and logs a center query. The Draw smoke renders point, line, and polygon annotations and logs a center query. The Location smoke uses a deterministic sample location, shows the accuracy ring, exercises heading follow mode, and clears the indicator.
 
 ## Fixes And Compatibility Notes
 

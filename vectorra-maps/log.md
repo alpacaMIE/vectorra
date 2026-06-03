@@ -2153,3 +2153,38 @@ Known remaining work:
 
 - Re-run the `3dtiles-zoom` adb smoke and inspect screenshots/logcat after the device returns to `device`.
 - Replace the sample 3D Tiles asset with a representative building/model tileset for P1/P4 smoke coverage if the sample is meant to validate map SDK building rendering rather than generic b3dm rendering.
+
+### P4.T3 Location Sample Smoke
+
+Expanded sample coverage for the location component.
+
+Completed:
+
+- Added `Location`, `Follow`, and `Clear Loc` sample buttons.
+- Added adb smoke actions `location`, `location-follow`, and `clear-location`.
+- The location smoke uses a deterministic sample coordinate, enables the SDK location indicator, shows the accuracy ring, and moves the camera to the sample point.
+- The follow smoke updates the same deterministic location and switches to heading follow mode.
+- The clear smoke disables follow mode, clears the native indicator, and disables the location component.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` and `docs/beta/diagnostics-troubleshooting.md` with the new smoke actions.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "Location|Follow|Clear Loc|SAMPLE_ACTION_LOCATION|location-follow|clear-location|VectorraLocation|VectorraFollowMode" .\vectorra-maps\vectorra-sample\src\main\java\com\vectorra\sample\MainActivity.kt .\vectorra-maps\docs\beta
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*"
+& "$env:ANDROID_HOME\platform-tools\adb.exe" devices -l
+```
+
+Results:
+
+- Search found the location UI controls, smoke action constants, action handling, API imports, and docs references.
+- `:vectorra-sample:assembleDebug` passed.
+- `:vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*"` passed.
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`, so real-device location smoke remains unverified.
+
+Known remaining work:
+
+- Run the `location`, `location-follow`, and `clear-location` adb smokes on a real device once adb returns to `device`.

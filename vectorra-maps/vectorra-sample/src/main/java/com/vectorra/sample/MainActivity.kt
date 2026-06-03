@@ -26,6 +26,8 @@ import com.vectorra.maps.VectorraSurfaceLifecycleState
 import com.vectorra.maps.annotation.VectorraDrawLineAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPointAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPolygonAnnotation
+import com.vectorra.maps.location.VectorraFollowMode
+import com.vectorra.maps.location.VectorraLocation
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraCacheStatus
@@ -262,6 +264,18 @@ class MainActivity : Activity() {
                 },
                 sampleButton("Clear Draw") {
                     clearSampleDrawAnnotations()
+                }
+            ))
+
+            addView(controlRow(
+                sampleButton("Location") {
+                    showSampleLocation()
+                },
+                sampleButton("Follow") {
+                    followSampleLocation()
+                },
+                sampleButton("Clear Loc") {
+                    clearSampleLocation()
                 }
             ))
 
@@ -785,6 +799,65 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showSampleLocation() {
+        runCatching {
+            mapView.map.location.enabled = true
+            mapView.map.location.showAccuracyRing = true
+            mapView.map.location.followMode = VectorraFollowMode.NONE
+            mapView.map.location.updateLocation(sampleLocation())
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_LOCATION_LONGITUDE,
+                    latitude = SAMPLE_LOCATION_LATITUDE,
+                    zoom = 15.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            statusText.text = "Location indicator requested"
+            Log.i(LOG_TAG, "Location smoke: indicator requested")
+        }.onFailure { error ->
+            statusText.text = "Location error: ${error.message}"
+            Log.e(LOG_TAG, "Location smoke error", error)
+        }
+    }
+
+    private fun followSampleLocation() {
+        runCatching {
+            mapView.map.location.enabled = true
+            mapView.map.location.showAccuracyRing = true
+            mapView.map.location.updateLocation(sampleLocation())
+            mapView.map.location.followMode = VectorraFollowMode.HEADING
+            statusText.text = "Location follow requested"
+            Log.i(LOG_TAG, "Location smoke: follow heading requested")
+        }.onFailure { error ->
+            statusText.text = "Location follow error: ${error.message}"
+            Log.e(LOG_TAG, "Location follow smoke error", error)
+        }
+    }
+
+    private fun clearSampleLocation() {
+        runCatching {
+            mapView.map.location.followMode = VectorraFollowMode.NONE
+            mapView.map.location.clearLocation()
+            mapView.map.location.enabled = false
+            statusText.text = "Location cleared"
+            Log.i(LOG_TAG, "Location smoke: cleared")
+        }.onFailure { error ->
+            statusText.text = "Location clear error: ${error.message}"
+        }
+    }
+
+    private fun sampleLocation(): VectorraLocation {
+        return VectorraLocation(
+            longitude = SAMPLE_LOCATION_LONGITUDE,
+            latitude = SAMPLE_LOCATION_LATITUDE,
+            accuracyMeters = 42.0,
+            bearingDegrees = 35.0,
+            provider = "sample"
+        )
+    }
+
     private fun sampleOfflineMvtSource(): VectorraVectorTileSource {
         return VectorraVectorTileSource.xyz(
             id = "$SAMPLE_MVT_SOURCE_ID-offline-prefetch",
@@ -923,6 +996,9 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_GEOJSON -> loadSampleGeoJson()
                 SAMPLE_ACTION_DRAW -> loadSampleDrawAnnotations()
                 SAMPLE_ACTION_CLEAR_DRAW -> clearSampleDrawAnnotations()
+                SAMPLE_ACTION_LOCATION -> showSampleLocation()
+                SAMPLE_ACTION_LOCATION_FOLLOW -> followSampleLocation()
+                SAMPLE_ACTION_CLEAR_LOCATION -> clearSampleLocation()
                 else -> statusText.text = "Unknown sample action: $action"
             }
         }
@@ -1177,6 +1253,8 @@ class MainActivity : Activity() {
         const val SAMPLE_GEOJSON_LAYER_ID = "sample-geojson-layer"
         const val SAMPLE_GEOJSON_LONGITUDE = -122.4194
         const val SAMPLE_GEOJSON_LATITUDE = 37.7749
+        const val SAMPLE_LOCATION_LONGITUDE = -122.4194
+        const val SAMPLE_LOCATION_LATITUDE = 37.7749
         const val SAMPLE_MVT_TILE_Z = 12
         const val SAMPLE_MVT_TILE_X = 655
         const val SAMPLE_MVT_TILE_Y = 1583
@@ -1208,6 +1286,9 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_GEOJSON = "geojson"
         const val SAMPLE_ACTION_DRAW = "draw"
         const val SAMPLE_ACTION_CLEAR_DRAW = "clear-draw"
+        const val SAMPLE_ACTION_LOCATION = "location"
+        const val SAMPLE_ACTION_LOCATION_FOLLOW = "location-follow"
+        const val SAMPLE_ACTION_CLEAR_LOCATION = "clear-location"
         const val PBF_WIRE_VARINT = 0
         const val PBF_WIRE_LENGTH_DELIMITED = 2
         const val MVT_TILE_LAYERS_FIELD = 3

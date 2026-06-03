@@ -127,6 +127,9 @@ adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.act
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action geojson
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action draw
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-draw
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action location
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action location-follow
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-location
 ```
 
 ## Common Failures
