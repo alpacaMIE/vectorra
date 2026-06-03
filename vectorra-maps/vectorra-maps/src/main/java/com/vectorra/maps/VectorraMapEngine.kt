@@ -3,6 +3,7 @@ package com.vectorra.maps
 import android.animation.ValueAnimator
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Surface
 import android.view.Choreographer
 import android.view.animation.DecelerateInterpolator
@@ -1068,6 +1069,18 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     tileStates = runtimeLayer.contentLifecycle.tileLoadStates()
                 )
                 val lifecycleResult = runtimeLayer.contentLifecycle.applyTraversal(traversalResult)
+                if (traversalResult.requests.isNotEmpty() ||
+                    traversalResult.unloadTileIds.isNotEmpty() ||
+                    lifecycleResult.failedTileIds.isNotEmpty()
+                ) {
+                    Log.i(
+                        LOG_TAG,
+                        "3D Tiles traversal layer=${runtimeLayer.layer.id} " +
+                            "requests=${traversalResult.requests.size} " +
+                            "unloads=${traversalResult.unloadTileIds.size} " +
+                            "failures=${lifecycleResult.failedTileIds.size}"
+                    )
+                }
                 lifecycleResult.failedTileIds.forEach { (tileId, reason) ->
                     failures[tileId] = runtimeLayer to reason
                 }
@@ -1436,6 +1449,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
         const val WGS84_RADIUS_METERS = 6_378_137.0
+        const val LOG_TAG = "VectorraMapEngine"
 
         data class WorldPoint(val x: Double, val y: Double)
 

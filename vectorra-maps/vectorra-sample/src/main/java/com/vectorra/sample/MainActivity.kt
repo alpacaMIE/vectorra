@@ -39,9 +39,11 @@ class MainActivity : Activity() {
     private var modelVisible = true
     private var mapLoadErrorSubscription: Closeable? = null
     private var resourceStatusSubscription: Closeable? = null
+    private var pendingSmokeAction: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingSmokeAction = intent.getStringExtra(EXTRA_SAMPLE_ACTION)
 
         mapView = VectorraMapView(this)
         statusText = TextView(this).apply {
@@ -65,6 +67,7 @@ class MainActivity : Activity() {
             override fun onMapReady(view: VectorraMapView, map: VectorraMap) {
                 installBaseLayers(map)
                 statusText.text = "Vectorra map ready"
+                runPendingSmokeAction()
             }
 
             override fun onMapLoadError(view: VectorraMapView, error: VectorraMapLoadError) {
@@ -325,9 +328,63 @@ class MainActivity : Activity() {
                     maximumLoadedTiles = 128
                 )
             )
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_3D_TILES_LONGITUDE,
+                    latitude = SAMPLE_3D_TILES_LATITUDE,
+                    zoom = 16.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
             statusText.text = "3D Tiles requested"
         }.onFailure { error ->
             statusText.text = "3D Tiles error: ${error.message}"
+        }
+    }
+
+    private fun loadBrokenSample3DTiles() {
+        runCatching {
+            val source = Vectorra3DTilesSource(
+                id = "$SAMPLE_3D_TILES_SOURCE_ID-bad",
+                tilesetUri = SAMPLE_BROKEN_3D_TILES_URI
+            )
+            mapView.map.add3DTilesLayer(
+                source = source,
+                layer = Vectorra3DTilesLayer(
+                    id = "$SAMPLE_3D_TILES_LAYER_ID-bad",
+                    sourceId = source.id
+                ),
+                options = Vectorra3DTilesOptions(
+                    maximumScreenSpaceError = 16.0,
+                    maximumLoadedTiles = 16
+                )
+            )
+            statusText.text = "Bad 3D Tiles requested"
+        }.onFailure { error ->
+            statusText.text = "Bad 3D Tiles error: ${error.message}"
+        }
+    }
+
+    private fun removeSample3DTiles() {
+        runCatching {
+            mapView.map.remove3DTilesLayer(SAMPLE_3D_TILES_LAYER_ID)
+            statusText.text = "3D Tiles removed"
+        }.onFailure { error ->
+            statusText.text = "3D Tiles remove error: ${error.message}"
+        }
+    }
+
+    private fun runPendingSmokeAction() {
+        val action = pendingSmokeAction ?: return
+        pendingSmokeAction = null
+        statusText.post {
+            when (action) {
+                SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
+                SAMPLE_ACTION_BAD_3D_TILES -> loadBrokenSample3DTiles()
+                SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
+                else -> statusText.text = "Unknown sample action: $action"
+            }
         }
     }
 
@@ -418,5 +475,12 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_SOURCE_ID = "sample-3d-tiles"
         const val SAMPLE_3D_TILES_LAYER_ID = "sample-3d-tiles-layer"
         const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
+        const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
+        const val SAMPLE_3D_TILES_LATITUDE = 39.853105846881554
+        const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
+        const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
+        const val SAMPLE_ACTION_3D_TILES = "3dtiles"
+        const val SAMPLE_ACTION_BAD_3D_TILES = "bad-3dtiles"
+        const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
     }
 }

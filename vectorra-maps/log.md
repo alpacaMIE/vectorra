@@ -469,3 +469,51 @@ Known remaining Phase 1 work:
 
 - Run a focused P1.T7 device smoke with reliable UI automation or a dedicated sample trigger for the `3D Tiles` button.
 - Add/remove/re-add, rotate or pause/resume, screenshot, and bad tileset validation still need to be executed against the live scheduling path.
+
+### P1.T7 Reliable 3D Tiles Smoke Trigger
+
+Continued Phase 1 by adding a deterministic sample-app trigger for live 3D Tiles smoke validation.
+
+Completed:
+
+- Added `vectorra.sample.action` intent handling in `vectorra-sample`.
+- Added `3dtiles`, `bad-3dtiles`, and `remove-3dtiles` smoke actions so device runs do not depend on coordinate taps.
+- Moved the `3dtiles` smoke camera to the Cesium discrete LOD sample root transform location.
+- Kept the manual `3D Tiles` button path intact while sharing the same layer/source setup.
+- Added a narrow engine traversal log when formal 3D Tiles traversal emits requests, unloads, or failures.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Device smoke was run on `2312DRAABC` with:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+$apk='D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+& $adb install -r -d $apk
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Device install succeeded after the user reinserted/unlocked the device.
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-intent-smoke-2026-06-03-retry.png` showed `tiles3d sample-3d-tiles-layer loaded`.
+- Filtered logcat showed `VectorraMapEngine` traversal for `sample-3d-tiles-layer` with `requests=1`, `unloads=0`, and `failures=0`.
+- Filtered logcat showed JNI registration of `sample-3d-tiles-layer:root`.
+- App cache contained `cache/vectorra-3dtiles-content-cache/sample-3d-tiles-layer/sample-3d-tiles-layer-root-dragon_low.b3dm.glb`.
+- No `FATAL EXCEPTION`, `AndroidRuntime`, or ANR appeared in the filtered smoke log.
+
+Known remaining Phase 1 work:
+
+- Run add/remove/re-add smoke validation against renderer unload logs.
+- Run bad tileset failure smoke validation.
+- Run rotate or pause/resume lifecycle smoke validation.
