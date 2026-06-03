@@ -19,6 +19,7 @@ import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.query.VectorraCoordinate
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.source.VectorraRasterTileSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
@@ -145,6 +146,11 @@ interface VectorraMap : Closeable {
     }
 
     fun addMbTilesRasterLayer(source: VectorraMbTilesRasterSource, layerId: String = source.id)
+
+    fun addMbTilesVectorLayer(
+        source: VectorraMbTilesVectorSource,
+        layer: VectorraVectorTileLayer
+    )
 
     fun setTileNetworkConfig(config: TileNetworkConfig)
 

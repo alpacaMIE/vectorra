@@ -44,6 +44,7 @@ import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
+import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -132,7 +133,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         camera = { cameraState }
     )
     private val mapClickListeners = CopyOnWriteArrayList<VectorraMapClickListener>()
-    private val mbTilesSources = CopyOnWriteArrayList<VectorraMbTilesRasterSource>()
+    private val mbTilesSources = CopyOnWriteArrayList<Closeable>()
     private val modelLayerIds = linkedSetOf<String>()
     private val tiles3DRuntimeLock = Any()
     private val tiles3DLayers = linkedMapOf<String, Vectorra3DTilesRuntimeLayer>()
@@ -601,6 +602,32 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     emptyArray()
                 )
             }
+            mbTilesSources.addIfAbsent(source)
+        }
+    }
+
+    override fun addMbTilesVectorLayer(
+        source: VectorraMbTilesVectorSource,
+        layer: VectorraVectorTileLayer
+    ) {
+        require(layer.sourceId == source.id) {
+            "MBTiles vector layer sourceId must match source id."
+        }
+        ifOpen {
+            val proxiedTemplateUrl = tileProxyServer.proxyTemplateForLocalProvider(
+                sourceId = source.id,
+                layerId = layer.id,
+                resourceType = TileResourceType.VECTOR,
+                provider = source::loadTile
+            )
+            val localSource = VectorraVectorTileSource.xyz(
+                id = source.id,
+                templateUrl = proxiedTemplateUrl,
+                tileSize = source.tileSize,
+                minZoom = source.minZoom,
+                maxZoom = source.maxZoom
+            )
+            addVectorTileLayer(localSource, layer)
             mbTilesSources.addIfAbsent(source)
         }
     }

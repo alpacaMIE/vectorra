@@ -1359,3 +1359,38 @@ Known remaining Phase 2 work:
 
 - Query result ordering across multiple visible tiles is still mostly covered by hit-test sorting rather than an end-to-end engine fixture.
 - Phase 3 will need MVT MBTiles/offline cache integration on top of the same loaded-store semantics.
+
+### P3.T7 MVT MBTiles Source Skeleton
+
+Started Phase 3 MVT MBTiles work by adding the source and engine bridge needed to reuse the Phase 2 MVT runtime path for offline vector tiles.
+
+Completed:
+
+- Added `VectorraMbTilesVectorSource` for MBTiles packages with `pbf`/`mvt` vector tile formats.
+- Added `VectorraMbTilesVectorMetadataParser` so raster MBTiles still reject vector formats while vector MBTiles accept `pbf`, `mvt`, and `application/x-protobuf`.
+- Added `VectorraMap.addMbTilesVectorLayer(source, layer)`.
+- Implemented `VectorraMapEngine.addMbTilesVectorLayer` by registering the MBTiles reader as a local tile provider through `TileProxyServer` with `TileResourceType.VECTOR`, then feeding the proxied XYZ template into the existing `addVectorTileLayer` path.
+- Kept decoded tile/render/query ownership in the existing `VectorraMvtRuntimeTileStore`; no second MVT state owner was introduced.
+- Generalized engine MBTiles source tracking to close both raster and vector MBTiles sources.
+- Added unit coverage for vector MBTiles metadata parsing and missing-file early failure.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.mvt.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Offline and MVT unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining Phase 3 work:
+
+- Add an actual MVT MBTiles fixture or generated SQLite fixture that exercises `VectorraMbTilesVectorSource.open()` and tile reads on Android/JVM-compatible test infrastructure.
+- Add sample UI/device smoke for loading a real MVT MBTiles file.
+- Offline manager, prefetch, cache status, cleanup, cancel, partial failure, and published offline API remain open Phase 3 work.

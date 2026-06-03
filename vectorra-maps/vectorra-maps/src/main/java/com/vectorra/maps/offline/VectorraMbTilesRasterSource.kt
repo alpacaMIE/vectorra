@@ -46,6 +46,7 @@ data class VectorraMbTilesMetadata(
         get() = when (format) {
             "jpg", "jpeg" -> "image/jpeg"
             "webp" -> "image/webp"
+            "pbf", "mvt" -> "application/x-protobuf"
             else -> "image/png"
         }
 }
@@ -122,6 +123,78 @@ class VectorraMbTilesRasterSource internal constructor(
     }
 }
 
+@VectorraBetaApi("0.8.0-beta.1")
+class VectorraMbTilesVectorSource internal constructor(
+    val id: String,
+    val file: File,
+    val metadata: VectorraMbTilesMetadata,
+    private val reader: VectorraMbTilesReader
+) : Closeable {
+    val minZoom: Int
+        get() = metadata.minZoom
+    val maxZoom: Int
+        get() = metadata.maxZoom
+    val tileSize: Int = DEFAULT_TILE_SIZE
+
+    internal fun loadTile(request: TileRequest): TileResponse {
+        val tileId = request.tileId
+        if (tileId == null || !VectorraMbTilesTileRows.isValid(tileId)) {
+            return TileResponse(request = request, statusCode = 404)
+        }
+        val bytes = reader.readTile(tileId, metadata.tileRowScheme)
+        return if (bytes == null) {
+            TileResponse(request = request, statusCode = 404)
+        } else {
+            TileResponse(
+                request = request,
+                statusCode = 200,
+                headers = mapOf("Content-Type" to metadata.contentType),
+                body = bytes,
+                cacheStatus = TileCacheStatus.DISK
+            )
+        }
+    }
+
+    override fun close() {
+        reader.close()
+    }
+
+    companion object {
+        const val DEFAULT_SOURCE_ID = "mbtiles-vector-source"
+        const val DEFAULT_TILE_SIZE = 512
+
+        fun open(
+            file: File,
+            id: String = DEFAULT_SOURCE_ID
+        ): VectorraMbTilesVectorSource {
+            require(id.isNotBlank()) { "MBTiles vector source id must not be blank." }
+            require(file.exists() && file.isFile && file.canRead()) {
+                "MBTiles file is not readable: ${file.absolutePath}"
+            }
+
+            val reader = VectorraMbTilesReader.open(file)
+            return try {
+                val rawMetadata = reader.readMetadata()
+                val (minZoom, maxZoom) = reader.readZoomRange()
+                val metadata = VectorraMbTilesVectorMetadataParser.parse(
+                    values = rawMetadata,
+                    fallbackMinZoom = minZoom,
+                    fallbackMaxZoom = maxZoom
+                )
+                VectorraMbTilesVectorSource(
+                    id = id,
+                    file = file.absoluteFile,
+                    metadata = metadata,
+                    reader = reader
+                )
+            } catch (error: Throwable) {
+                reader.close()
+                throw error
+            }
+        }
+    }
+}
+
 internal object VectorraMbTilesMetadataParser {
     private val supportedFormats = setOf("png", "jpg", "jpeg", "webp")
 
@@ -163,19 +236,62 @@ internal object VectorraMbTilesMetadataParser {
         )
     }
 
-    private fun parseBounds(value: String): VectorraMbTilesBounds? {
+    fun parseBounds(value: String): VectorraMbTilesBounds? {
         val parts = value.split(",").mapNotNull { it.trim().toDoubleOrNull() }
         if (parts.size != 4) return null
         return VectorraMbTilesBounds(parts[0], parts[1], parts[2], parts[3])
     }
 
-    private fun parseCenter(value: String): VectorraMbTilesCenter? {
+    fun parseCenter(value: String): VectorraMbTilesCenter? {
         val parts = value.split(",").map { it.trim().toDoubleOrNull() }
         if (parts.size < 2 || parts[0] == null || parts[1] == null) return null
         return VectorraMbTilesCenter(
             longitude = parts[0] ?: return null,
             latitude = parts[1] ?: return null,
             zoom = parts.getOrNull(2)
+        )
+    }
+}
+
+internal object VectorraMbTilesVectorMetadataParser {
+    private val supportedFormats = setOf("pbf", "mvt")
+
+    fun parse(
+        values: Map<String, String>,
+        fallbackMinZoom: Int,
+        fallbackMaxZoom: Int
+    ): VectorraMbTilesMetadata {
+        val normalized = values.mapKeys { it.key.lowercase() }
+        val format = normalized["format"]
+            ?.lowercase()
+            ?.removePrefix("application/")
+            ?.removePrefix("x-")
+            ?.let { if (it == "protobuf") "pbf" else it }
+            ?: "pbf"
+        require(format in supportedFormats) {
+            "Unsupported MBTiles vector format: $format"
+        }
+
+        val minZoom = normalized["minzoom"]?.toIntOrNull() ?: fallbackMinZoom
+        val maxZoom = normalized["maxzoom"]?.toIntOrNull() ?: fallbackMaxZoom
+        require(minZoom >= 0) { "MBTiles minzoom must be greater than or equal to 0." }
+        require(maxZoom >= minZoom) { "MBTiles maxzoom must be greater than or equal to minzoom." }
+
+        val scheme = if (normalized["scheme"].equals("xyz", ignoreCase = true)) {
+            VectorraMbTilesTileRowScheme.XYZ
+        } else {
+            VectorraMbTilesTileRowScheme.TMS
+        }
+
+        return VectorraMbTilesMetadata(
+            name = normalized["name"],
+            format = format,
+            minZoom = minZoom,
+            maxZoom = maxZoom,
+            bounds = normalized["bounds"]?.let(VectorraMbTilesMetadataParser::parseBounds),
+            center = normalized["center"]?.let(VectorraMbTilesMetadataParser::parseCenter),
+            tileRowScheme = scheme,
+            raw = values
         )
     }
 }
