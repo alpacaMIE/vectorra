@@ -51,7 +51,7 @@ Before publishing a Beta artifact:
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
-The local Android acceptance script runs this gate plus the ABI native-library content check and the runtime smoke result checker self-test:
+The local Android acceptance script runs this gate plus the ABI native-library content check and the runtime smoke result checker self-test. The smoke checker self-test validates a complete fixture and rejects crash logs, missing or out-of-order action markers, missing or empty metadata, APK/ABI mismatches, missing or mismatched artifact records, invalid screenshots, blank snapshots, and missing 3D Tiles close-zoom snapshots:
 
 ```powershell
 .\tools\check-android-acceptance.ps1

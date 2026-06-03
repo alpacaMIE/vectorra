@@ -2576,6 +2576,39 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
 
+### Android Acceptance Smoke Checker Documentation Sync
+
+Aligned the release and acceptance documentation with the current runtime smoke result checker self-test coverage.
+
+Completed:
+
+- Updated `docs/beta/android-1.0-acceptance.md` so the local gate description no longer says the smoke verifier only checks complete, crash-log, and missing-action fixtures.
+- Updated `docs/beta/release-versioning.md` to list the current smoke checker self-test failure categories covered by `tools/check-android-acceptance.ps1`.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` with the current smoke checker self-test coverage for the unpublished development target.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "complete, crash-log, and missing-action fixtures|crash-log, and missing-action|runtime smoke result verifier|smoke checker self-test|APK/ABI|out-of-order|3D Tiles close-zoom" docs README.md log.md
+$tokens=$null; $errors=$null; foreach($path in @('.\tools\check-android-acceptance.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-device-smoke-result.ps1')) { [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null }
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- Documentation search no longer found the stale `complete, crash-log, and missing-action fixtures` wording in docs.
+- PowerShell parser checks passed for `check-android-acceptance.ps1`, `test-device-smoke-result-checker.ps1`, and `check-device-smoke-result.ps1`.
+- `test-device-smoke-result-checker.ps1` passed.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Device Smoke Ordered Marker Validation
 
 Tightened the runtime smoke result checker so action and lifecycle report markers must follow the script execution order.

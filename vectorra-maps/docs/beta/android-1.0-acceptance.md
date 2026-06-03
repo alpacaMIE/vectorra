@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against complete, crash-log, and missing-action fixtures.
+This script runs the full local gate, checks native library entries in the generated APK/AAR artifacts, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
 
 Equivalent expanded command:
 
