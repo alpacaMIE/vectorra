@@ -2188,3 +2188,42 @@ Results:
 Known remaining work:
 
 - Run the `location`, `location-follow`, and `clear-location` adb smokes on a real device once adb returns to `device`.
+
+### P4.T5 Maven Local AAR Verification
+
+Ran the Maven-local publication and published-AAR sample consumption gate.
+
+Completed:
+
+- Published `com.vectorra:vectorra-maps:0.5.0-beta.1` to Maven local.
+- Published `com.vectorra:vectorra-maps-turf:0.5.0-beta.1` to Maven local.
+- Built `:vectorra-sample:assembleDebug` against the published `vectorra-maps` AAR with `-Pvectorra.sample.usePublishedAar=true`.
+- Inspected the published `vectorra-maps` AAR and confirmed `classes.jar`, `proguard.txt`, rocky assets, and both `arm64-v8a` and `x86_64` native libraries are present.
+- Inspected both sources jars and confirmed SDK and Turf source entries are present.
+- Updated `docs/beta/android-aar-integration.md` with the published artifact content checklist and the PowerShell quoted-property requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps` and `D:\workspace\code\vectorra`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal
+.\gradlew.bat -g .\.gradle-agent-home "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
+
+$version=(Select-String -Path vectorra-maps\gradle.properties -Pattern '^VECTORRA_VERSION=').Line.Split('=')[1].Trim()
+$group=(Select-String -Path vectorra-maps\gradle.properties -Pattern '^VECTORRA_GROUP=').Line.Split('=')[1].Trim()
+$groupPath=$group.Replace('.', '\')
+$base="$env:USERPROFILE\.m2\repository\$groupPath"
+```
+
+Results:
+
+- Maven-local publication passed.
+- Published-AAR sample build passed.
+- The first sample build attempt with unquoted `-Pvectorra.sample.usePublishedAar=true` failed because Gradle interpreted `.sample.usePublishedAar=true` as a task name; the documented quoted form passed.
+- Published `vectorra-maps` contains `jni/arm64-v8a/librocky.so`, `jni/arm64-v8a/libvectorra_jni.so`, `jni/x86_64/librocky.so`, `jni/x86_64/libvectorra_jni.so`, `assets/rocky/...`, `classes.jar`, `proguard.txt`, and a sources jar.
+- Published `vectorra-maps-turf` contains an AAR, sources jar, POM, and module metadata.
+
+Known remaining work:
+
+- A published-AAR device startup smoke still depends on adb returning to `device`.

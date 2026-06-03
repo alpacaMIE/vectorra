@@ -44,6 +44,33 @@ The sample app normally depends on `project(":vectorra-maps")`. To verify extern
 
 This mode reads `com.vectorra:vectorra-maps:0.5.0-beta.1` from `mavenLocal()`.
 
+Keep the `-Pvectorra.sample.usePublishedAar=true` argument quoted in PowerShell. Without quotes, Gradle can treat `.sample.usePublishedAar=true` as a task name.
+
+## Verify Published Artifact Contents
+
+After publishing to Maven local, inspect the generated artifacts under:
+
+```text
+%USERPROFILE%\.m2\repository\com\vectorra\
+```
+
+The `vectorra-maps` AAR must include:
+
+- `classes.jar`
+- `proguard.txt`
+- `assets/rocky/...`
+- `jni/arm64-v8a/librocky.so`
+- `jni/arm64-v8a/libvectorra_jni.so`
+- `jni/x86_64/librocky.so`
+- `jni/x86_64/libvectorra_jni.so`
+- `vectorra-maps-<version>-sources.jar`
+
+The `vectorra-maps-turf` publication must include:
+
+- `vectorra-maps-turf-<version>.aar`
+- `vectorra-maps-turf-<version>-sources.jar`
+- Maven `.pom` and `.module` metadata
+
 ## Minimal Kotlin Usage
 
 ```kotlin
