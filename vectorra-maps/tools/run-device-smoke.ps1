@@ -15,6 +15,9 @@ if (-not (Test-Path $adb)) {
 }
 
 $devices = & $adb devices -l
+if ($LASTEXITCODE -ne 0) {
+    throw "adb devices failed with exit code ${LASTEXITCODE}: $($devices -join ' | ')"
+}
 $deviceLines = $devices | Where-Object { $_ -match '^\S+\s+\S+' -and $_ -notmatch '^List of devices' }
 if ($DeviceSerial.Length -eq 0) {
     $online = @($deviceLines | Where-Object { $_ -match '^\S+\s+device(\s|$)' })

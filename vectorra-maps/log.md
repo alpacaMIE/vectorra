@@ -2543,6 +2543,31 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke ADB Device Enumeration Check
+
+Tightened runtime smoke startup diagnostics.
+
+Completed:
+
+- Updated `tools/run-device-smoke.ps1` to throw immediately if `adb devices -l` exits with a non-zero code.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` to document the adb device enumeration check.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-device-smoke-result-checker.ps1` passed.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke ABI Query Exit Check
 
 Tightened automatic APK split selection in the runtime smoke script.

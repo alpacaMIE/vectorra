@@ -46,7 +46,7 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 .\tools\run-device-smoke.ps1
 ```
 
-The script installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
+The script first requires `adb devices -l` to complete successfully, then installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
 The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, missing-action, invalid-screenshot, missing-device-metadata, empty-device-metadata, and blank-snapshot failures before the device run.
 
 After a run completes, verify the generated artifacts:
