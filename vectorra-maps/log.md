@@ -149,3 +149,38 @@ P0.T9 status:
 
 - P0 is accepted for code, build, and first device smoke coverage.
 - Remaining P0 follow-up risk is performance around native `setSurface` on this MIUI device and delayed bad-GLB failure observation.
+
+### Phase 1 Start - P1.T0 3D Tiles Renderer Contract
+
+Continued development into Phase 1 with the renderer input contract required before adding the formal `Vectorra3DTiles*` runtime API.
+
+Completed:
+
+- Added internal `Vectorra3DTilesRendererContract` types for:
+  - full 4x4 matrix transforms;
+  - ECEF origin plus local transform placement;
+  - renderable payload source identity for `.glb`, `.gltf`, and `.b3dm` inner-GLB cache URI.
+- Added validation that `.b3dm` content cannot be sent to native as raw bytes or as the original `.b3dm` URI; it must resolve to a cache-managed `.glb`/`.gltf` render URI first.
+- Added JNI declarations for `VectorraNative.add3DTilesRendererContent` and `remove3DTilesRendererContent`.
+- Added native C++ contract storage and validation for 3D Tiles renderer content ids, render URIs, transform kind, matrix values, ECEF origin, and visibility.
+- Kept this as a 3D Tiles-specific internal renderer contract; the deprecated `add3DTilesModelLayer` smoke API was not extended.
+- Added `Vectorra3DTilesRendererContractTest` for matrix preservation, ECEF placement, b3dm cache-URI enforcement, unknown content rejection, and invalid matrix rejection.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T0 currently defines and compiles the contract but does not yet create rendered rocky model entities for 3D Tiles content. P1.T4/P1.T5/P1.T6 should consume this contract when GLB/GLTF content lifecycle, transform composition, and b3dm payload extraction are implemented.
+- P1.T1 is next: add the formal `Vectorra3DTilesSource`, `Vectorra3DTilesLayer`, and `Vectorra3DTilesOptions` API path and wire its load/error state into the unified resource status contract.

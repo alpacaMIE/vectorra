@@ -82,6 +82,18 @@ internal object VectorraNative {
     )
     external fun removeModelLayer(handle: Long, id: String)
     external fun setModelLayerVisible(handle: Long, id: String, visible: Boolean)
+    external fun add3DTilesRendererContent(
+        handle: Long,
+        id: String,
+        renderUri: String,
+        transformKind: String,
+        transformMatrix: DoubleArray,
+        ecefX: Double,
+        ecefY: Double,
+        ecefZ: Double,
+        visible: Boolean
+    )
+    external fun remove3DTilesRendererContent(handle: Long, id: String)
     external fun clearAnnotations(handle: Long)
     external fun addPointAnnotation(handle: Long, id: String, longitude: Double, latitude: Double)
     external fun clearDrawAnnotations(handle: Long)

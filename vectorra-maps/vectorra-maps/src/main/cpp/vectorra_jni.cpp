@@ -35,6 +35,7 @@
 #include <vsg/core/Exception.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -425,6 +426,17 @@ namespace
         double heightMeters = 0.0;
         double scale = 1.0;
         double yawDegrees = 0.0;
+        bool visible = true;
+    };
+
+    struct Tiles3DRendererContentConfig
+    {
+        std::string renderUri;
+        std::string transformKind;
+        std::array<double, 16> transformMatrix{};
+        double ecefX = 0.0;
+        double ecefY = 0.0;
+        double ecefZ = 0.0;
         bool visible = true;
     };
 
@@ -1051,6 +1063,84 @@ namespace
             }
         }
 
+        void add3DTilesRendererContent(
+            const std::string& id,
+            const std::string& renderUri,
+            const std::string& transformKind,
+            const std::array<double, 16>& transformMatrix,
+            double ecefX,
+            double ecefY,
+            double ecefZ,
+            bool visible)
+        {
+            if (id.empty() || renderUri.empty())
+            {
+                return;
+            }
+            if (transformKind != "MATRIX" && transformKind != "ECEF")
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    TAG,
+                    "rejecting 3D Tiles renderer content id=%s invalid transformKind=%s",
+                    id.c_str(),
+                    transformKind.c_str());
+                return;
+            }
+            if (!std::all_of(transformMatrix.begin(), transformMatrix.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }) ||
+                !std::isfinite(ecefX) ||
+                !std::isfinite(ecefY) ||
+                !std::isfinite(ecefZ))
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    TAG,
+                    "rejecting 3D Tiles renderer content id=%s with non-finite transform",
+                    id.c_str());
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            tiles3DRendererContent[id] = Tiles3DRendererContentConfig{
+                renderUri,
+                transformKind,
+                transformMatrix,
+                ecefX,
+                ecefY,
+                ecefZ,
+                visible};
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "registered 3D Tiles renderer content id=%s uri=%s transform=%s ecef=(%.3f,%.3f,%.3f) visible=%d",
+                id.c_str(),
+                renderUri.c_str(),
+                transformKind.c_str(),
+                ecefX,
+                ecefY,
+                ecefZ,
+                visible ? 1 : 0);
+        }
+
+        void remove3DTilesRendererContent(const std::string& id)
+        {
+            if (id.empty())
+            {
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            tiles3DRendererContent.erase(id);
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "removed 3D Tiles renderer content id=%s",
+                id.c_str());
+        }
+
         void clearAnnotations()
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -1482,6 +1572,7 @@ namespace
             modelEntities.clear();
             modelLoggedRadii.clear();
             modelLoggedErrors.clear();
+            tiles3DRendererContent.clear();
             locationEntities.clear();
             app.reset();
         }
@@ -2533,6 +2624,7 @@ namespace
         std::unordered_map<std::string, entt::entity> modelEntities;
         std::unordered_map<std::string, float> modelLoggedRadii;
         std::unordered_map<std::string, std::string> modelLoggedErrors;
+        std::unordered_map<std::string, Tiles3DRendererContentConfig> tiles3DRendererContent;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;
         std::unordered_map<std::string, entt::entity> labelEntities;
@@ -2598,6 +2690,22 @@ namespace
             }
         }
         return headers;
+    }
+
+    std::optional<std::array<double, 16>> matrixFromJDoubleArray(JNIEnv* env, jdoubleArray array)
+    {
+        if (!array)
+        {
+            return std::nullopt;
+        }
+        std::array<double, 16> result{};
+        if (env->GetArrayLength(array) != static_cast<jsize>(result.size()))
+        {
+            return std::nullopt;
+        }
+
+        env->GetDoubleArrayRegion(array, 0, static_cast<jsize>(result.size()), result.data());
+        return result;
     }
 
     std::vector<glm::dvec3> coordinatesFromJDoubleArray(JNIEnv* env, jdoubleArray array)
@@ -2875,6 +2983,57 @@ Java_com_vectorra_maps_internal_VectorraNative_setModelLayerVisible(JNIEnv* env,
     if (auto* engine = fromHandle(handle))
     {
         engine->setModelLayerVisible(jstringToString(env, id), visible == JNI_TRUE);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_add3DTilesRendererContent(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring id,
+    jstring renderUri,
+    jstring transformKind,
+    jdoubleArray transformMatrix,
+    jdouble ecefX,
+    jdouble ecefY,
+    jdouble ecefZ,
+    jboolean visible)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        const auto matrix = matrixFromJDoubleArray(env, transformMatrix);
+        if (!matrix)
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                TAG,
+                "rejecting 3D Tiles renderer content with missing or invalid matrix array");
+            return;
+        }
+
+        engine->add3DTilesRendererContent(
+            jstringToString(env, id),
+            jstringToString(env, renderUri),
+            jstringToString(env, transformKind),
+            *matrix,
+            ecefX,
+            ecefY,
+            ecefZ,
+            visible == JNI_TRUE);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_remove3DTilesRendererContent(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring id)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->remove3DTilesRendererContent(jstringToString(env, id));
     }
 }
 
