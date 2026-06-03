@@ -286,3 +286,39 @@ Known remaining Phase 1 work:
 
 - P1.T3 traversal is implemented as a tested core but is not yet connected to live map camera updates or asynchronous content loading.
 - P1.T4 is next: GLB/GLTF tile content lifecycle should consume traversal requests, reuse `TileResourceFetcher`/`TileCacheStore`, deduplicate loads, cancel stale requests, and unload renderer content through the P1.T0 renderer contract.
+
+### Device Smoke Retry - P0/P1 Baseline
+
+Retried the physical Android device smoke after the device was unlocked and reinserted.
+
+Device:
+
+- Model: `2312DRAABC`
+- Android API: `35`
+- ABI: `arm64-v8a`
+- EGL/Vulkan hardware: `meow` / `mali`
+- GPU: `Mali-G57 MC2`
+
+Verification commands were run from `D:\workspace\code\vectorra`:
+
+```powershell
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' devices -l
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' shell am start -W -n com.vectorra.sample/.MainActivity
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' exec-out screencap -p
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' shell cmd gpu vkjson
+```
+
+Results:
+
+- `adb devices -l` reported the device as `device`, so the prior authorization/connection blocker is cleared.
+- `vectorra-sample-arm64-v8a-debug.apk` installed successfully.
+- `com.vectorra.sample/.MainActivity` became the top resumed activity with process id `29034`.
+- Logcat showed continuous `rocky_jni` render updates and SurfaceView buffer queue frames around 34-37 fps.
+- No `FATAL EXCEPTION`, `AndroidRuntime`, or ANR entries were found in the filtered launch log.
+- Screenshot `vectorra-maps/build/device-smoke-2026-06-03.png` was non-empty and showed the globe with raster imagery plus `raster sample-base-imagery loaded`.
+
+Known remaining Phase 1 work:
+
+- This retry validates device connectivity, native startup, visible raster rendering, and screenshot capture, but it is not a full P1 3D Tiles runtime smoke.
+- Continue with P1.T4 GLB/GLTF content lifecycle implementation.
