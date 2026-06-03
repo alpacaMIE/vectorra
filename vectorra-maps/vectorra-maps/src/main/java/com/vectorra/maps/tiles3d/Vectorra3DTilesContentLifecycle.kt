@@ -142,7 +142,8 @@ internal class Vectorra3DTilesContentLifecycle(
                         entries[request.tileId] = Entry(
                             state = Vectorra3DTilesContentLifecycleState.LOADED,
                             generation = generation,
-                            nativeContentId = input.nativeContentId
+                            nativeContentId = input.nativeContentId,
+                            rendererInput = input
                         )
                         added += input.nativeContentId
                     } catch (error: Throwable) {
@@ -214,9 +215,22 @@ internal class Vectorra3DTilesContentLifecycle(
         entries[task.tileId] = current.copy(
             state = Vectorra3DTilesContentLifecycleState.LOADED,
             nativeContentId = input.nativeContentId,
+            rendererInput = input,
             failureReason = null
         )
         return Vectorra3DTilesContentLoadCompletion.ADDED
+    }
+
+    fun resubmitLoadedContent(): List<String> {
+        val resubmitted = mutableListOf<String>()
+        entries.values.forEach { entry ->
+            if (entry.state == Vectorra3DTilesContentLifecycleState.LOADED) {
+                val input = entry.rendererInput ?: return@forEach
+                renderer.addContent(input)
+                resubmitted += input.nativeContentId
+            }
+        }
+        return resubmitted
     }
 
     fun cancelAll(): List<String> {
@@ -380,6 +394,7 @@ internal class Vectorra3DTilesContentLifecycle(
         val state: Vectorra3DTilesContentLifecycleState,
         val generation: Long,
         val nativeContentId: String? = null,
+        val rendererInput: Vectorra3DTilesRendererContentInput? = null,
         val failureReason: String? = null
     )
 

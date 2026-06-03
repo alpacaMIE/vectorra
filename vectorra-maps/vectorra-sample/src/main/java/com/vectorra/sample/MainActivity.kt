@@ -16,6 +16,7 @@ import com.vectorra.maps.VectorraMap
 import com.vectorra.maps.VectorraMapLifecycleCallback
 import com.vectorra.maps.VectorraMapLoadError
 import com.vectorra.maps.VectorraMapView
+import com.vectorra.maps.VectorraResourceKind
 import com.vectorra.maps.VectorraResourceLoadState
 import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
@@ -40,6 +41,7 @@ class MainActivity : Activity() {
     private var mapLoadErrorSubscription: Closeable? = null
     private var resourceStatusSubscription: Closeable? = null
     private var pendingSmokeAction: String? = null
+    private var lastResourceStatusText: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,7 +68,7 @@ class MainActivity : Activity() {
 
             override fun onMapReady(view: VectorraMapView, map: VectorraMap) {
                 installBaseLayers(map)
-                statusText.text = "Vectorra map ready"
+                statusText.text = lastResourceStatusText ?: "Vectorra map ready"
                 runPendingSmokeAction()
             }
 
@@ -78,11 +80,15 @@ class MainActivity : Activity() {
             statusText.text = "Vectorra load error: ${error.message}"
         }
         resourceStatusSubscription = mapView.map.addResourceStatusListener { status ->
-            statusText.text = when (status.state) {
+            val text = when (status.state) {
                 VectorraResourceLoadState.FAILED ->
                     "${status.kind.name.lowercase()} ${status.layerId} failed: ${status.error?.message}"
                 else ->
                     "${status.kind.name.lowercase()} ${status.layerId} ${status.state.name.lowercase()}"
+            }
+            if (shouldShowResourceStatus(status.kind, status.state)) {
+                lastResourceStatusText = text
+                statusText.text = text
             }
         }
 
@@ -474,6 +480,16 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun shouldShowResourceStatus(
+        kind: VectorraResourceKind,
+        state: VectorraResourceLoadState
+    ): Boolean {
+        if (state == VectorraResourceLoadState.FAILED || kind == VectorraResourceKind.TILES3D) {
+            return true
+        }
+        return lastResourceStatusText?.startsWith("tiles3d ") != true
+    }
 
     private companion object {
         const val ENABLE_MODEL_SMOKE = true

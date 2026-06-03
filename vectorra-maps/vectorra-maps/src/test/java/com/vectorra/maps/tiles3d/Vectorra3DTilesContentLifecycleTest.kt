@@ -67,6 +67,29 @@ class Vectorra3DTilesContentLifecycleTest {
     }
 
     @Test
+    fun loadedRemoteContentCanBeResubmittedAfterRendererRecreation() {
+        val renderer = RecordingRenderer()
+        val lifecycle = lifecycle(renderer)
+        val traversal = traversalResult(request("root", remoteContent("model.glb")))
+        val task = lifecycle.applyTraversal(traversal).loadTasks.single()
+        lifecycle.completeRemoteLoad(
+            task,
+            TileResponse(request = task.request, statusCode = 200, body = byteArrayOf(1, 2, 3))
+        )
+
+        val resubmitted = lifecycle.resubmitLoadedContent()
+        val second = lifecycle.applyTraversal(traversal)
+
+        assertEquals(listOf("3d-layer:root"), resubmitted)
+        assertEquals(listOf("3d-layer:root", "3d-layer:root"), renderer.added.map { it.nativeContentId })
+        assertTrue(second.loadTasks.isEmpty())
+        assertEquals(
+            mapOf("root" to Vectorra3DTilesRuntimeTileLoadState.LOADED),
+            lifecycle.tileLoadStates()
+        )
+    }
+
+    @Test
     fun localGltfContentBypassesRemoteLoadAndAddsRendererContent() {
         val renderer = RecordingRenderer()
         val lifecycle = lifecycle(renderer)

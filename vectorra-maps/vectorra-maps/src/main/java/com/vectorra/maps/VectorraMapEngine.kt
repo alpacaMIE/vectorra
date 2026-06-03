@@ -163,6 +163,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             lastLoadError = null
             loadState = VectorraMapLoadState.READY
             applyCamera(cameraState)
+            resubmitLoaded3DTilesContent()
             null
         } else {
             loadState = VectorraMapLoadState.ERROR
@@ -1194,6 +1195,17 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             ifOpen {
                 VectorraNative.remove3DTilesRendererContent(nativeHandle, nativeContentId)
             }
+        }
+    }
+
+    private fun resubmitLoaded3DTilesContent() {
+        val resubmitted = synchronized(tiles3DRuntimeLock) {
+            tiles3DLayers.values.flatMap { runtimeLayer ->
+                runtimeLayer.contentLifecycle.resubmitLoadedContent()
+            }
+        }
+        if (resubmitted.isNotEmpty()) {
+            Log.i(LOG_TAG, "resubmitted 3D Tiles renderer content count=${resubmitted.size}")
         }
     }
 

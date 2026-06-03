@@ -594,3 +594,61 @@ Results:
 Known remaining Phase 1 work:
 
 - Run rotate or pause/resume lifecycle smoke validation.
+
+### P1.T7 Pause/Resume 3D Tiles Lifecycle Fix
+
+Continued Phase 1 by fixing and validating formal 3D Tiles renderer content across Android surface pause/resume.
+
+Problem found:
+
+- The first pause/resume smoke brought the Activity back without 3D Tiles renderer registration evidence.
+- Root cause: `Vectorra3DTilesContentLifecycle` kept loaded tile state after surface detach, while the native renderer surface/application had been recreated, so no new traversal request was emitted and loaded content was not submitted to the recreated native renderer.
+- The sample status UI also allowed ordinary raster `loaded` status to mask the more relevant 3D Tiles smoke status after resume.
+
+Completed:
+
+- Stored the original `Vectorra3DTilesRendererContentInput` with each loaded lifecycle entry.
+- Added `Vectorra3DTilesContentLifecycle.resubmitLoadedContent()` to re-submit loaded renderer content without creating another load state or network request.
+- Called `resubmitLoaded3DTilesContent()` from `VectorraMapEngine.attachSurface()` after native surface setup and camera apply.
+- Added a lifecycle unit test proving loaded remote content can be re-submitted after renderer recreation while suppressing duplicate traversal load tasks.
+- Updated the sample status UI to preserve higher-priority `tiles3d` status instead of letting routine raster `loaded` events overwrite smoke evidence.
+- Confirmed native registration is keyed by content id, so repeated attach callbacks replace the same `tiles3DRendererContent[id]` entry instead of accumulating duplicate native entries.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Device smoke was run on `2312DRAABC` with:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+$apk='D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+& $adb shell settings put global verifier_verify_adb_installs 0
+& $adb install -r -d $apk
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+& $adb shell input keyevent HOME
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --activity-reorder-to-front
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Device install succeeded.
+- Logcat showed `surfaceDestroyed` followed by `surfaceCreated`.
+- Logcat showed `resubmitted 3D Tiles renderer content count=1` after resume.
+- Logcat showed native registration of `sample-3d-tiles-layer:root` after resume.
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-pause-resume-smoke-2026-06-03-final2.png` showed `tiles3d sample-3d-tiles-layer loaded`.
+- `uiautomator` dump contained `tiles3d sample-3d-tiles-layer loaded`.
+- The exact crash search found no `FATAL EXCEPTION`, `AndroidRuntime`, `ANR`, `Application Not Responding`, or `failed to register`.
+
+Known remaining Phase 1 work:
+
+- P1.T7 evidence now covers formal load, b3dm content registration, add/remove/re-add, bad tileset UI failure, and pause/resume renderer re-submit.
+- P1.T8 is next: summarize Phase 1 API, fixture, and device validation status and identify any remaining P0/P1 blockers.
