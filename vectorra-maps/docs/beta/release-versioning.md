@@ -8,6 +8,10 @@ Vectorra Maps uses semantic-version-shaped Beta versions.
 0.5.0-beta.1
 ```
 
+Current unpublished development notes:
+
+- [0.8.0-beta.1 development release notes](release-notes-0.8.0-beta.1.md)
+
 ## Coordinates
 
 ```text

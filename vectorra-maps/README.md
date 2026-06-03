@@ -40,3 +40,4 @@ Then verify the sample from the published AAR:
 - [3D terrain](docs/beta/3d-terrain.md)
 - [3D Tiles](docs/beta/3d-tiles.md)
 - [Release and versioning](docs/beta/release-versioning.md)
+- [0.8.0-beta.1 development release notes](docs/beta/release-notes-0.8.0-beta.1.md)

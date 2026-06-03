@@ -1820,3 +1820,35 @@ Known remaining work:
 
 - Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
 - Add release note coverage when the beta version is cut.
+
+### P4.T4 0.8.0-beta.1 Development Release Notes
+
+Continued release hardening by adding unpublished development release notes for the current offline/cache Beta surface.
+
+Completed:
+
+- Added `docs/beta/release-notes-0.8.0-beta.1.md`.
+- Documented new offline/cache APIs, MBTiles/MVT additions, sample smoke actions, fixes, local verification, and known release gates.
+- Linked the release notes from `README.md`.
+- Linked the release notes from `docs/beta/release-versioning.md` while keeping published Maven coordinates at the last released Beta.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "0\.8\.0-beta\.1|development release notes|VectorraPrefetchTask|offline-prefetch|published-AAR" vectorra-maps/README.md vectorra-maps/docs/beta
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.offline.*" --tests "com.vectorra.maps.network.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Documentation search found the release notes and links.
+- Offline and network unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Run `offline-prefetch` and `cancel-prefetch` device smoke once adb returns to `device`.
+- Run published-AAR verification before cutting an actual `0.8.0-beta.1` artifact.
