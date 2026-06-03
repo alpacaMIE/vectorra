@@ -1277,3 +1277,56 @@ Known remaining work:
 
 - The Cesium sample content is a dragon tileset elevated about 503.75m above the ellipsoid; zooming past the safe close range can still place it behind a ground-targeted map camera. A future camera height/target-height API is needed for arbitrary elevated 3D Tiles close inspection.
 - Continue P2.T7 MVT device smoke for pan/zoom stale-feature coverage plus visibility and remove/re-add.
+
+### P2.T7 MVT Pan, Visibility, and Re-add Device Smoke
+
+Continued Phase 2 device smoke coverage for MVT runtime tile unload/reload and query ownership.
+
+Completed:
+
+- Added sample buttons and adb smoke actions for MVT pan, remove/re-add, and hidden-layer checks:
+  - `pan-mvt`
+  - `readd-mvt`
+  - `remove-mvt`
+  - `hidden-mvt`
+- Added center-screen MVT query logging with `layerIds=sample-mvt-transportation` and `sourceLayerIds=transportation` so device smoke can verify the currently loaded Kotlin MVT store is the only query source.
+- The pan smoke moves from tile `12/655/1583` to `12/656/1583`, exercising stale tile native removal and replacement tile render/query.
+- The hidden smoke loads the same MVT layer with `visible=false`, proving no native tile is registered and no center query features are returned.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action pan-mvt
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action readd-mvt
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action hidden-mvt
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the arm64 debug sample.
+- `pan-mvt` showed initial native tile `sample-mvt-transportation:12/655/1583` registered/applied, then `removed MVT render tile handle=sample-mvt-transportation:12/655/1583`, then replacement tile `sample-mvt-transportation:12/656/1583` registered/applied.
+- `pan-mvt` center query logged `Click: 9 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+- `readd-mvt` showed `removed MVT render layer id=sample-mvt-transportation tiles=1`, then re-registered/re-applied tile `12/655/1583`.
+- `readd-mvt` center query logged `Click: 424 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+- `hidden-mvt` logged `MVT hidden center query: Click: no features`; no native MVT register/apply lines were emitted for the hidden layer during the smoke window.
+
+Known remaining Phase 2 work:
+
+- P2.T6/P2.T7 still need broader fixture coverage for cross-tile query ordering and cache-hit query consistency.
+- MVT MBTiles remains Phase 3 work.

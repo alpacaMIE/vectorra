@@ -25,6 +25,8 @@ import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.query.VectorraQueriedFeature
+import com.vectorra.maps.query.VectorraQueryOptions
+import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -204,6 +206,18 @@ class MainActivity : Activity() {
                 }
             ))
 
+            addView(controlRow(
+                sampleButton("MVT Pan") {
+                    panSampleMvt()
+                },
+                sampleButton("MVT Readd") {
+                    reloadSampleMvt()
+                },
+                sampleButton("MVT Hide") {
+                    hiddenSampleMvt()
+                }
+            ))
+
             if (ENABLE_MODEL_SMOKE) {
                 addView(controlRow(
                     sampleButton("Model") {
@@ -367,7 +381,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun loadSampleMvt() {
+    private fun loadSampleMvt(visible: Boolean = true) {
         runCatching {
             val source = VectorraVectorTileSource.xyz(
                 id = SAMPLE_MVT_SOURCE_ID,
@@ -390,6 +404,7 @@ class MainActivity : Activity() {
                     id = SAMPLE_MVT_LAYER_ID,
                     sourceId = source.id,
                     sourceLayer = "transportation",
+                    visible = visible,
                     minZoom = 4,
                     maxZoom = 14,
                     color = 0xffffd43b.toInt(),
@@ -397,10 +412,60 @@ class MainActivity : Activity() {
                     widthPixels = 2.5
                 )
             )
-            statusText.text = "MVT layer requested"
+            statusText.text = if (visible) "MVT layer requested" else "MVT hidden layer requested"
         }.onFailure { error ->
             statusText.text = "MVT error: ${error.message}"
         }
+    }
+
+    private fun removeSampleMvt() {
+        runCatching {
+            mapView.map.removeVectorTileLayer(SAMPLE_MVT_LAYER_ID)
+            statusText.text = "MVT removed"
+            Log.i(LOG_TAG, "MVT smoke: removed layer")
+        }.onFailure { error ->
+            statusText.text = "MVT remove error: ${error.message}"
+        }
+    }
+
+    private fun reloadSampleMvt() {
+        loadSampleMvt()
+        statusText.postDelayed({
+            removeSampleMvt()
+            statusText.postDelayed({
+                loadSampleMvt()
+                statusText.postDelayed({
+                    logCenterMvtQuery("MVT readd center query")
+                }, SAMPLE_MVT_QUERY_DELAY_MS)
+            }, SAMPLE_MVT_READD_DELAY_MS)
+        }, SAMPLE_MVT_REMOVE_DELAY_MS)
+    }
+
+    private fun panSampleMvt() {
+        loadSampleMvt()
+        statusText.postDelayed({
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_MVT_PAN_LONGITUDE,
+                    latitude = SAMPLE_MVT_LATITUDE,
+                    zoom = 12.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            statusText.text = "MVT pan smoke"
+            Log.i(LOG_TAG, "MVT smoke: camera pan lon=$SAMPLE_MVT_PAN_LONGITUDE")
+            statusText.postDelayed({
+                logCenterMvtQuery("MVT pan center query")
+            }, SAMPLE_MVT_QUERY_DELAY_MS)
+        }, SAMPLE_MVT_PAN_DELAY_MS)
+    }
+
+    private fun hiddenSampleMvt() {
+        loadSampleMvt(visible = false)
+        statusText.postDelayed({
+            logCenterMvtQuery("MVT hidden center query")
+        }, SAMPLE_MVT_QUERY_DELAY_MS)
     }
 
     private fun loadBrokenSample3DTiles() {
@@ -498,6 +563,10 @@ class MainActivity : Activity() {
             when (action) {
                 SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
                 SAMPLE_ACTION_MVT -> loadSampleMvt()
+                SAMPLE_ACTION_REMOVE_MVT -> removeSampleMvt()
+                SAMPLE_ACTION_READD_MVT -> reloadSampleMvt()
+                SAMPLE_ACTION_PAN_MVT -> panSampleMvt()
+                SAMPLE_ACTION_HIDDEN_MVT -> hiddenSampleMvt()
                 SAMPLE_ACTION_BAD_3D_TILES -> loadBrokenSample3DTiles()
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
                 SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
@@ -602,6 +671,27 @@ class MainActivity : Activity() {
         return "Click: ${features.size} feature(s) layer=${first.layerId}$source$sourceLayer$name"
     }
 
+    private fun logCenterMvtQuery(prefix: String) {
+        val width = mapView.width
+        val height = mapView.height
+        Log.i(LOG_TAG, "$prefix: start viewport=${width}x$height")
+        if (width <= 0 || height <= 0) {
+            Log.i(LOG_TAG, "$prefix: skipped empty viewport ${width}x$height")
+            return
+        }
+        val features = mapView.map.queryRenderedFeatures(
+            screenPoint = VectorraScreenPoint(width / 2.0, height / 2.0),
+            options = VectorraQueryOptions(
+                layerIds = setOf(SAMPLE_MVT_LAYER_ID),
+                sourceLayerIds = setOf("transportation"),
+                radiusPixels = 48.0
+            )
+        )
+        val text = "$prefix: ${clickStatusText(features)}"
+        Log.i(LOG_TAG, text)
+        statusText.text = text
+    }
+
     private companion object {
         const val LOG_TAG = "VectorraSample"
         const val ENABLE_MODEL_SMOKE = true
@@ -621,14 +711,23 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
         const val SAMPLE_MVT_TEMPLATE_URL = "https://tiles.openfreemap.org/planet/20260520_001001_pt/{z}/{x}/{y}.pbf"
         const val SAMPLE_MVT_LONGITUDE = -122.4194
+        const val SAMPLE_MVT_PAN_LONGITUDE = -122.3000
         const val SAMPLE_MVT_LATITUDE = 37.7749
         const val SAMPLE_3D_TILES_REMOVE_DELAY_MS = 16_000L
         const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
         const val SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS = 7_000L
         const val SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS = 14_000L
+        const val SAMPLE_MVT_REMOVE_DELAY_MS = 6_000L
+        const val SAMPLE_MVT_READD_DELAY_MS = 2_000L
+        const val SAMPLE_MVT_PAN_DELAY_MS = 7_000L
+        const val SAMPLE_MVT_QUERY_DELAY_MS = 7_000L
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
         const val SAMPLE_ACTION_3D_TILES = "3dtiles"
         const val SAMPLE_ACTION_MVT = "mvt"
+        const val SAMPLE_ACTION_REMOVE_MVT = "remove-mvt"
+        const val SAMPLE_ACTION_READD_MVT = "readd-mvt"
+        const val SAMPLE_ACTION_PAN_MVT = "pan-mvt"
+        const val SAMPLE_ACTION_HIDDEN_MVT = "hidden-mvt"
         const val SAMPLE_ACTION_BAD_3D_TILES = "bad-3dtiles"
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
