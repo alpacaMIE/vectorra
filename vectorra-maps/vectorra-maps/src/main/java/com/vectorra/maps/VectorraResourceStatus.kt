@@ -5,7 +5,8 @@ enum class VectorraResourceKind {
     RASTER,
     DEM,
     MODEL,
-    MBTILES
+    MBTILES,
+    TILES3D
 }
 
 @VectorraBetaApi("0.7.0-beta.1")

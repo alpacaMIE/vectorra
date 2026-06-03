@@ -24,6 +24,9 @@ import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
+import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
+import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
+import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
 import java.io.File
 import java.io.Closeable
 
@@ -168,6 +171,9 @@ class MainActivity : Activity() {
             addView(controlRow(
                 sampleButton("MBTiles") {
                     loadSampleMbTiles()
+                },
+                sampleButton("3D Tiles") {
+                    loadSample3DTiles()
                 }
             ))
 
@@ -302,6 +308,29 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun loadSample3DTiles() {
+        runCatching {
+            val source = Vectorra3DTilesSource(
+                id = SAMPLE_3D_TILES_SOURCE_ID,
+                tilesetUri = SAMPLE_3D_TILES_URI
+            )
+            mapView.map.add3DTilesLayer(
+                source = source,
+                layer = Vectorra3DTilesLayer(
+                    id = SAMPLE_3D_TILES_LAYER_ID,
+                    sourceId = source.id
+                ),
+                options = Vectorra3DTilesOptions(
+                    maximumScreenSpaceError = 16.0,
+                    maximumLoadedTiles = 128
+                )
+            )
+            statusText.text = "3D Tiles requested"
+        }.onFailure { error ->
+            statusText.text = "3D Tiles error: ${error.message}"
+        }
+    }
+
     private fun sampleModelSource(id: String, uri: String): VectorraGlbModelSource {
         return VectorraGlbModelSource(
             id = id,
@@ -386,5 +415,8 @@ class MainActivity : Activity() {
         const val SAMPLE_BROKEN_MODEL_URI = "https://readymap.org/readymap/filemanager/download/public/models/missing-vectorra-smoke.glb"
         const val SAMPLE_MODEL_LONGITUDE = 41.8
         const val SAMPLE_MODEL_LATITUDE = 1.0
+        const val SAMPLE_3D_TILES_SOURCE_ID = "sample-3d-tiles"
+        const val SAMPLE_3D_TILES_LAYER_ID = "sample-3d-tiles-layer"
+        const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
     }
 }

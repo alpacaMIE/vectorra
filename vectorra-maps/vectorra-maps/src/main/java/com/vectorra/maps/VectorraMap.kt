@@ -22,6 +22,9 @@ import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.source.VectorraRasterTileSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
+import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
+import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
+import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
 import java.io.Closeable
 
 @VectorraBetaApi
@@ -176,6 +179,14 @@ interface VectorraMap : Closeable {
     fun removeModelLayer(id: String)
 
     fun setModelLayerVisible(id: String, visible: Boolean)
+
+    fun add3DTilesLayer(
+        source: Vectorra3DTilesSource,
+        layer: Vectorra3DTilesLayer = Vectorra3DTilesLayer(sourceId = source.id, id = source.id),
+        options: Vectorra3DTilesOptions = layer.options
+    )
+
+    fun remove3DTilesLayer(id: String)
 
     @VectorraExperimentalApi("0.7.0-beta.1")
     @Deprecated(

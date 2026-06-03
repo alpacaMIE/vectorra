@@ -184,3 +184,37 @@ Known remaining Phase 1 work:
 
 - P1.T0 currently defines and compiles the contract but does not yet create rendered rocky model entities for 3D Tiles content. P1.T4/P1.T5/P1.T6 should consume this contract when GLB/GLTF content lifecycle, transform composition, and b3dm payload extraction are implemented.
 - P1.T1 is next: add the formal `Vectorra3DTilesSource`, `Vectorra3DTilesLayer`, and `Vectorra3DTilesOptions` API path and wire its load/error state into the unified resource status contract.
+
+### P1.T1 Formal 3D Tiles API
+
+Continued Phase 1 by adding the formal 3D Tiles source/layer/options path.
+
+Completed:
+
+- Added public `Vectorra3DTilesSource`, `Vectorra3DTilesLayer`, and `Vectorra3DTilesOptions` API models.
+- Added `VectorraMap.add3DTilesLayer(...)` and `remove3DTilesLayer(...)`.
+- Added `VectorraResourceKind.TILES3D` so 3D Tiles source/layer state uses the same public resource status contract as raster, DEM, model, and MBTiles.
+- Implemented engine-side 3D Tiles tileset loading for local paths, `file://`, `http`, and `https` tileset URIs.
+- Parses loaded `tileset.json` through the existing `VectorraTileset3DParser` and emits unified `LOADING`, `LOADED`, `FAILED`, and `REMOVED` status for the source/layer.
+- Added generation checks so stale background loads cannot overwrite a later remove/re-add state.
+- Added formal API model tests.
+- Updated the sample app with a `3D Tiles` button that calls `Vectorra3DTilesSource` + `Vectorra3DTilesLayer` + `Vectorra3DTilesOptions`; the deprecated `add3DTilesModelLayer` smoke path was not extended.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T2 still needs product-level URI loading behavior: cache/interceptor reuse, stronger base URI fixtures, and explicit bad tileset sample status validation.
+- P1.T3-P1.T6 still need runtime tile traversal, GLB/GLTF content lifecycle, transform composition, and b3dm extraction/rendering through the P1.T0 renderer contract.

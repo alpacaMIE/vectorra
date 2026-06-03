@@ -39,8 +39,17 @@ import com.vectorra.maps.query.VectorraScreenPoint
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
+import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
+import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
+import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
+import com.vectorra.maps.tiles3d.VectorraTileset3D
+import com.vectorra.maps.tiles3d.VectorraTileset3DParser
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
@@ -101,6 +110,9 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val mapClickListeners = CopyOnWriteArrayList<VectorraMapClickListener>()
     private val mbTilesSources = CopyOnWriteArrayList<VectorraMbTilesRasterSource>()
     private val modelLayerIds = linkedSetOf<String>()
+    private val tiles3DRuntimeLock = Any()
+    private val tiles3DLayers = linkedMapOf<String, Vectorra3DTilesRuntimeLayer>()
+    private val tiles3DLoadGenerationByLayerId = linkedMapOf<String, Long>()
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -698,6 +710,48 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    override fun add3DTilesLayer(
+        source: Vectorra3DTilesSource,
+        layer: Vectorra3DTilesLayer,
+        options: Vectorra3DTilesOptions
+    ) {
+        require(layer.sourceId == source.id) {
+            "3D Tiles layer sourceId must match source id."
+        }
+        ifOpen {
+            emitResourceStatus(
+                kind = VectorraResourceKind.TILES3D,
+                sourceId = source.id,
+                layerId = layer.id,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
+            val loadGeneration = synchronized(tiles3DRuntimeLock) {
+                val nextGeneration = (tiles3DLoadGenerationByLayerId[layer.id] ?: 0L) + 1L
+                tiles3DLoadGenerationByLayerId[layer.id] = nextGeneration
+                tiles3DLayers.remove(layer.id)
+                nextGeneration
+            }
+            Thread({
+                load3DTilesLayer(source, layer.copy(options = options), loadGeneration)
+            }, "Vectorra3DTiles-${layer.id}").start()
+        }
+    }
+
+    override fun remove3DTilesLayer(id: String) {
+        require(id.isNotBlank()) { "3D Tiles layer id must not be blank." }
+        ifOpen {
+            val runtimeLayer = synchronized(tiles3DRuntimeLock) {
+                tiles3DLoadGenerationByLayerId[id] = (tiles3DLoadGenerationByLayerId[id] ?: 0L) + 1L
+                tiles3DLayers.remove(id)
+            }
+            runtimeLayer?.contentIds?.forEach { contentId ->
+                VectorraNative.remove3DTilesRendererContent(nativeHandle, contentId)
+            }
+            emitRemovedStatusForLayer(id)
+        }
+    }
+
     @VectorraExperimentalApi("0.7.0-beta.1")
     @Deprecated(
         message = "Use the Vectorra3DTiles source/layer API when it is available. This method is only a model-rendering smoke entry.",
@@ -993,6 +1047,101 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private fun load3DTilesLayer(
+        source: Vectorra3DTilesSource,
+        layer: Vectorra3DTilesLayer,
+        loadGeneration: Long
+    ) {
+        if (closed.get()) {
+            return
+        }
+
+        try {
+            val tileset = VectorraTileset3DParser.parse(
+                json = readTilesetJson(source),
+                baseUri = source.tilesetUri
+            )
+            if (closed.get()) {
+                return
+            }
+            synchronized(tiles3DRuntimeLock) {
+                if (tiles3DLoadGenerationByLayerId[layer.id] != loadGeneration) {
+                    return
+                } else {
+                    tiles3DLayers[layer.id] = Vectorra3DTilesRuntimeLayer(
+                        source = source,
+                        layer = layer,
+                        tileset = tileset
+                    )
+                    emitResourceStatus(
+                        kind = VectorraResourceKind.TILES3D,
+                        sourceId = source.id,
+                        layerId = layer.id,
+                        state = VectorraResourceLoadState.LOADED,
+                        eventSource = VectorraResourceEventSource.ENGINE
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            if (closed.get()) {
+                return
+            }
+            synchronized(tiles3DRuntimeLock) {
+                if (tiles3DLoadGenerationByLayerId[layer.id] != loadGeneration) {
+                    return
+                }
+                emitResourceStatus(
+                    kind = VectorraResourceKind.TILES3D,
+                    sourceId = source.id,
+                    layerId = layer.id,
+                    state = VectorraResourceLoadState.FAILED,
+                    eventSource = VectorraResourceEventSource.ENGINE,
+                    error = VectorraResourceLoadError(
+                        type = error.to3DTilesResourceErrorType(),
+                        message = error.message ?: "3D Tiles tileset load failed.",
+                        cause = error
+                    )
+                )
+            }
+        }
+    }
+
+    private fun readTilesetJson(source: Vectorra3DTilesSource): String {
+        val uri = URI(source.tilesetUri)
+        return when (uri.scheme?.lowercase()) {
+            "http", "https" -> readRemoteTilesetJson(source)
+            "file" -> File(uri).readText()
+            null -> File(source.tilesetUri).readText()
+            else -> throw IllegalArgumentException("Unsupported 3D Tiles tileset URI scheme: ${uri.scheme}")
+        }
+    }
+
+    private fun readRemoteTilesetJson(source: Vectorra3DTilesSource): String {
+        val headers = tileNetworkConfig.headersFor(source.id) + source.headers
+        val connection = URL(source.tilesetUri).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+            connection.connectTimeout = TILES3D_CONNECT_TIMEOUT_MILLIS
+            connection.readTimeout = TILES3D_READ_TIMEOUT_MILLIS
+            val statusCode = connection.responseCode
+            if (statusCode !in 200..299) {
+                throw IOException("3D Tiles tileset request failed with HTTP $statusCode.")
+            }
+            return connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun Throwable.to3DTilesResourceErrorType(): VectorraResourceErrorType {
+        return when (this) {
+            is IOException -> VectorraResourceErrorType.NETWORK
+            is IllegalArgumentException -> VectorraResourceErrorType.RESOURCE
+            else -> VectorraResourceErrorType.UNKNOWN
+        }
+    }
+
     private fun emitRemovedStatusForLayer(layerId: String) {
         val previous = synchronized(resourceStatusLock) {
             resourceStatusByLayerId[layerId]
@@ -1119,6 +1268,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             mbTilesSources.forEach { it.close() }
             mbTilesSources.clear()
             modelLayerIds.clear()
+            synchronized(tiles3DRuntimeLock) {
+                tiles3DLayers.clear()
+                tiles3DLoadGenerationByLayerId.clear()
+            }
             VectorraNative.destroy(nativeHandle)
         }
     }
@@ -1131,6 +1284,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MIN_PITCH = 0.0
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
+        const val TILES3D_CONNECT_TIMEOUT_MILLIS = 10_000
+        const val TILES3D_READ_TIMEOUT_MILLIS = 20_000
 
         data class WorldPoint(val x: Double, val y: Double)
 
@@ -1227,3 +1382,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         fun Map<String, String>.toValueArray(): Array<String> = values.toTypedArray()
     }
 }
+
+private data class Vectorra3DTilesRuntimeLayer(
+    val source: Vectorra3DTilesSource,
+    val layer: Vectorra3DTilesLayer,
+    val tileset: VectorraTileset3D,
+    val contentIds: Set<String> = emptySet()
+)
