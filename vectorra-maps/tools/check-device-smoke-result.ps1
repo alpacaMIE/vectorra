@@ -55,6 +55,14 @@ function Assert-ReportValue {
     }
 }
 
+function Assert-ArtifactReportLine {
+    param([string]$Text, [string]$Key)
+    $pattern = "(?m)^$([regex]::Escape($Key))=.+\sbytes=([1-9][0-9]*)\r?$"
+    if ($Text -notmatch $pattern) {
+        throw "$Key artifact line with positive byte count missing from smoke report"
+    }
+}
+
 function Assert-NonEmptyFile {
     param([string]$Path, [string]$Label)
     if (-not (Test-Path $Path)) {
@@ -152,6 +160,9 @@ foreach ($pattern in $requiredReportPatterns) {
 }
 foreach ($key in $requiredMetadataKeys) {
     Assert-ReportValue $reportText $key
+}
+foreach ($key in @('screenshot', 'uiDump', 'logcat')) {
+    Assert-ArtifactReportLine $reportText $key
 }
 foreach ($action in $requiredActions) {
     Assert-Contains $reportText "actionStart=$([regex]::Escape($action))" "actionStart $action"

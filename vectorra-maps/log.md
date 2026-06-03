@@ -2543,6 +2543,39 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Artifact Report Validation
+
+Tightened the runtime smoke result checker so device artifact records cannot be silently omitted from the text report.
+
+Completed:
+
+- Added `Assert-ArtifactReportLine` to `tools/check-device-smoke-result.ps1`.
+- The checker now requires positive-byte report records for `screenshot=... bytes=N`, `uiDump=... bytes=N`, and `logcat=... bytes=N` in addition to verifying the files exist and are non-empty.
+- Updated `tools/test-device-smoke-result-checker.ps1` with a missing-artifact-record fixture that must fail.
+- Updated the ABI/device matrix and Android 1.0 acceptance docs with the artifact byte-record requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-device-smoke-result.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\test-device-smoke-result-checker.ps1'), [ref]$tokens, [ref]$errors)
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failure for a report missing a logcat artifact byte record.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Device Smoke ADB Device Enumeration Check
 
 Tightened runtime smoke startup diagnostics.

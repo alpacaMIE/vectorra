@@ -47,7 +47,8 @@ function New-SmokeFixture {
         [string]$LogText = "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true",
         [string]$OmitAction = "",
         [switch]$InvalidPng,
-        [string]$OmitMetadata = ""
+        [string]$OmitMetadata = "",
+        [string]$OmitArtifact = ""
     )
 
     $reportPath = Join-Path $testRoot "device-smoke-$Stamp.txt"
@@ -87,9 +88,15 @@ function New-SmokeFixture {
             $lines += "actionEnd=$action"
         }
     }
-    $lines += "screenshot=$testRoot\vectorra-smoke-$Stamp.png bytes=4"
-    $lines += "uiDump=$testRoot\vectorra-smoke-$Stamp.xml bytes=64"
-    $lines += "logcat=$testRoot\device-smoke-$Stamp.log bytes=32"
+    if ($OmitArtifact -ne "screenshot") {
+        $lines += "screenshot=$testRoot\vectorra-smoke-$Stamp.png bytes=4"
+    }
+    if ($OmitArtifact -ne "uiDump") {
+        $lines += "uiDump=$testRoot\vectorra-smoke-$Stamp.xml bytes=64"
+    }
+    if ($OmitArtifact -ne "logcat") {
+        $lines += "logcat=$testRoot\device-smoke-$Stamp.log bytes=32"
+    }
     $lines += "uiDumpContainsPackage=com.vectorra.sample"
 
     Set-Content -Path $reportPath -Value $lines -Encoding utf8
@@ -169,5 +176,8 @@ Invoke-CheckerFailure $blankSnapshotReport "blank snapshot"
 
 $missing3DTilesZoomSnapshotReport = New-SmokeFixture -Stamp "20260604-000007" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true"
 Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom snapshot"
+
+$missingArtifactReport = New-SmokeFixture -Stamp "20260604-000008" -OmitArtifact "logcat"
+Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
 
 Write-Host "Device smoke result checker self-test passed."
