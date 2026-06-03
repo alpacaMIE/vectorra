@@ -2023,3 +2023,33 @@ Known remaining work:
 
 - Before a 1.0 release candidate, every supported public API should either remain in the inventory or be moved behind an internal boundary.
 - Device smoke remains blocked by adb reporting the physical device as `offline`.
+
+### P4.T1 Deprecated 3D Tiles Smoke API Guard
+
+Added a regression guard for the deprecated experimental 3D Tiles model smoke API.
+
+Completed:
+
+- Added `VectorraPublicApiSurfaceTest`.
+- The test checks that `VectorraMap.add3DTilesModelLayer(...)` remains marked with both `@VectorraExperimentalApi("0.7.0-beta.1")` and `@Deprecated`.
+- The test checks the `VectorraMapEngine` implementation carries the same annotations.
+- The test checks `docs/beta/public-api-surface.md` does not list `add3DTilesModelLayer(...)` under the published baseline API section and keeps it in the deprecated experimental section.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.VectorraPublicApiSurfaceTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- The first test run failed because the source-window assertion was too narrow.
+- After fixing the assertion window, `VectorraPublicApiSurfaceTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Keep this guard updated if the smoke API is removed before 1.0 instead of retained as deprecated experimental.
