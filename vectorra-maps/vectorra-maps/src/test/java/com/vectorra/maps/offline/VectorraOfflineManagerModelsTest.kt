@@ -1,6 +1,10 @@
 package com.vectorra.maps.offline
 
+import com.vectorra.maps.network.TileCacheStatus
+import com.vectorra.maps.network.TileRequest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VectorraOfflineManagerModelsTest {
@@ -36,5 +40,30 @@ class VectorraOfflineManagerModelsTest {
 
         assertEquals(10, status.totalEntryCount)
         assertEquals(100L, status.totalBytes)
+    }
+
+    @Test
+    fun prefetchResultReportsSuccessFailureAndBytes() {
+        val success = VectorraPrefetchTileResult(
+            request = TileRequest(url = "https://tiles.example.com/success.pbf"),
+            statusCode = 200,
+            cacheStatus = TileCacheStatus.MISS,
+            byteCount = 12
+        )
+        val failure = VectorraPrefetchTileResult(
+            request = TileRequest(url = "https://tiles.example.com/failure.pbf"),
+            statusCode = 504,
+            cacheStatus = TileCacheStatus.MISS,
+            byteCount = 0,
+            errorMessage = "timeout"
+        )
+
+        val result = VectorraPrefetchResult(listOf(success, failure))
+
+        assertTrue(success.isSuccess)
+        assertFalse(failure.isSuccess)
+        assertEquals(1, result.completedCount)
+        assertEquals(1, result.failedCount)
+        assertEquals(12L, result.totalBytes)
     }
 }

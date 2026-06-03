@@ -35,6 +35,16 @@ internal class TileResourceFetcher(
         return response
     }
 
+    fun prefetch(
+        requests: List<TileRequest>,
+        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
+    ): List<TileResponse> {
+        require(requests.isNotEmpty()) { "Prefetch requests must not be empty." }
+        return requests.mapIndexed { index, request ->
+            fetch(request = request, priority = requests.size - index, timeoutMillis = timeoutMillis)
+        }
+    }
+
     fun cacheStatus(): TileCacheStoreStatus {
         return cacheStore.status()
     }

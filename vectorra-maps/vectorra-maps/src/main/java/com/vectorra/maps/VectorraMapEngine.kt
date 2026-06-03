@@ -28,6 +28,8 @@ import com.vectorra.maps.mvt.VectorraMvtRuntimeTileStore
 import com.vectorra.maps.network.TileCacheStoreStatus
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
+import com.vectorra.maps.network.TileRequest
+import com.vectorra.maps.network.TileResponse
 import com.vectorra.maps.network.TileResourceFetcher
 import com.vectorra.maps.network.TileResourceType
 import com.vectorra.maps.network.TileScheme
@@ -49,6 +51,8 @@ import com.vectorra.maps.offline.VectorraCacheStatus
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.offline.VectorraMbTilesVectorSource
 import com.vectorra.maps.offline.VectorraOfflineManager
+import com.vectorra.maps.offline.VectorraPrefetchResult
+import com.vectorra.maps.offline.VectorraPrefetchTileResult
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
@@ -1695,6 +1699,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             tileProxyServer.clearCache()
             tileResourceFetcher.clearCache()
         }
+
+        override fun prefetchTiles(requests: List<TileRequest>): VectorraPrefetchResult {
+            return VectorraPrefetchResult(
+                tiles = tileResourceFetcher.prefetch(requests).map { it.toPrefetchTileResult() }
+            )
+        }
     }
 
     override fun close() {
@@ -1872,6 +1882,16 @@ private fun TileCacheStoreStatus.toPublicStatus(): VectorraCacheBucketStatus {
         memoryBytes = memoryBytes,
         diskEntryCount = diskEntryCount,
         diskBytes = diskBytes
+    )
+}
+
+private fun TileResponse.toPrefetchTileResult(): VectorraPrefetchTileResult {
+    return VectorraPrefetchTileResult(
+        request = request,
+        statusCode = statusCode,
+        cacheStatus = cacheStatus,
+        byteCount = body.size,
+        errorMessage = errorMessage
     )
 }
 

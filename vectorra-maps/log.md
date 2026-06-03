@@ -1613,3 +1613,37 @@ Known remaining work:
 
 - Add prefetch task API and progress/cancel semantics on top of `VectorraOfflineManager`.
 - Add sample UI for cache status and cleanup once device smoke is available again.
+
+### P3.T3 Explicit Tile Prefetch API
+
+Continued offline/cache productization by adding the first prefetch path on top of the existing resource cache owner.
+
+Completed:
+
+- Added public beta `VectorraOfflineManager.prefetchTiles(...)` for explicit `TileRequest` lists.
+- Added public beta `VectorraPrefetchResult` and `VectorraPrefetchTileResult` with completed, failed, and byte-count totals.
+- Added `TileResourceFetcher.prefetch(...)` so prefetch uses the same interceptor, scheduler, timeout, and `TileCacheStore` path as normal resource loading.
+- Wired `VectorraMapEngine.offline.prefetchTiles(...)` to the resource fetcher and mapped tile responses to public prefetch results.
+- Kept bounds/zoom region enumeration, async progress, retry policy, and cancel semantics out of this step so they can be added as dedicated P3.T3/P3.T5 work without a second cache owner.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.TileCacheAndSchedulerTest" --tests "com.vectorra.maps.offline.VectorraOfflineManagerModelsTest"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.offline.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Target cache/offline manager tests passed.
+- Network and offline unit tests passed.
+- `:vectorra-sample:assembleDebug` passed.
+
+Known remaining work:
+
+- Add region-based tile enumeration for bounds and zoom ranges.
+- Add progress, cancel, partial failure, and retry semantics for long-running prefetch tasks.
+- Add sample UI/device smoke for cache status, cleanup, and prefetch once adb is stable.

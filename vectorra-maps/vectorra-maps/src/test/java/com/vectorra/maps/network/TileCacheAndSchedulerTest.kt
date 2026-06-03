@@ -227,6 +227,66 @@ class TileCacheAndSchedulerTest {
     }
 
     @Test
+    fun tileResourceFetcherPrefetchesRequestsAndCachesResponses() {
+        val root = Files.createTempDirectory("vectorra-resource-fetcher-prefetch").toFile()
+        try {
+            var calls = 0
+            val fetcher = TileResourceFetcher(
+                cacheDirectory = root,
+                initialConfig = TileNetworkConfig(
+                    interceptors = listOf(
+                        TileRequestInterceptor { chain ->
+                            calls += 1
+                            TileResponse(
+                                request = chain.request,
+                                statusCode = 200,
+                                body = "prefetch-${chain.request.tileId?.x}".toByteArray()
+                            )
+                        }
+                    )
+                )
+            )
+            val firstRequest = TileRequest(
+                sourceId = "offline",
+                layerId = "prefetch",
+                url = "https://tiles.example.com/12/655/1583.mvt",
+                tileId = TileId(z = 12, x = 655, y = 1583),
+                resourceType = TileResourceType.VECTOR
+            )
+            val secondRequest = firstRequest.copy(
+                url = "https://tiles.example.com/12/656/1583.mvt",
+                tileId = TileId(z = 12, x = 656, y = 1583)
+            )
+
+            val prefetched = fetcher.prefetch(listOf(firstRequest, secondRequest))
+            val firstCached = fetcher.fetch(firstRequest)
+            val secondCached = fetcher.fetch(secondRequest)
+
+            assertEquals(2, calls)
+            assertEquals(listOf(TileCacheStatus.MISS, TileCacheStatus.MISS), prefetched.map { it.cacheStatus })
+            assertEquals(TileCacheStatus.MEMORY, firstCached.cacheStatus)
+            assertEquals(TileCacheStatus.MEMORY, secondCached.cacheStatus)
+            assertEquals("prefetch-655", firstCached.body.decodeToString())
+            assertEquals("prefetch-656", secondCached.body.decodeToString())
+            fetcher.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun tileResourceFetcherRejectsEmptyPrefetchRequests() {
+        val root = Files.createTempDirectory("vectorra-resource-fetcher-empty-prefetch").toFile()
+        try {
+            TileResourceFetcher(cacheDirectory = root).use { fetcher ->
+                fetcher.prefetch(emptyList())
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun servesSuccessfulTileFromDiskCacheAcrossExecutors() {
         val root = Files.createTempDirectory("rocky-tile-disk-cache").toFile()
         try {
