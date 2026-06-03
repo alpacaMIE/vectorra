@@ -96,8 +96,8 @@ function New-SmokeFixture {
     )
     if (-not $OmitPostRecreateSnapshot) {
         $lines += @(
-            "actionStart=snapshot delaySeconds=1",
-            "actionEnd=snapshot"
+            "actionStart=post-recreate-snapshot delaySeconds=1",
+            "actionEnd=post-recreate-snapshot"
         )
     }
     if ($OmitArtifact -ne "screenshot") {

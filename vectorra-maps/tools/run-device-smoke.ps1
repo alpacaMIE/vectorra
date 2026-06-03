@@ -73,10 +73,14 @@ function Write-Report {
 }
 
 function Smoke-Action {
-    param([string]$Action, [int]$DelaySeconds = $ActionDelaySeconds)
+    param(
+        [string]$Action,
+        [int]$DelaySeconds = $ActionDelaySeconds,
+        [string]$SampleAction = $Action
+    )
     Write-Report "actionStart=$Action delaySeconds=$DelaySeconds"
     Write-Host "Running sample action: $Action"
-    Invoke-Adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action $Action | Out-Host
+    Invoke-Adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action $SampleAction | Out-Host
     Start-Sleep -Seconds $DelaySeconds
     Write-Report "actionEnd=$Action"
 }
@@ -174,7 +178,7 @@ Lifecycle-Step "pause-home" { Invoke-Adb shell input keyevent KEYCODE_HOME } 4
 Start-Sample "resume-after-home" 10
 Lifecycle-Step "destroy-force-stop" { Invoke-Adb shell am force-stop com.vectorra.sample } 4
 Start-Sample "recreate-after-force-stop" 10
-Smoke-Action "snapshot" 4
+Smoke-Action "post-recreate-snapshot" 4 "snapshot"
 $screenshotDevice = "/sdcard/vectorra-smoke-$stamp.png"
 $screenshotHost = Join-Path $out "vectorra-smoke-$stamp.png"
 Invoke-Adb shell screencap -p $screenshotDevice | Out-Null

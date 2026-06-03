@@ -3005,6 +3005,37 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Post-Recreate Snapshot Marker
+
+Made the post-recreate snapshot smoke report marker distinct from the earlier regular snapshot action.
+
+Completed:
+
+- Updated `tools/run-device-smoke.ps1` so `Smoke-Action` can record a report action name separately from the sample action sent to `MainActivity`.
+- The post-recreate step now records `actionStart=post-recreate-snapshot` and `actionEnd=post-recreate-snapshot`, while still sending `vectorra.sample.action=snapshot` to the sample.
+- Updated `tools/check-device-smoke-result.ps1` to require the distinct `post-recreate-snapshot` marker after `startSampleEnd=recreate-after-force-stop`.
+- Updated `tools/test-device-smoke-result-checker.ps1` valid and negative fixtures for the distinct marker.
+- Updated the Android 1.0 acceptance record and ABI/device matrix to document the distinct runtime marker.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed; the missing post-recreate snapshot fixture failed as expected with `Ordered smoke report marker missing after line 56: actionStart=post-recreate-snapshot(\s|$)`.
+- Search confirmed `post-recreate-snapshot` is present in the runtime script, result checker, fixture self-test, Android 1.0 acceptance record, ABI/device matrix, and this log.
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Post-Recreate Snapshot Validation
 
 Tightened the device smoke result checker so the runtime gate proves that the sample can still run a snapshot action after force-stop/recreate.
