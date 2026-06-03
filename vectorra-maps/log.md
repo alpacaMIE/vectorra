@@ -652,3 +652,42 @@ Known remaining Phase 1 work:
 
 - P1.T7 evidence now covers formal load, b3dm content registration, add/remove/re-add, bad tileset UI failure, and pause/resume renderer re-submit.
 - P1.T8 is next: summarize Phase 1 API, fixture, and device validation status and identify any remaining P0/P1 blockers.
+
+### P1.T8 Phase 1 3D Tiles Runtime Acceptance
+
+Completed Phase 1 acceptance documentation for the formal 3D Tiles runtime beta.
+
+Completed:
+
+- Updated `docs/beta/3d-tiles.md` from the old parser-only beta description to the current runtime beta scope.
+- Documented the formal 1.0 3D Tiles entry points: `Vectorra3DTilesSource`, `Vectorra3DTilesLayer`, `Vectorra3DTilesOptions`, `add3DTilesLayer`, and `remove3DTilesLayer`.
+- Documented that `add3DTilesModelLayer(...)` remains deprecated and experimental and is not the 1.0 3D Tiles API.
+- Summarized P1.T0 through P1.T8 acceptance evidence.
+- Recorded supported runtime scope, internal renderer contract boundaries, unsupported Phase 1 content types, device smoke coverage, and remaining out-of-scope limitations.
+- Recorded the physical device evidence for formal load, b3dm content extraction and registration, add/remove/re-add, bad tileset UI failure, and pause/resume renderer re-submit.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-sample:assembleDebug assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-maps-turf:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- `assembleDebug` passed and produced debug AAR/APK outputs for the current multi-module build.
+
+Acceptance:
+
+- P1.T8 is accepted for the Phase 1 runtime beta.
+- The formal 3D Tiles entry is `Vectorra3DTiles*`.
+- b3dm rendering and `RTC_CENTER` are covered by unit fixtures and physical-device smoke.
+- No known P0/P1 blocker remains for moving to Phase 2.
+
+Known remaining Android 1.0 work:
+
+- Phase 2 is next: MVT native render contract, vector tile API, runtime tile store, rendering, query, device smoke, and P2 acceptance.
