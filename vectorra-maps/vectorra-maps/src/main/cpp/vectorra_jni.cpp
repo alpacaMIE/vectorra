@@ -440,6 +440,19 @@ namespace
         bool visible = true;
     };
 
+    glm::dmat4 matrixFromColumnMajorArray(const std::array<double, 16>& values)
+    {
+        glm::dmat4 matrix(1.0);
+        for (int column = 0; column < 4; ++column)
+        {
+            for (int row = 0; row < 4; ++row)
+            {
+                matrix[column][row] = values[static_cast<size_t>(column * 4 + row)];
+            }
+        }
+        return matrix;
+    }
+
     struct MvtRenderStyleConfig
     {
         std::string kind;
@@ -1151,6 +1164,10 @@ namespace
                 ecefY,
                 ecefZ,
                 visible ? 1 : 0);
+            if (app)
+            {
+                queueApply3DTilesRendererContentLocked(id, tiles3DRendererContent[id]);
+            }
         }
 
         void remove3DTilesRendererContent(const std::string& id)
@@ -1162,6 +1179,10 @@ namespace
 
             std::lock_guard<std::mutex> lock(mutex);
             tiles3DRendererContent.erase(id);
+            if (app)
+            {
+                queueRemove3DTilesRendererContentLocked(id);
+            }
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
@@ -1568,6 +1589,7 @@ namespace
                 syncLabelAnnotationsLocked();
                 syncLocationIndicatorLocked();
                 syncModelLayersLocked();
+                sync3DTilesRendererContentLocked();
 
                 int renderWidth = surfaceWidth;
                 int renderHeight = surfaceHeight;
@@ -1710,6 +1732,9 @@ namespace
             modelEntities.clear();
             modelLoggedRadii.clear();
             modelLoggedErrors.clear();
+            tiles3DEntities.clear();
+            tiles3DLoggedRadii.clear();
+            tiles3DLoggedErrors.clear();
             tiles3DRendererContent.clear();
             mvtTiles.clear();
             locationEntities.clear();
@@ -1885,6 +1910,38 @@ namespace
             requestFrameLocked();
         }
 
+        void queueApply3DTilesRendererContentLocked(
+            const std::string& id,
+            const Tiles3DRendererContentConfig& config)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, id, config]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                apply3DTilesRendererContentLocked(id, config);
+            });
+            requestFrameLocked();
+        }
+
+        void queueRemove3DTilesRendererContentLocked(const std::string& id)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, id]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                remove3DTilesRendererContentEntityLocked(id);
+            });
+            requestFrameLocked();
+        }
+
         void syncModelLayersLocked()
         {
             if (!app)
@@ -1895,6 +1952,19 @@ namespace
             for (const auto& entry : modelLayers)
             {
                 applyModelLayerLocked(entry.first, entry.second);
+            }
+        }
+
+        void sync3DTilesRendererContentLocked()
+        {
+            if (!app)
+            {
+                return;
+            }
+
+            for (const auto& entry : tiles3DRendererContent)
+            {
+                apply3DTilesRendererContentLocked(entry.first, entry.second);
             }
         }
 
@@ -1916,6 +1986,27 @@ namespace
             modelEntities.erase(existing);
             modelLoggedRadii.erase(id);
             modelLoggedErrors.erase(id);
+            requestFrameLocked();
+        }
+
+        void remove3DTilesRendererContentEntityLocked(const std::string& id)
+        {
+            auto existing = tiles3DEntities.find(id);
+            if (existing == tiles3DEntities.end())
+            {
+                return;
+            }
+            if (app)
+            {
+                auto [registryLock, registry] = app->registry.write();
+                if (registry.valid(existing->second))
+                {
+                    registry.destroy(existing->second);
+                }
+            }
+            tiles3DEntities.erase(existing);
+            tiles3DLoggedRadii.erase(id);
+            tiles3DLoggedErrors.erase(id);
             requestFrameLocked();
         }
 
@@ -1984,6 +2075,63 @@ namespace
             requestFrameLocked();
         }
 
+        void apply3DTilesRendererContentLocked(
+            const std::string& id,
+            const Tiles3DRendererContentConfig& config)
+        {
+            if (!app || id.empty() || config.renderUri.empty())
+            {
+                return;
+            }
+
+            remove3DTilesRendererContentEntityLocked(id);
+
+            auto [registryLock, registry] = app->registry.write();
+            auto entity = registry.create();
+
+            tiles3DLoggedRadii.erase(id);
+            tiles3DLoggedErrors.erase(id);
+
+            auto& model = registry.emplace<rocky::Model>(entity);
+            model.uri = rocky::URI(config.renderUri);
+            model.radius = 0.0f;
+            model.error = std::nullopt;
+
+            auto& transform = registry.emplace<rocky::Transform>(entity);
+            transform.localMatrix = matrixFromColumnMajorArray(config.transformMatrix);
+            transform.topocentric = false;
+            transform.horizonCulled = false;
+            transform.frustumCulled = false;
+            transform.radius = 0.0;
+
+            if (config.transformKind == "ECEF")
+            {
+                transform.position = rocky::GeoPoint(
+                    rocky::SRS::ECEF,
+                    config.ecefX,
+                    config.ecefY,
+                    config.ecefZ);
+            }
+            else
+            {
+                transform.position = rocky::GeoPoint(rocky::SRS::ECEF, 0.0, 0.0, 0.0);
+            }
+
+            (void)registry.get_or_emplace<rocky::Visibility>(entity);
+            rocky::setVisible(registry, entity, config.visible);
+            tiles3DEntities[id] = entity;
+
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "applied native 3D Tiles content id=%s uri=%s entity=%u transform=%s",
+                id.c_str(),
+                config.renderUri.c_str(),
+                static_cast<unsigned>(entity),
+                config.transformKind.c_str());
+            requestFrameLocked();
+        }
+
         void logModelLayerStatusesLocked(rocky::Application* activeApp)
         {
             if (!activeApp)
@@ -2035,6 +2183,50 @@ namespace
                             model.uri.full().c_str(),
                             model.radius);
                         emitResourceStatusLocked("MODEL", id, "LOADED");
+                    }
+                }
+            }
+
+            for (const auto& entry : tiles3DEntities)
+            {
+                const auto& id = entry.first;
+                const auto& entity = entry.second;
+                if (!registry.valid(entity) || !registry.all_of<rocky::Model>(entity))
+                {
+                    continue;
+                }
+
+                const auto& model = registry.get<rocky::Model>(entity);
+                if (model.error)
+                {
+                    const auto message = model.error->string();
+                    auto errorItr = tiles3DLoggedErrors.find(id);
+                    if (errorItr == tiles3DLoggedErrors.end() || errorItr->second != message)
+                    {
+                        tiles3DLoggedErrors[id] = message;
+                        __android_log_print(
+                            ANDROID_LOG_ERROR,
+                            TAG,
+                            "3D Tiles model load error id=%s uri=%s error=%s",
+                            id.c_str(),
+                            model.uri.full().c_str(),
+                            message.c_str());
+                    }
+                }
+
+                if (model.radius > 0.0f)
+                {
+                    auto radiusItr = tiles3DLoggedRadii.find(id);
+                    if (radiusItr == tiles3DLoggedRadii.end() || radiusItr->second != model.radius)
+                    {
+                        tiles3DLoggedRadii[id] = model.radius;
+                        __android_log_print(
+                            ANDROID_LOG_INFO,
+                            TAG,
+                            "3D Tiles model loaded id=%s uri=%s radius=%.2f",
+                            id.c_str(),
+                            model.uri.full().c_str(),
+                            model.radius);
                     }
                 }
             }
@@ -2764,6 +2956,9 @@ namespace
         std::unordered_map<std::string, float> modelLoggedRadii;
         std::unordered_map<std::string, std::string> modelLoggedErrors;
         std::unordered_map<std::string, Tiles3DRendererContentConfig> tiles3DRendererContent;
+        std::unordered_map<std::string, entt::entity> tiles3DEntities;
+        std::unordered_map<std::string, float> tiles3DLoggedRadii;
+        std::unordered_map<std::string, std::string> tiles3DLoggedErrors;
         std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;

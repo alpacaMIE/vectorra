@@ -725,3 +725,100 @@ Known remaining Phase 2 work:
 - P2.T1: add public vector tile source/layer API.
 - P2.T2: add the Kotlin MVT runtime tile store as the single owner of decoded tiles, native handles, and query state.
 - P2.T5: replace the native registration stub with actual visible MVT rendering.
+
+### Device Reinsert Smoke Retry
+
+Retried physical-device validation after the device was unlocked and reinserted.
+
+Device:
+
+- Model: `2312DRAABC`
+- ADB serial: `4tqoz9bmfu8t8pr8`
+- State: `device`
+
+Commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+$apk='D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+& $adb devices -l
+& $adb shell settings put global verifier_verify_adb_installs 0
+& $adb install -r -d $apk
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+```
+
+Results:
+
+- ADB detected the device in `device` state.
+- `adb install -r -d` succeeded.
+- `com.vectorra.sample/.MainActivity` became the top resumed Activity.
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-reinsert-smoke-2026-06-03.png` showed the sample UI status `tiles3d sample-3d-tiles-layer loaded`, but no visible 3D Tiles content in the render surface.
+- UI dump `D:\workspace\code\vectorra\vectorra-maps\build\device-reinsert-smoke-2026-06-03.xml` contained `tiles3d sample-3d-tiles-layer loaded`.
+- Strict sample-process log filtering found no `FATAL EXCEPTION`, sample ANR, `Application Not Responding`, `failed to register`, `SIGABRT`, or `SIGSEGV`.
+
+Observation:
+
+- This retry exposed a correctness gap: the Kotlin 3D Tiles lifecycle could report `loaded` while native had only registered renderer content metadata and had not actually attached a model entity to the rocky scene.
+- `am start -W` returned `Status: timeout`, and MIUI emitted an `APP_SCOUT_HANG` warning while native `setSurface` was realizing the renderer. The app recovered, initialized Vulkan, produced `rocky frame 1 ok`, and remained foreground.
+
+### 3D Tiles Native Visibility Fix
+
+Fixed the 3D Tiles runtime path after device smoke showed `loaded` status without visible 3D Tiles content.
+
+Root cause:
+
+- `add3DTilesRendererContent` only stored `Tiles3DRendererContentConfig` and logged `registered 3D Tiles renderer content`.
+- No rocky `Model` entity was created for the renderer content, so successful Kotlin content loading did not imply anything was attached to the native scene.
+- After adding the entity path, the first device retry exposed a second issue: Android `File.toURI().toString()` produced `file:/data/...`, while rocky only normalizes `file://`; the model loader treated the URI as unavailable.
+
+Completed:
+
+- Added native 3D Tiles entity ownership separate from smoke `modelLayers`.
+- On content registration, native now queues and applies a rocky `Model` entity with a `Transform` from the renderer contract.
+- On content removal and renderer teardown, native now removes 3D Tiles entities and clears their load diagnostics.
+- Surface recreation now syncs registered 3D Tiles renderer content into actual native entities.
+- Added native diagnostics for `applied native 3D Tiles content`, `3D Tiles model loaded`, and `3D Tiles model load error`.
+- Changed 3D Tiles prepared local renderer content from Java `file:/...` URI strings to local absolute file paths, which rocky can read directly.
+- Updated lifecycle tests to assert local absolute render paths for cached GLB/GLTF/B3DM inner GLB content.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake built both `arm64-v8a` and `x86_64`.
+- Existing rocky warnings remained non-blocking.
+
+Device smoke was rerun on `2312DRAABC` with:
+
+```powershell
+$adb='C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+$apk='D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+& $adb install -r -d $apk
+& $adb shell am force-stop com.vectorra.sample
+& $adb logcat -c
+& $adb shell am start -W -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+```
+
+Device results:
+
+- Install succeeded.
+- UI dump `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-visible-fix2-2026-06-03.xml` contained `tiles3d sample-3d-tiles-layer loaded`.
+- Screenshot `D:\workspace\code\vectorra\vectorra-maps\build\device-3dtiles-visible-fix2-2026-06-03.png` showed non-empty rendered scene content instead of the earlier empty green surface.
+- Logcat showed `registered 3D Tiles renderer content`.
+- Logcat showed `applied native 3D Tiles content`.
+- Logcat showed `3D Tiles model loaded id=sample-3d-tiles-layer:root ... radius=16.03`.
+- Strict sample-process log filtering found no `FATAL EXCEPTION`, sample ANR, `Application Not Responding`, `failed to register`, `SIGABRT`, or `SIGSEGV`.
+
+Known remaining issue:
+
+- `am start -W` still returns `Status: timeout` on this MIUI device while native renderer startup blocks long enough to trigger the platform wait timeout. The app recovers and renders, but startup latency remains a separate hardening item.

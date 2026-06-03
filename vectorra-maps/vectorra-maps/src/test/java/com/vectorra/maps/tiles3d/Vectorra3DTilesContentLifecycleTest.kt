@@ -58,8 +58,8 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(VectorraTileset3DContentKind.GLB, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLB_URI, renderer.added.single().payloadSource)
         assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
-        assertTrue(renderer.added.single().renderUri.startsWith("file:/"))
-        assertTrue(File(java.net.URI(renderer.added.single().renderUri)).readBytes().contentEquals(byteArrayOf(1, 2, 3)))
+        assertFalse(renderer.added.single().renderUri.startsWith("file:"))
+        assertTrue(File(renderer.added.single().renderUri).readBytes().contentEquals(byteArrayOf(1, 2, 3)))
         assertEquals(
             mapOf("root" to Vectorra3DTilesRuntimeTileLoadState.LOADED),
             lifecycle.tileLoadStates()
@@ -104,7 +104,7 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(VectorraTileset3DContentKind.GLTF, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLTF_URI, renderer.added.single().payloadSource)
         assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
-        assertEquals(localFile.toURI().toString(), renderer.added.single().renderUri)
+        assertEquals(localFile.absolutePath, renderer.added.single().renderUri)
     }
 
     @Test
@@ -191,8 +191,9 @@ class Vectorra3DTilesContentLifecycleTest {
             renderer.added.single().payloadSource
         )
         assertTrue(renderer.added.single().renderUri.endsWith(".glb"))
+        assertFalse(renderer.added.single().renderUri.startsWith("file:"))
         assertTrue(
-            File(java.net.URI(renderer.added.single().renderUri))
+            File(renderer.added.single().renderUri)
                 .readBytes()
                 .contentEquals(Vectorra3DTilesB3dmParserTest.glbBytes())
         )

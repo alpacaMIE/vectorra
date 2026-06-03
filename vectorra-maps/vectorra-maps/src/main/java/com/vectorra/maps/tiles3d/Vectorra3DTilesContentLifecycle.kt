@@ -269,7 +269,7 @@ internal class Vectorra3DTilesContentLifecycle(
         return when (request.content.kind) {
             VectorraTileset3DContentKind.GLB,
             VectorraTileset3DContentKind.GLTF -> PreparedRendererContent(
-                renderUri = file.toURI().toString(),
+                renderUri = file.absolutePath,
                 transform = request.transform
             )
             VectorraTileset3DContentKind.B3DM -> {
@@ -282,7 +282,7 @@ internal class Vectorra3DTilesContentLifecycle(
                     body = b3dm.glb
                 )
                 PreparedRendererContent(
-                    renderUri = glbFile.toURI().toString(),
+                    renderUri = glbFile.absolutePath,
                     transform = transformWithRtcCenter(request.transform, b3dm.rtcCenter)
                 )
             }
@@ -304,7 +304,7 @@ internal class Vectorra3DTilesContentLifecycle(
                     kind = task.content.kind,
                     body = body
                 )
-                PreparedRendererContent(renderUri = renderFile.toURI().toString(), transform = task.transform)
+                PreparedRendererContent(renderUri = renderFile.absolutePath, transform = task.transform)
             }
             VectorraTileset3DContentKind.B3DM -> {
                 val b3dm = Vectorra3DTilesB3dmParser.parse(body)
@@ -316,7 +316,7 @@ internal class Vectorra3DTilesContentLifecycle(
                     body = b3dm.glb
                 )
                 PreparedRendererContent(
-                    renderUri = renderFile.toURI().toString(),
+                    renderUri = renderFile.absolutePath,
                     transform = transformWithRtcCenter(task.transform, b3dm.rtcCenter)
                 )
             }
