@@ -124,6 +124,9 @@ Sample smoke actions:
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action offline-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action cancel-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action snapshot
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action geojson
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action draw
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-draw
 ```
 
 ## Common Failures

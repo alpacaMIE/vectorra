@@ -69,6 +69,9 @@ adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.act
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action offline-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action cancel-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action snapshot
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action geojson
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action draw
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action clear-draw
 ```
 
 Sample UI additions:
@@ -77,8 +80,11 @@ Sample UI additions:
 - `Offline PF`
 - `Cancel PF`
 - `Snapshot`
+- `GeoJSON`
+- `Draw`
+- `Clear Draw`
 
-The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag. The snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check.
+The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag. The snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check. The GeoJSON smoke installs a query-only source/layer and logs a center query. The Draw smoke renders point, line, and polygon annotations and logs a center query.
 
 ## Fixes And Compatibility Notes
 

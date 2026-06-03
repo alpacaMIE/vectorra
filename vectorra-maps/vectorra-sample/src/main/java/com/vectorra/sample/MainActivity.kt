@@ -23,6 +23,9 @@ import com.vectorra.maps.VectorraResourceKind
 import com.vectorra.maps.VectorraResourceLoadState
 import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
+import com.vectorra.maps.annotation.VectorraDrawLineAnnotation
+import com.vectorra.maps.annotation.VectorraDrawPointAnnotation
+import com.vectorra.maps.annotation.VectorraDrawPolygonAnnotation
 import com.vectorra.maps.model.VectorraGlbModelLayerOptions
 import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraCacheStatus
@@ -34,6 +37,11 @@ import com.vectorra.maps.offline.VectorraOfflineTileSource
 import com.vectorra.maps.offline.VectorraPrefetchOptions
 import com.vectorra.maps.offline.VectorraPrefetchTask
 import com.vectorra.maps.offline.VectorraPrefetchTaskState
+import com.vectorra.maps.query.VectorraAnnotationGeometry
+import com.vectorra.maps.query.VectorraCoordinate
+import com.vectorra.maps.query.VectorraGeoJsonFeature
+import com.vectorra.maps.query.VectorraGeoJsonLayer
+import com.vectorra.maps.query.VectorraGeoJsonSource
 import com.vectorra.maps.query.VectorraQueriedFeature
 import com.vectorra.maps.query.VectorraQueryOptions
 import com.vectorra.maps.query.VectorraScreenPoint
@@ -242,6 +250,18 @@ class MainActivity : Activity() {
                 },
                 sampleButton("Snapshot") {
                     runSnapshotSmoke()
+                }
+            ))
+
+            addView(controlRow(
+                sampleButton("GeoJSON") {
+                    loadSampleGeoJson()
+                },
+                sampleButton("Draw") {
+                    loadSampleDrawAnnotations()
+                },
+                sampleButton("Clear Draw") {
+                    clearSampleDrawAnnotations()
                 }
             ))
 
@@ -650,6 +670,121 @@ class MainActivity : Activity() {
         return samplePoints.any { (x, y) -> getPixel(x, y) != Color.TRANSPARENT }
     }
 
+    private fun loadSampleGeoJson() {
+        runCatching {
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_GEOJSON_LONGITUDE,
+                    latitude = SAMPLE_GEOJSON_LATITUDE,
+                    zoom = 13.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            val source = VectorraGeoJsonSource(
+                id = SAMPLE_GEOJSON_SOURCE_ID,
+                features = listOf(
+                    VectorraGeoJsonFeature(
+                        id = "geojson-point",
+                        geometry = VectorraAnnotationGeometry.Point(
+                            VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE, SAMPLE_GEOJSON_LATITUDE)
+                        ),
+                        properties = mapOf("name" to "GeoJSON point")
+                    ),
+                    VectorraGeoJsonFeature(
+                        id = "geojson-line",
+                        geometry = VectorraAnnotationGeometry.LineString(
+                            listOf(
+                                VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE - 0.01, SAMPLE_GEOJSON_LATITUDE - 0.006),
+                                VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE + 0.01, SAMPLE_GEOJSON_LATITUDE + 0.006)
+                            )
+                        ),
+                        properties = mapOf("name" to "GeoJSON line")
+                    )
+                )
+            )
+            mapView.map.setGeoJsonSource(source)
+            mapView.map.setGeoJsonLayer(
+                VectorraGeoJsonLayer(
+                    id = SAMPLE_GEOJSON_LAYER_ID,
+                    sourceId = source.id,
+                    hitRadiusPixels = 36.0,
+                    zIndex = 320
+                )
+            )
+            statusText.text = "GeoJSON query layer requested"
+            Log.i(LOG_TAG, "GeoJSON smoke: source=${source.id} features=${source.features.size}")
+            statusText.postDelayed({
+                logCenterQuery("GeoJSON center query", layerId = SAMPLE_GEOJSON_LAYER_ID)
+            }, SAMPLE_QUERY_DELAY_MS)
+        }.onFailure { error ->
+            statusText.text = "GeoJSON error: ${error.message}"
+            Log.e(LOG_TAG, "GeoJSON smoke error", error)
+        }
+    }
+
+    private fun loadSampleDrawAnnotations() {
+        runCatching {
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_GEOJSON_LONGITUDE,
+                    latitude = SAMPLE_GEOJSON_LATITUDE,
+                    zoom = 13.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            mapView.map.clearDrawAnnotations()
+            mapView.map.addDrawPointAnnotation(
+                VectorraDrawPointAnnotation(
+                    id = "sample-draw-point",
+                    coordinate = VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE, SAMPLE_GEOJSON_LATITUDE),
+                    text = "Draw"
+                )
+            )
+            mapView.map.addDrawLineAnnotation(
+                VectorraDrawLineAnnotation(
+                    id = "sample-draw-line",
+                    coordinates = listOf(
+                        VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE - 0.012, SAMPLE_GEOJSON_LATITUDE - 0.008),
+                        VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE + 0.012, SAMPLE_GEOJSON_LATITUDE + 0.008)
+                    )
+                )
+            )
+            mapView.map.addDrawPolygonAnnotation(
+                VectorraDrawPolygonAnnotation(
+                    id = "sample-draw-polygon",
+                    rings = listOf(
+                        listOf(
+                            VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE - 0.008, SAMPLE_GEOJSON_LATITUDE + 0.004),
+                            VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE, SAMPLE_GEOJSON_LATITUDE + 0.012),
+                            VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE + 0.008, SAMPLE_GEOJSON_LATITUDE + 0.004),
+                            VectorraCoordinate(SAMPLE_GEOJSON_LONGITUDE - 0.008, SAMPLE_GEOJSON_LATITUDE + 0.004)
+                        )
+                    )
+                )
+            )
+            statusText.text = "Draw annotations requested"
+            Log.i(LOG_TAG, "Draw smoke: point line polygon requested")
+            statusText.postDelayed({
+                logCenterQuery("Draw center query", layerId = "draw-point")
+            }, SAMPLE_QUERY_DELAY_MS)
+        }.onFailure { error ->
+            statusText.text = "Draw error: ${error.message}"
+            Log.e(LOG_TAG, "Draw smoke error", error)
+        }
+    }
+
+    private fun clearSampleDrawAnnotations() {
+        runCatching {
+            mapView.map.clearDrawAnnotations()
+            statusText.text = "Draw annotations cleared"
+            Log.i(LOG_TAG, "Draw smoke: cleared")
+        }.onFailure { error ->
+            statusText.text = "Draw clear error: ${error.message}"
+        }
+    }
+
     private fun sampleOfflineMvtSource(): VectorraVectorTileSource {
         return VectorraVectorTileSource.xyz(
             id = "$SAMPLE_MVT_SOURCE_ID-offline-prefetch",
@@ -785,6 +920,9 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_OFFLINE_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = false)
                 SAMPLE_ACTION_CANCEL_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = true)
                 SAMPLE_ACTION_SNAPSHOT -> runSnapshotSmoke()
+                SAMPLE_ACTION_GEOJSON -> loadSampleGeoJson()
+                SAMPLE_ACTION_DRAW -> loadSampleDrawAnnotations()
+                SAMPLE_ACTION_CLEAR_DRAW -> clearSampleDrawAnnotations()
                 else -> statusText.text = "Unknown sample action: $action"
             }
         }
@@ -886,6 +1024,20 @@ class MainActivity : Activity() {
     }
 
     private fun logCenterMvtQuery(prefix: String) {
+        logCenterQuery(
+            prefix = prefix,
+            layerId = SAMPLE_MVT_LAYER_ID,
+            sourceLayerIds = setOf("transportation"),
+            radiusPixels = 48.0
+        )
+    }
+
+    private fun logCenterQuery(
+        prefix: String,
+        layerId: String,
+        sourceLayerIds: Set<String> = emptySet(),
+        radiusPixels: Double = 48.0
+    ) {
         val width = mapView.width
         val height = mapView.height
         Log.i(LOG_TAG, "$prefix: start viewport=${width}x$height")
@@ -896,9 +1048,9 @@ class MainActivity : Activity() {
         val features = mapView.map.queryRenderedFeatures(
             screenPoint = VectorraScreenPoint(width / 2.0, height / 2.0),
             options = VectorraQueryOptions(
-                layerIds = setOf(SAMPLE_MVT_LAYER_ID),
-                sourceLayerIds = setOf("transportation"),
-                radiusPixels = 48.0
+                layerIds = setOf(layerId),
+                sourceLayerIds = sourceLayerIds,
+                radiusPixels = radiusPixels
             )
         )
         val text = "$prefix: ${clickStatusText(features)}"
@@ -1021,6 +1173,10 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_LATITUDE = 37.7749
         const val SAMPLE_MVT_MBTILES_SOURCE_ID = "sample-mvt-mbtiles"
         const val SAMPLE_MVT_MBTILES_FILE_NAME = "sample-vector.mbtiles"
+        const val SAMPLE_GEOJSON_SOURCE_ID = "sample-geojson"
+        const val SAMPLE_GEOJSON_LAYER_ID = "sample-geojson-layer"
+        const val SAMPLE_GEOJSON_LONGITUDE = -122.4194
+        const val SAMPLE_GEOJSON_LATITUDE = 37.7749
         const val SAMPLE_MVT_TILE_Z = 12
         const val SAMPLE_MVT_TILE_X = 655
         const val SAMPLE_MVT_TILE_Y = 1583
@@ -1033,6 +1189,7 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_READD_DELAY_MS = 2_000L
         const val SAMPLE_MVT_PAN_DELAY_MS = 7_000L
         const val SAMPLE_MVT_QUERY_DELAY_MS = 7_000L
+        const val SAMPLE_QUERY_DELAY_MS = 2_000L
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
         const val SAMPLE_ACTION_3D_TILES = "3dtiles"
         const val SAMPLE_ACTION_MVT = "mvt"
@@ -1048,6 +1205,9 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_OFFLINE_PREFETCH = "offline-prefetch"
         const val SAMPLE_ACTION_CANCEL_PREFETCH = "cancel-prefetch"
         const val SAMPLE_ACTION_SNAPSHOT = "snapshot"
+        const val SAMPLE_ACTION_GEOJSON = "geojson"
+        const val SAMPLE_ACTION_DRAW = "draw"
+        const val SAMPLE_ACTION_CLEAR_DRAW = "clear-draw"
         const val PBF_WIRE_VARINT = 0
         const val PBF_WIRE_LENGTH_DELIMITED = 2
         const val MVT_TILE_LAYERS_FIELD = 3

@@ -2085,3 +2085,37 @@ Known remaining work:
 
 - Run the `snapshot` adb smoke on a real device once adb returns to `device`.
 - P4.T3 still needs explicit sample controls/actions for location and GeoJSON/drawing.
+
+### P4.T3 GeoJSON And Draw Sample Smoke
+
+Expanded sample coverage for GeoJSON/query and drawing.
+
+Completed:
+
+- Added a `GeoJSON` sample button and adb smoke action `geojson`.
+- Added `Draw` and `Clear Draw` sample buttons with adb smoke actions `draw` and `clear-draw`.
+- The GeoJSON smoke installs a query-only source/layer, moves the camera to the sample geometry, and logs a center query.
+- The Draw smoke renders point, line, and polygon annotations, moves the camera to the sample geometry, and logs a center query.
+- Refactored center-query logging so MVT, GeoJSON, and draw sample actions share the same query helper.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` and `docs/beta/diagnostics-troubleshooting.md` with the new smoke actions.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "GeoJSON|SAMPLE_ACTION_GEOJSON|SAMPLE_ACTION_DRAW|SAMPLE_ACTION_CLEAR_DRAW|geojson|clear-draw|Draw annotations|vectorra.sample.action draw|vectorra.sample.action geojson" .\vectorra-maps\vectorra-sample\src\main\java\com\vectorra\sample\MainActivity.kt .\vectorra-maps\docs\beta
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.annotation.*" --tests "com.vectorra.maps.query.*"
+```
+
+Results:
+
+- Search found the sample buttons, smoke action constants, action handling, and docs references.
+- `:vectorra-sample:assembleDebug` passed.
+- Annotation and query unit tests passed.
+
+Known remaining work:
+
+- Run the `geojson`, `draw`, and `clear-draw` adb smokes on a real device once adb returns to `device`.
+- P4.T3 still needs explicit sample controls/actions for location.
