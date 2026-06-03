@@ -57,7 +57,8 @@ The emulator also passed the targeted Android instrumentation MBTiles vector sou
 
 ```powershell
 $env:ANDROID_SERIAL='emulator-5554'
-.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest
+$argsList=@('-g','.\.gradle-agent-home',':vectorra-maps:connectedDebugAndroidTest','-Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest')
+& .\gradlew.bat @argsList
 ```
 
 Latest emulator evidence includes:

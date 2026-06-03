@@ -3706,3 +3706,30 @@ Results:
 Known remaining work:
 
 - Rerun connected instrumentation and full smoke on a physical Vulkan Android device once `4tqoz9bmfu8t8pr8` reports `device`.
+
+### Connected Instrumentation Command Documentation Fix
+
+Completed:
+
+- Replaced raw PowerShell `-Pandroid.testInstrumentationRunnerArguments.class=...` examples with an argument-array invocation in the Android 1.0 acceptance record and 0.8.0 beta development notes.
+- Reran the exact argument-array command against `emulator-5554`.
+
+Verification command was run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+$env:ANDROID_SERIAL='emulator-5554'
+$argsList=@('-g','.\.gradle-agent-home',':vectorra-maps:connectedDebugAndroidTest','-Pandroid.testInstrumentationRunnerArguments.class=com.vectorra.maps.offline.VectorraMbTilesVectorSourceInstrumentedTest')
+& .\gradlew.bat @argsList
+```
+
+Results:
+
+- `VectorraMbTilesVectorSourceInstrumentedTest` ran one test on `Rocky_Vulkan_API36_1(AVD) - 16`.
+- Gradle reported `BUILD SUCCESSFUL`.
+- `adb devices -l` still showed physical device `4tqoz9bmfu8t8pr8` as `offline`; emulator `emulator-5554` was `device`.
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
