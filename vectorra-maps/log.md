@@ -2543,6 +2543,33 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Screenshot PNG Validation
+
+Strengthened runtime smoke result artifact validation.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` to verify the captured screenshot has a PNG signature, an `IHDR` chunk, and positive width/height.
+- Updated `tools/test-device-smoke-result-checker.ps1` to generate a valid synthetic PNG for the passing fixture and to require an invalid screenshot fixture to fail.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the screenshot PNG validation behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-device-smoke-result-checker.ps1` passed: valid fixture passed; crash-log, missing-action, and invalid-screenshot fixtures failed as expected.
+- `tools/check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home` passed after the PNG validation change.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Release Documentation Local Gate Alignment
 
 Aligned release documentation with the current local Android acceptance script behavior.

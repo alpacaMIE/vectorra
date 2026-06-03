@@ -47,7 +47,7 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 ```
 
 The script installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if the screenshot, UI dump, or logcat artifact is missing or empty. The text report includes start/end records for every sample action and lifecycle step.
-The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log and missing-action failures before the device run.
+The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, missing-action, and invalid-screenshot failures before the device run.
 
 After a run completes, verify the generated artifacts:
 
@@ -55,7 +55,7 @@ After a run completes, verify the generated artifacts:
 .\tools\check-device-smoke-result.ps1
 ```
 
-This validates action and lifecycle completion records, screenshot/UI/log artifacts, UI package ownership, and common crash patterns.
+This validates action and lifecycle completion records, screenshot/UI/log artifacts, screenshot PNG signature and dimensions, UI package ownership, and common crash patterns.
 
 By default the script selects the split sample APK from the device ABI list:
 

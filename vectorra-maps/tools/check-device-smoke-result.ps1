@@ -58,6 +58,40 @@ function Assert-NonEmptyFile {
     }
 }
 
+function Read-BigEndianUInt32 {
+    param([byte[]]$Bytes, [int]$Offset)
+    return (
+        ([int64]$Bytes[$Offset] -shl 24) -bor
+        ([int64]$Bytes[$Offset + 1] -shl 16) -bor
+        ([int64]$Bytes[$Offset + 2] -shl 8) -bor
+        [int64]$Bytes[$Offset + 3]
+    )
+}
+
+function Assert-PngDimensions {
+    param([string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $pngSignature = [byte[]](0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    if ($bytes.Length -lt 24) {
+        throw "screenshot is too small to be a PNG: $Path"
+    }
+    for ($index = 0; $index -lt $pngSignature.Length; $index++) {
+        if ($bytes[$index] -ne $pngSignature[$index]) {
+            throw "screenshot is not a PNG: $Path"
+        }
+    }
+    $chunkType = [System.Text.Encoding]::ASCII.GetString($bytes, 12, 4)
+    if ($chunkType -ne "IHDR") {
+        throw "screenshot PNG missing IHDR chunk: $Path"
+    }
+    $width = Read-BigEndianUInt32 $bytes 16
+    $height = Read-BigEndianUInt32 $bytes 20
+    if ($width -le 0 -or $height -le 0) {
+        throw "screenshot PNG has invalid dimensions: ${width}x${height}"
+    }
+    Write-Host "screenshot PNG dimensions: ${width}x${height}"
+}
+
 $requiredReportPatterns = @(
     'installApk=',
     'logcatCleared=true',
@@ -107,6 +141,7 @@ foreach ($action in $requiredActions) {
 Assert-NonEmptyFile $screenshot "screenshot"
 Assert-NonEmptyFile $uiDump "ui dump"
 Assert-NonEmptyFile $logcat "logcat"
+Assert-PngDimensions $screenshot
 
 $uiText = Get-Content -Path $uiDump -Raw
 if ($uiText -notmatch 'com\.vectorra\.sample') {
