@@ -2543,6 +2543,33 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Release Documentation Local Gate Alignment
+
+Aligned release documentation with the current local Android acceptance script behavior.
+
+Completed:
+
+- Updated `docs/beta/release-versioning.md` to state that `tools/check-android-acceptance.ps1` includes the Gradle release gate, native library content check, and runtime smoke result checker self-test.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` to include the latest full local acceptance command and describe its coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "check-android-acceptance|native-library|runtime smoke result checker|Current local result|full local Android acceptance gate" .\docs\beta\release-versioning.md .\docs\beta\release-notes-0.8.0-beta.1.md .\docs\beta\android-1.0-acceptance.md
+$files=@('.\tools\check-android-acceptance.ps1','.\tools\check-native-libs.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- Release/versioning, release notes, and Android acceptance docs now describe the same local acceptance entry point and smoke checker self-test coverage.
+- PowerShell parser checks passed for `check-android-acceptance.ps1`, `check-native-libs.ps1`, and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Android Acceptance Script Smoke Checker Self-Test
 
 Aligned the local acceptance script with the documented Android 1.0 gate.

@@ -51,7 +51,7 @@ Before publishing a Beta artifact:
 .\gradlew.bat :vectorra-sample:assembleDebug "-Pvectorra.sample.usePublishedAar=true"
 ```
 
-The local Android acceptance script runs this gate plus the ABI native-library content check:
+The local Android acceptance script runs this gate plus the ABI native-library content check and the runtime smoke result checker self-test:
 
 ```powershell
 .\tools\check-android-acceptance.ps1
