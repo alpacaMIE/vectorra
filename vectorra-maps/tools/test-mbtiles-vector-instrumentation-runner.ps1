@@ -2,23 +2,27 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runner = Join-Path $PSScriptRoot "run-mbtiles-vector-instrumentation.ps1"
+$acceptanceScript = Join-Path $PSScriptRoot "check-android-acceptance.ps1"
 $acceptanceDoc = Join-Path $repoRoot "docs/beta/android-1.0-acceptance.md"
 $releaseNotes = Join-Path $repoRoot "docs/beta/release-notes-0.8.0-beta.1.md"
 
-foreach ($path in @($runner, $acceptanceDoc, $releaseNotes)) {
+foreach ($path in @($runner, $acceptanceScript, $acceptanceDoc, $releaseNotes)) {
     if (-not (Test-Path $path)) {
         throw "Required MBTiles instrumentation runner contract file not found: $path"
     }
 }
 
-$tokens = $null
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile($runner, [ref]$tokens, [ref]$errors) | Out-Null
-if ($errors) {
-    throw "PowerShell parser errors in ${runner}: $($errors | Out-String)"
+foreach ($script in @($runner, $acceptanceScript)) {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors) | Out-Null
+    if ($errors) {
+        throw "PowerShell parser errors in ${script}: $($errors | Out-String)"
+    }
 }
 
 $runnerText = Get-Content -Path $runner -Raw
+$acceptanceScriptText = Get-Content -Path $acceptanceScript -Raw
 $acceptanceText = Get-Content -Path $acceptanceDoc -Raw
 $releaseNotesText = Get-Content -Path $releaseNotes -Raw
 
@@ -42,6 +46,10 @@ if ($runnerText -notmatch '\$env:ANDROID_SERIAL\s*=\s*\$DeviceSerial') {
 if ($runnerText -notmatch ':vectorra-maps:connectedDebugAndroidTest' -or
     $runnerText -notmatch 'com\.vectorra\.maps\.offline\.VectorraMbTilesVectorSourceInstrumentedTest') {
     throw "MBTiles instrumentation runner missing targeted connectedDebugAndroidTest invocation"
+}
+
+if ($acceptanceScriptText -notmatch 'test-mbtiles-vector-instrumentation-runner\.ps1') {
+    throw "Android local acceptance script does not run the MBTiles instrumentation runner contract self-test"
 }
 
 if ($acceptanceText -notmatch '\.\\tools\\run-mbtiles-vector-instrumentation\.ps1 -DeviceSerial emulator-5554') {

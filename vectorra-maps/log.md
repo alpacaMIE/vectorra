@@ -3761,6 +3761,32 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### MBTiles Runner Self-test Acceptance Hook Guard
+
+Completed:
+
+- Strengthened `tools/test-mbtiles-vector-instrumentation-runner.ps1` so it also parses `tools/check-android-acceptance.ps1`.
+- Added an explicit assertion that the local Android acceptance script invokes `test-mbtiles-vector-instrumentation-runner.ps1`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\test-mbtiles-vector-instrumentation-runner.ps1','.\tools\check-android-acceptance.ps1','.\tools\run-mbtiles-vector-instrumentation.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }
+.\tools\test-mbtiles-vector-instrumentation-runner.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-mbtiles-vector-instrumentation-runner.ps1` passed.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- The local gate output included `MBTiles vector instrumentation runner contract self-test passed.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
 ### MBTiles Instrumentation Runner Contract Gate
 
 Completed:
