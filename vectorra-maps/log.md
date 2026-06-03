@@ -322,3 +322,37 @@ Known remaining Phase 1 work:
 
 - This retry validates device connectivity, native startup, visible raster rendering, and screenshot capture, but it is not a full P1 3D Tiles runtime smoke.
 - Continue with P1.T4 GLB/GLTF content lifecycle implementation.
+
+### P1.T4 GLB/GLTF Content Lifecycle
+
+Continued Phase 1 by adding the platform-neutral 3D Tiles GLB/GLTF content lifecycle core.
+
+Completed:
+
+- Added internal `Vectorra3DTilesContentLifecycle` to consume traversal requests and unload ids.
+- Added lifecycle state tracking for `LOADING`, `LOADED`, and `FAILED`, with traversal-facing tile load states so repeated traversals do not duplicate in-flight, loaded, or failed content requests.
+- Added remote GLB/GLTF load tasks that produce `TileRequest` values using `TileResourceType.TILES3D`, source/layer ids, source headers, priority, and content metadata, so callers can execute them through the existing `TileResourceFetcher`/scheduler/cache path.
+- Added completion handling that rejects stale generations after unload/cancel, handles HTTP failures explicitly, writes successful remote GLB/GLTF payloads to renderer content files, and submits renderer inputs through the P1.T0 renderer contract.
+- Added local `file://` GLB/GLTF handling that bypasses remote fetch and directly submits renderer URI content.
+- Added unload handling that removes loaded native renderer content ids and clears traversal-facing state.
+- Added explicit P1.T4 failure for b3dm content so b3dm is not silently rendered through the GLB/GLTF path before P1.T6.
+- Added fixture tests covering remote request metadata/header reuse, in-flight deduplication, loaded request suppression, renderer cache URI creation, local GLTF rendering, unload cleanup, stale completion cancellation, and b3dm deferral.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T4 is implemented as a tested lifecycle core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
+- P1.T5 is next for tileset/tile transform composition, bounds, `RTC_CENTER`, and renderer visibility semantics.

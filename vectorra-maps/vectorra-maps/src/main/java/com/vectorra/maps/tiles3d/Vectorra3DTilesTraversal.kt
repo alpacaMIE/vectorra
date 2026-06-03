@@ -24,7 +24,8 @@ internal data class Vectorra3DTilesRuntimeTile(
 internal enum class Vectorra3DTilesRuntimeTileLoadState {
     UNLOADED,
     LOADING,
-    LOADED
+    LOADED,
+    FAILED
 }
 
 internal data class Vectorra3DTilesCamera(
