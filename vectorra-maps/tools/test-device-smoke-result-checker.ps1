@@ -41,10 +41,30 @@ $requiredActions = @(
     "cancel-prefetch"
 )
 
+$validLogText = @(
+    "VectorraSample smoke completed",
+    "Snapshot 1080x1920 nonblank=true",
+    "Post-recreate snapshot 1080x1920 nonblank=true",
+    "3D Tiles zoom snapshot 1080x1920 nonblank=true",
+    "MVT MBTiles smoke: requested file=Vectorra Sample MVT",
+    "registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1",
+    "applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1",
+    "MVT MBTiles center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles",
+    "Offline prefetch smoke: cache before entries=0 bytes=0 proxy=0/0 resources=0/0",
+    "Offline prefetch progress state=RUNNING finished=1/1 failed=0 bytes=256",
+    "Offline prefetch result status=SUCCESS completed=1 failed=0 bytes=256 state=COMPLETED",
+    "Offline prefetch smoke: cache after entries=1 bytes=256 proxy=0/0 resources=1/256",
+    "Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0",
+    "Offline prefetch smoke: cancel requested=true",
+    "Offline prefetch result status=SUCCESS completed=1 failed=0 bytes=256 state=CANCELED",
+    "Offline prefetch smoke: cache after entries=1 bytes=256 proxy=0/0 resources=1/256",
+    "Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0"
+) -join "`n"
+
 function New-SmokeFixture {
     param(
         [string]$Stamp,
-        [string]$LogText = "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true`nMVT MBTiles smoke: requested file=Vectorra Sample MVT`nregistered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1`napplied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`nMVT MBTiles center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles",
+        [string]$LogText = $validLogText,
         [string]$OmitAction = "",
         [switch]$InvalidPng,
         [string]$OmitMetadata = "",
@@ -181,10 +201,10 @@ function Invoke-CheckerFailure {
 $validReport = New-SmokeFixture "20260604-000000"
 Invoke-CheckerSuccess $validReport
 
-$crashReport = New-SmokeFixture "20260604-000001" "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true`nMVT MBTiles smoke: requested file=Vectorra Sample MVT`nregistered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1`napplied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`nMVT MBTiles center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles`nAndroidRuntime FATAL EXCEPTION"
+$crashReport = New-SmokeFixture "20260604-000001" "$validLogText`nAndroidRuntime FATAL EXCEPTION"
 Invoke-CheckerFailure $crashReport "crash log"
 
-$missingActionReport = New-SmokeFixture "20260604-000002" "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true`nMVT MBTiles smoke: requested file=Vectorra Sample MVT`nregistered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1`napplied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`nMVT MBTiles center query: Click: 1 feature(s) layer=sample-mvt-transportation source=sample-mvt-mbtiles source-layer=transportation name=Offline MBTiles" "cancel-prefetch"
+$missingActionReport = New-SmokeFixture "20260604-000002" $validLogText "cancel-prefetch"
 Invoke-CheckerFailure $missingActionReport "missing action"
 
 $invalidPngReport = New-SmokeFixture -Stamp "20260604-000003" -InvalidPng
@@ -207,33 +227,36 @@ Invoke-CheckerFailure $missing3DTilesZoomSnapshotReport "missing 3D Tiles zoom s
 $missingMvtMbTilesQueryReport = New-SmokeFixture -Stamp "20260604-000008" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`nPost-recreate snapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true`nMVT MBTiles smoke: requested file=Vectorra Sample MVT`nregistered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt-mbtiles style=sample-mvt-transportation features=1 coordinates=3 visible=1`napplied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1"
 Invoke-CheckerFailure $missingMvtMbTilesQueryReport "missing MVT MBTiles query"
 
-$missingArtifactReport = New-SmokeFixture -Stamp "20260604-000009" -OmitArtifact "logcat"
+$missingOfflineCleanupReport = New-SmokeFixture -Stamp "20260604-000009" -LogText ($validLogText -replace 'Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0', 'Offline prefetch smoke: cache cleared entries=1 bytes=256 proxy=0/0 resources=1/256')
+Invoke-CheckerFailure $missingOfflineCleanupReport "missing offline prefetch cleanup"
+
+$missingArtifactReport = New-SmokeFixture -Stamp "20260604-000010" -OmitArtifact "logcat"
 Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
 
-$mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000010" -MismatchedArtifact "screenshot"
+$mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000011" -MismatchedArtifact "screenshot"
 Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path"
 
 $mismatchedInstalledApkReport = New-SmokeFixture `
-    -Stamp "20260604-000011" `
+    -Stamp "20260604-000012" `
     -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-x86_64-debug.apk"
 Invoke-CheckerFailure $mismatchedInstalledApkReport "mismatched installed APK"
 
 $incompatibleApkAbiReport = New-SmokeFixture `
-    -Stamp "20260604-000012" `
+    -Stamp "20260604-000013" `
     -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk" `
     -Abis "x86_64"
 Invoke-CheckerFailure $incompatibleApkAbiReport "incompatible APK ABI"
 
-$outOfOrderReport = New-SmokeFixture -Stamp "20260604-000013"
+$outOfOrderReport = New-SmokeFixture -Stamp "20260604-000014"
 (Get-Content -Path $outOfOrderReport -Raw) `
     -replace 'actionStart=mvt delaySeconds=1\r?\nactionEnd=mvt', "actionEnd=mvt`nactionStart=mvt delaySeconds=1" |
     Set-Content -Path $outOfOrderReport -Encoding utf8
 Invoke-CheckerFailure $outOfOrderReport "out-of-order action markers"
 
-$missingPostRecreateSnapshotReport = New-SmokeFixture -Stamp "20260604-000014" -OmitPostRecreateSnapshot
+$missingPostRecreateSnapshotReport = New-SmokeFixture -Stamp "20260604-000015" -OmitPostRecreateSnapshot
 Invoke-CheckerFailure $missingPostRecreateSnapshotReport "missing post-recreate snapshot"
 
-$missingPostRecreateSnapshotLogReport = New-SmokeFixture -Stamp "20260604-000015" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true"
+$missingPostRecreateSnapshotLogReport = New-SmokeFixture -Stamp "20260604-000016" -LogText "VectorraSample smoke completed`nSnapshot 1080x1920 nonblank=true`n3D Tiles zoom snapshot 1080x1920 nonblank=true"
 Invoke-CheckerFailure $missingPostRecreateSnapshotLogReport "missing post-recreate snapshot log"
 
 Write-Host "Device smoke result checker self-test passed."

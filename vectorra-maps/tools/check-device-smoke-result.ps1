@@ -288,6 +288,24 @@ foreach ($pattern in $mvtMbTilesPatterns) {
     }
 }
 
+$offlinePrefetchPatterns = @(
+    'Offline prefetch smoke: cache before entries=0 bytes=0 proxy=0/0 resources=0/0',
+    'Offline prefetch progress state=RUNNING finished=[1-9]\d*/[1-9]\d* failed=0 bytes=[1-9]\d*',
+    'Offline prefetch result status=SUCCESS completed=[1-9]\d* failed=0 bytes=[1-9]\d* state=COMPLETED',
+    'Offline prefetch smoke: cache after entries=[1-9]\d* bytes=[1-9]\d* proxy=\d+/\d+ resources=[1-9]\d*/[1-9]\d*',
+    'Offline prefetch smoke: cancel requested=true',
+    'Offline prefetch result status=SUCCESS completed=[1-9]\d* failed=0 bytes=[1-9]\d* state=CANCELED'
+)
+foreach ($pattern in $offlinePrefetchPatterns) {
+    if ($logText -notmatch $pattern) {
+        throw "Required logcat pattern missing: $pattern"
+    }
+}
+$cacheClearedPattern = 'Offline prefetch smoke: cache cleared entries=0 bytes=0 proxy=0/0 resources=0/0'
+if ([regex]::Matches($logText, $cacheClearedPattern).Count -lt 2) {
+    throw "Required logcat pattern missing at least twice: $cacheClearedPattern"
+}
+
 $failurePatterns = @(
     'FATAL EXCEPTION',
     'AndroidRuntime',

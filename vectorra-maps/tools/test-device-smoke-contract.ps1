@@ -88,6 +88,14 @@ if ($checkerText -notmatch 'MVT MBTiles smoke: requested file=Vectorra Sample MV
 if ($checkerTestText -notmatch 'missing MVT MBTiles query') {
     throw "test-device-smoke-result-checker.ps1 missing MVT MBTiles failure fixture"
 }
+if ($checkerText -notmatch 'Offline prefetch result status=SUCCESS' -or
+    $checkerText -notmatch 'state=CANCELED' -or
+    $checkerText -notmatch 'cache cleared entries=0') {
+    throw "check-device-smoke-result.ps1 missing offline prefetch result/cancel/cleanup log requirements"
+}
+if ($checkerTestText -notmatch 'missing offline prefetch cleanup') {
+    throw "test-device-smoke-result-checker.ps1 missing offline prefetch cleanup failure fixture"
+}
 if (-not $abiMatrixText.Contains(".\tools\test-device-smoke-contract.ps1")) {
     throw "ABI/device matrix missing test-device-smoke-contract.ps1 runtime gate command"
 }
