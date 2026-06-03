@@ -251,3 +251,38 @@ Known remaining Phase 1 work:
 
 - Bad tileset UI/device validation is still not run in sample; it needs a focused P1 device smoke once traversal/content rendering is further along.
 - P1.T3 is next: runtime tile state and traversal with SSE/LOD, request priority, unload budget, and `ADD`/`REPLACE`.
+
+### P1.T3 Runtime Tile State And Traversal
+
+Continued Phase 1 by adding the platform-neutral 3D Tiles traversal core.
+
+Completed:
+
+- Added internal runtime tile models with deterministic tile ids, depth, parent id, renderable content detection, and load states.
+- Added `Vectorra3DTilesTraversal` to select tiles from a parsed `VectorraTileset3D` using camera position/direction, viewport height, FOV, maximum distance, maximum screen-space error, and loaded-tile budget.
+- Implemented SSE-based LOD selection.
+- Implemented `ADD` refinement by keeping parent content while traversing children.
+- Implemented `REPLACE` refinement by selecting children when refinement succeeds and falling back to the parent when all children are culled.
+- Added frustum-style angle culling and maximum-distance culling from bounding volume center/radius.
+- Added request queue output with tile id, content, and priority.
+- Added unload output for stale loaded tiles and tiles dropped by the loaded-tile budget.
+- Added fixture tests covering `ADD`, `REPLACE`, low-SSE parent selection, frustum/distance filtering, request suppression for already loaded tiles, stale unload, and budget overflow.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T3 traversal is implemented as a tested core but is not yet connected to live map camera updates or asynchronous content loading.
+- P1.T4 is next: GLB/GLTF tile content lifecycle should consume traversal requests, reuse `TileResourceFetcher`/`TileCacheStore`, deduplicate loads, cancel stale requests, and unload renderer content through the P1.T0 renderer contract.
