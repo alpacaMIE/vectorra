@@ -2576,6 +2576,40 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
 
+### Device Smoke APK Metadata Consistency
+
+Tightened the runtime smoke result checker so installed APK metadata must match the actual smoke APK selection.
+
+Completed:
+
+- Added report value extraction and `Assert-InstalledApkConsistency` to `tools/check-device-smoke-result.ps1`.
+- The checker now requires `installedApk` to match `installApk`.
+- The checker now verifies that split APK names containing `arm64-v8a` or `x86_64` are compatible with the reported device ABI list.
+- Updated `tools/test-device-smoke-result-checker.ps1` with mismatched installed APK and incompatible APK/ABI fixtures that must fail.
+- Updated the ABI/device matrix and Android 1.0 acceptance docs with the install/ABI consistency requirements.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-device-smoke-result.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\test-device-smoke-result-checker.ps1'), [ref]$tokens, [ref]$errors)
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failures for mismatched installed APK and incompatible APK/ABI metadata.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`; Android 1.0 runtime device acceptance remains unverified.
+
 ### Device Smoke Artifact Path Validation
 
 Tightened the runtime smoke result checker so artifact byte records must identify the exact files being validated.

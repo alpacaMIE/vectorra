@@ -55,6 +55,37 @@ function Assert-ReportValue {
     }
 }
 
+function Get-ReportValue {
+    param([string]$Text, [string]$Key)
+    $pattern = "(?m)^$([regex]::Escape($Key))=(.+?)\r?$"
+    if ($Text -notmatch $pattern) {
+        throw "$Key missing from smoke report"
+    }
+    $value = $Matches[1].Trim()
+    if ($value.Length -eq 0) {
+        throw "$Key has no value in smoke report"
+    }
+    return $value
+}
+
+function Assert-InstalledApkConsistency {
+    param([string]$Text)
+    $installApk = Get-ReportValue $Text 'installApk'
+    $installedApk = Get-ReportValue $Text 'installedApk'
+    if ($installApk -ne $installedApk) {
+        throw "installedApk does not match installApk. installApk=$installApk installedApk=$installedApk"
+    }
+
+    $abis = Get-ReportValue $Text 'abis'
+    $apkName = [System.IO.Path]::GetFileName($installedApk)
+    if ($apkName -match 'arm64-v8a' -and $abis -notmatch '(^|,)arm64-v8a(,|$)') {
+        throw "installed arm64-v8a APK is not compatible with reported ABIs: $abis"
+    }
+    if ($apkName -match 'x86_64' -and $abis -notmatch '(^|,)x86_64(,|$)') {
+        throw "installed x86_64 APK is not compatible with reported ABIs: $abis"
+    }
+}
+
 function Assert-ArtifactReportLine {
     param([string]$Text, [string]$Key, [string]$ExpectedPath)
     $pattern = "(?m)^$([regex]::Escape($Key))=(.+)\sbytes=([1-9][0-9]*)\r?$"
@@ -167,6 +198,7 @@ foreach ($pattern in $requiredReportPatterns) {
 foreach ($key in $requiredMetadataKeys) {
     Assert-ReportValue $reportText $key
 }
+Assert-InstalledApkConsistency $reportText
 Assert-ArtifactReportLine $reportText 'screenshot' $screenshot
 Assert-ArtifactReportLine $reportText 'uiDump' $uiDump
 Assert-ArtifactReportLine $reportText 'logcat' $logcat

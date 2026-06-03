@@ -49,7 +49,9 @@ function New-SmokeFixture {
         [switch]$InvalidPng,
         [string]$OmitMetadata = "",
         [string]$OmitArtifact = "",
-        [string]$MismatchedArtifact = ""
+        [string]$MismatchedArtifact = "",
+        [string]$InstalledApk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
+        [string]$Abis = "arm64-v8a,armeabi-v7a"
     )
 
     $reportPath = Join-Path $testRoot "device-smoke-$Stamp.txt"
@@ -57,10 +59,10 @@ function New-SmokeFixture {
     $metadataLines = @(
         "installApk=vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
         "serial=test-device",
-        "installedApk=vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
+        "installedApk=$InstalledApk",
         "model=Vectorra Test Device",
         "sdk=35",
-        "abis=arm64-v8a,armeabi-v7a",
+        "abis=$Abis",
         "gpu=Vulkan 1.3 test renderer",
         "vulkan=Vulkan API 1.3.278"
     )
@@ -198,5 +200,16 @@ Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
 
 $mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000009" -MismatchedArtifact "screenshot"
 Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path"
+
+$mismatchedInstalledApkReport = New-SmokeFixture `
+    -Stamp "20260604-000010" `
+    -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-x86_64-debug.apk"
+Invoke-CheckerFailure $mismatchedInstalledApkReport "mismatched installed APK"
+
+$incompatibleApkAbiReport = New-SmokeFixture `
+    -Stamp "20260604-000011" `
+    -InstalledApk "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk" `
+    -Abis "x86_64"
+Invoke-CheckerFailure $incompatibleApkAbiReport "incompatible APK ABI"
 
 Write-Host "Device smoke result checker self-test passed."
