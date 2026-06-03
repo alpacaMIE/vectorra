@@ -28,6 +28,8 @@ import com.vectorra.maps.terrain.VectorraTerrainSource
 import com.vectorra.maps.tiles3d.Vectorra3DTilesLayer
 import com.vectorra.maps.tiles3d.Vectorra3DTilesOptions
 import com.vectorra.maps.tiles3d.Vectorra3DTilesSource
+import com.vectorra.maps.vector.VectorraVectorTileLayer
+import com.vectorra.maps.vector.VectorraVectorTileSource
 import java.io.File
 import java.io.Closeable
 
@@ -183,6 +185,9 @@ class MainActivity : Activity() {
                 },
                 sampleButton("3D Tiles") {
                     loadSample3DTiles()
+                },
+                sampleButton("MVT") {
+                    loadSampleMvt()
                 }
             ))
 
@@ -349,6 +354,42 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun loadSampleMvt() {
+        runCatching {
+            val source = VectorraVectorTileSource.xyz(
+                id = SAMPLE_MVT_SOURCE_ID,
+                templateUrl = SAMPLE_MVT_TEMPLATE_URL,
+                minZoom = 0,
+                maxZoom = 14
+            )
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_MVT_LONGITUDE,
+                    latitude = SAMPLE_MVT_LATITUDE,
+                    zoom = 12.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            mapView.map.addVectorTileLayer(
+                source = source,
+                layer = VectorraVectorTileLayer.Line(
+                    id = SAMPLE_MVT_LAYER_ID,
+                    sourceId = source.id,
+                    sourceLayer = "transportation",
+                    minZoom = 4,
+                    maxZoom = 14,
+                    color = 0xffffd43b.toInt(),
+                    opacity = 0.95,
+                    widthPixels = 2.5
+                )
+            )
+            statusText.text = "MVT layer requested"
+        }.onFailure { error ->
+            statusText.text = "MVT error: ${error.message}"
+        }
+    }
+
     private fun loadBrokenSample3DTiles() {
         runCatching {
             val source = Vectorra3DTilesSource(
@@ -397,6 +438,7 @@ class MainActivity : Activity() {
         statusText.post {
             when (action) {
                 SAMPLE_ACTION_3D_TILES -> loadSample3DTiles()
+                SAMPLE_ACTION_MVT -> loadSampleMvt()
                 SAMPLE_ACTION_BAD_3D_TILES -> loadBrokenSample3DTiles()
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
                 SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
@@ -505,10 +547,16 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
         const val SAMPLE_3D_TILES_LATITUDE = 39.853105846881554
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
+        const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
+        const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
+        const val SAMPLE_MVT_TEMPLATE_URL = "https://tiles.openfreemap.org/planet/20260520_001001_pt/{z}/{x}/{y}.pbf"
+        const val SAMPLE_MVT_LONGITUDE = -122.4194
+        const val SAMPLE_MVT_LATITUDE = 37.7749
         const val SAMPLE_3D_TILES_REMOVE_DELAY_MS = 16_000L
         const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
         const val EXTRA_SAMPLE_ACTION = "vectorra.sample.action"
         const val SAMPLE_ACTION_3D_TILES = "3dtiles"
+        const val SAMPLE_ACTION_MVT = "mvt"
         const val SAMPLE_ACTION_BAD_3D_TILES = "bad-3dtiles"
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"

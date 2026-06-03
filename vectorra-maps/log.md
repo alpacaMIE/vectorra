@@ -1041,3 +1041,55 @@ Known remaining work:
 
 - Manual pinch zoom verification is still needed on device to confirm the visual disappearance is gone through LOD switching.
 - P2.T5 MVT visible rendering remains the next roadmap task.
+
+### P2.T5 MVT Basic Visible Rendering
+
+Continued Phase 2 by connecting decoded MVT tiles to native visible rendering and sample smoke.
+
+Completed:
+
+- Native `renderMvtTile` now queues tile application into the rocky update loop instead of only storing the render contract.
+- Added native MVT entity ownership and removal through `mvtEntities`, including tile remove, layer remove, renderer stop, and surface/startup resync.
+- Implemented minimum visible rendering for:
+  - line: aggregated tile line features into one rocky `Line` entity per tile;
+  - fill: polygon rings into rocky `Mesh`;
+  - circle: point icon labels;
+  - symbol: first-pass point labels using the feature id as text.
+- Added camera-driven center tile scheduling for vector layers.
+- Unloads loaded MVT tiles that are no longer the current camera target, so pan/zoom does not leave stale native handles or query store entries for the previous center tile.
+- Added generation checks so stale vector tile load success/failure cannot write into or fail a newer layer instance.
+- Added sample `MVT` button and smoke action using OpenFreeMap `transportation` vector tiles near San Francisco.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- Native CMake build steps completed for `arm64-v8a` and `x86_64`.
+
+Device smoke:
+
+```powershell
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe install -r D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt
+```
+
+Results:
+
+- Device `4tqoz9bmfu8t8pr8` installed and launched the MVT sample action.
+- Logcat showed `registered MVT render tile handle=sample-mvt-transportation:12/655/1583 source=sample-mvt style=LINE features=2904 coordinates=6748 visible=1`.
+- After line aggregation, logcat showed `applied MVT render tile handle=sample-mvt-transportation:12/655/1583 entities=1`.
+
+Known remaining Phase 2 work:
+
+- P2.T5 still needs manual visual pan/zoom smoke to confirm tile replacement on device beyond the center-tile log path.
+- P2.T6: wire `queryRenderedFeatures` to loaded MVT query store entries and cover source-layer/cross-tile behavior.

@@ -1244,6 +1244,10 @@ namespace
 
             std::lock_guard<std::mutex> lock(mutex);
             mvtTiles[handle] = config;
+            if (app)
+            {
+                queueApplyMvtTileLocked(handle, config);
+            }
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
@@ -1265,6 +1269,10 @@ namespace
             }
             std::lock_guard<std::mutex> lock(mutex);
             mvtTiles.erase(handle);
+            if (app)
+            {
+                queueRemoveMvtTileLocked(handle);
+            }
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
@@ -1280,16 +1288,25 @@ namespace
             }
             std::lock_guard<std::mutex> lock(mutex);
             int removed = 0;
+            std::vector<std::string> removedHandles;
             for (auto itr = mvtTiles.begin(); itr != mvtTiles.end();)
             {
                 if (itr->second.layerId == layerId)
                 {
+                    removedHandles.push_back(itr->first);
                     itr = mvtTiles.erase(itr);
                     ++removed;
                 }
                 else
                 {
                     ++itr;
+                }
+            }
+            if (app)
+            {
+                for (const auto& handle : removedHandles)
+                {
+                    queueRemoveMvtTileLocked(handle);
                 }
             }
             __android_log_print(
@@ -1590,6 +1607,7 @@ namespace
                 syncLocationIndicatorLocked();
                 syncModelLayersLocked();
                 sync3DTilesRendererContentLocked();
+                syncMvtTilesLocked();
 
                 int renderWidth = surfaceWidth;
                 int renderHeight = surfaceHeight;
@@ -1737,6 +1755,7 @@ namespace
             tiles3DLoggedErrors.clear();
             tiles3DRendererContent.clear();
             mvtTiles.clear();
+            mvtEntities.clear();
             locationEntities.clear();
             app.reset();
         }
@@ -1968,6 +1987,20 @@ namespace
             }
         }
 
+        void syncMvtTilesLocked()
+        {
+            if (!app)
+            {
+                return;
+            }
+
+            mvtEntities.clear();
+            for (const auto& entry : mvtTiles)
+            {
+                applyMvtTileLocked(entry.first, entry.second);
+            }
+        }
+
         void removeModelEntityLocked(const std::string& id)
         {
             auto existing = modelEntities.find(id);
@@ -2072,6 +2105,322 @@ namespace
                 id.c_str(),
                 config.uri.c_str(),
                 static_cast<unsigned>(entity));
+            requestFrameLocked();
+        }
+
+        void queueApplyMvtTileLocked(
+            const std::string& handle,
+            const MvtRenderTileConfig& config)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, handle, config]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                applyMvtTileLocked(handle, config);
+            });
+            requestFrameLocked();
+        }
+
+        void queueRemoveMvtTileLocked(const std::string& handle)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, handle]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                removeMvtTileEntitiesLocked(handle);
+            });
+            requestFrameLocked();
+        }
+
+        void removeMvtTileEntitiesLocked(const std::string& handle)
+        {
+            auto existing = mvtEntities.find(handle);
+            if (existing == mvtEntities.end())
+            {
+                return;
+            }
+            if (app)
+            {
+                auto [registryLock, registry] = app->registry.write();
+                for (auto entity : existing->second)
+                {
+                    if (registry.valid(entity))
+                    {
+                        registry.destroy(entity);
+                    }
+                }
+            }
+            mvtEntities.erase(existing);
+            requestFrameLocked();
+        }
+
+        std::vector<glm::dvec3> mvtFeatureCoordinates(
+            const MvtRenderTileConfig& config,
+            std::size_t featureIndex) const
+        {
+            if (featureIndex + 1 >= config.coordinateOffsets.size())
+            {
+                return {};
+            }
+            const int start = config.coordinateOffsets[featureIndex];
+            const int end = config.coordinateOffsets[featureIndex + 1];
+            if (start < 0 ||
+                end < start ||
+                end > static_cast<int>(config.coordinates.size()) ||
+                ((end - start) % 2) != 0)
+            {
+                return {};
+            }
+
+            std::vector<glm::dvec3> points;
+            points.reserve(static_cast<std::size_t>((end - start) / 2));
+            for (int cursor = start; cursor < end; cursor += 2)
+            {
+                points.emplace_back(
+                    config.coordinates[static_cast<std::size_t>(cursor)],
+                    config.coordinates[static_cast<std::size_t>(cursor + 1)],
+                    0.0);
+            }
+            return points;
+        }
+
+        std::vector<std::vector<glm::dvec3>> mvtPolygonRings(
+            const MvtRenderTileConfig& config,
+            std::size_t featureIndex,
+            const std::vector<glm::dvec3>& points) const
+        {
+            if (points.empty() || featureIndex + 1 >= config.ringOffsets.size())
+            {
+                return {};
+            }
+
+            std::vector<std::vector<glm::dvec3>> rings;
+            const int ringStart = config.ringOffsets[featureIndex];
+            const int ringEnd = config.ringOffsets[featureIndex + 1];
+            if (ringStart < 0 ||
+                ringEnd < ringStart ||
+                ringEnd > static_cast<int>(config.ringEnds.size()))
+            {
+                return {};
+            }
+
+            if (ringStart == ringEnd)
+            {
+                rings.push_back(points);
+                return rings;
+            }
+
+            int previous = 0;
+            for (int ringIndex = ringStart; ringIndex < ringEnd; ++ringIndex)
+            {
+                const int next = config.ringEnds[static_cast<std::size_t>(ringIndex)];
+                if (next <= previous || next > static_cast<int>(points.size()))
+                {
+                    return {};
+                }
+                rings.emplace_back(
+                    points.begin() + previous,
+                    points.begin() + next);
+                previous = next;
+            }
+            return rings;
+        }
+
+        int colorWithStyleOpacity(int androidArgb, float opacity) const
+        {
+            const auto raw = static_cast<std::uint32_t>(androidArgb);
+            const auto alpha = static_cast<unsigned>(
+                std::round(static_cast<float>((raw >> 24u) & 0xffu) * std::clamp(opacity, 0.0f, 1.0f)));
+            return static_cast<int>((raw & 0x00ffffffu) | ((alpha & 0xffu) << 24u));
+        }
+
+        void addMvtLineEntityLocked(
+            const std::string& handle,
+            const std::vector<std::vector<glm::dvec3>>& lines,
+            const MvtRenderStyleConfig& style)
+        {
+            if (!app || lines.empty())
+            {
+                return;
+            }
+
+            std::vector<rocky::Feature> features;
+            features.reserve(lines.size());
+            for (const auto& coordinates : lines)
+            {
+                if (coordinates.size() < 2)
+                {
+                    continue;
+                }
+                rocky::Feature line;
+                line.geometry.type = rocky::Geometry::Type::LineString;
+                line.interpolation = rocky::GeodeticInterpolation::RhumbLine;
+                line.srs = rocky::SRS::WGS84;
+                line.geometry.points = coordinates;
+                features.emplace_back(std::move(line));
+            }
+            if (features.empty())
+            {
+                return;
+            }
+
+            auto [registryLock, registry] = app->registry.write();
+            auto entity = registry.create();
+            auto& lineStyle = registry.emplace<rocky::LineStyle>(entity);
+            lineStyle.color = rocky::Color(colorFromAndroidArgb(style.color), std::clamp(style.opacity, 0.0f, 1.0f));
+            lineStyle.width = std::max(1.0f, style.widthPixels);
+            lineStyle.depthOffset = 3000.0f;
+            lineStyle.resolution = 100000.0f;
+            lineStyle.transparencyBin = true;
+            auto& lineGeom = registry.emplace<rocky::LineGeometry>(entity);
+            rocky::FeatureBuilder builder;
+            builder.buildLineGeometry(features, lineStyle, lineGeom);
+            registry.emplace<rocky::Line>(entity, lineGeom, lineStyle);
+            mvtEntities[handle].push_back(entity);
+        }
+
+        void addMvtFillEntityLocked(
+            const std::string& handle,
+            const std::vector<std::vector<glm::dvec3>>& rings,
+            const MvtRenderStyleConfig& style)
+        {
+            if (!app || rings.empty() || rings.front().size() < 3)
+            {
+                return;
+            }
+
+            rocky::Feature polygon;
+            polygon.geometry.type = rocky::Geometry::Type::Polygon;
+            polygon.srs = rocky::SRS::WGS84;
+            polygon.geometry.points = rings.front();
+            for (std::size_t i = 1; i < rings.size(); ++i)
+            {
+                if (rings[i].size() >= 3)
+                {
+                    rocky::Geometry hole(rocky::Geometry::Type::LineString, rings[i]);
+                    polygon.geometry.parts.emplace_back(std::move(hole));
+                }
+            }
+
+            auto [registryLock, registry] = app->registry.write();
+            auto entity = registry.create();
+            auto& meshStyle = registry.emplace<rocky::MeshStyle>(entity);
+            auto color = colorFromAndroidArgb(style.color);
+            meshStyle.color = rocky::Color(color, std::clamp(style.opacity, 0.0f, 1.0f));
+            meshStyle.depthOffset = 2500.0f;
+            meshStyle.writeDepth = false;
+            meshStyle.drawBackfaces = true;
+            meshStyle.twoPassAlpha = true;
+            meshStyle.transparencyBin = true;
+            auto& meshGeom = registry.emplace<rocky::MeshGeometry>(entity);
+            rocky::FeatureBuilder builder;
+            builder.buildMeshGeometry({polygon}, meshStyle, meshGeom);
+            registry.emplace<rocky::Mesh>(entity, meshGeom, meshStyle);
+            mvtEntities[handle].push_back(entity);
+        }
+
+        void addMvtPointEntityLocked(
+            const std::string& handle,
+            const glm::dvec3& point,
+            const MvtRenderStyleConfig& style,
+            const std::string& text)
+        {
+            if (!app)
+            {
+                return;
+            }
+
+            auto [registryLock, registry] = app->registry.write();
+            auto entity = registry.create();
+            auto& labelStyle = registry.emplace<rocky::LabelStyle>(entity);
+            labelStyle.fontName = resourcePath.empty()
+                ? std::string("/system/fonts/DroidSans.ttf")
+                : resourcePath + "/fonts/NotoSansSC-VF.ttf";
+            labelStyle.textSize = std::clamp(style.textSizeSp, 8.0f, 64.0f);
+            labelStyle.textColor = colorFromAndroidArgb(colorWithStyleOpacity(style.color, style.opacity));
+            labelStyle.textOutlineColor = colorFromAndroidArgb(static_cast<int>(0xccffffffu));
+            labelStyle.textOutlineSize = 2.0f;
+            labelStyle.textPivot = {0.5f, 0.0f};
+            labelStyle.textOffset = {0.0f, 18.0f};
+            labelStyle.backgroundColor = rocky::StockColor::Transparent;
+            labelStyle.borderSize = 0.0f;
+            labelStyle.padding = {2.0f, 2.0f};
+            if (style.kind == "CIRCLE")
+            {
+                labelStyle.icon = createCircleIcon(
+                    colorWithStyleOpacity(style.color, style.opacity),
+                    style.radiusPixels);
+                labelStyle.iconSizePixels = std::max(2.0f, style.radiusPixels * 2.0f);
+                labelStyle.iconPivot = {0.5f, 0.5f};
+            }
+
+            registry.emplace<rocky::Label>(entity, text, labelStyle);
+            auto& transform = registry.emplace<rocky::Transform>(entity);
+            transform.position = rocky::GeoPoint(rocky::SRS::WGS84, point.x, point.y, 1000.0);
+            transform.radius = 1000.0;
+            transform.horizonCulled = true;
+            transform.frustumCulled = true;
+            mvtEntities[handle].push_back(entity);
+        }
+
+        void applyMvtTileLocked(
+            const std::string& handle,
+            const MvtRenderTileConfig& config)
+        {
+            if (!app || handle.empty())
+            {
+                return;
+            }
+            removeMvtTileEntitiesLocked(handle);
+            if (!config.style.visible)
+            {
+                return;
+            }
+
+            std::vector<std::vector<glm::dvec3>> lineFeatures;
+            for (std::size_t index = 0; index < config.featureIds.size(); ++index)
+            {
+                const auto points = mvtFeatureCoordinates(config, index);
+                const auto geometryType = config.geometryTypes[index];
+                if (config.style.kind == "LINE" && geometryType == 1)
+                {
+                    if (points.size() >= 2)
+                    {
+                        lineFeatures.push_back(points);
+                    }
+                }
+                else if (config.style.kind == "FILL" && geometryType == 2)
+                {
+                    addMvtFillEntityLocked(handle, mvtPolygonRings(config, index, points), config.style);
+                }
+                else if (config.style.kind == "CIRCLE" && geometryType == 0 && !points.empty())
+                {
+                    addMvtPointEntityLocked(handle, points.front(), config.style, "");
+                }
+                else if (config.style.kind == "SYMBOL" && geometryType == 0 && !points.empty())
+                {
+                    addMvtPointEntityLocked(handle, points.front(), config.style, config.featureIds[index]);
+                }
+            }
+            if (!lineFeatures.empty())
+            {
+                addMvtLineEntityLocked(handle, lineFeatures, config.style);
+            }
+
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "applied MVT render tile handle=%s entities=%zu",
+                handle.c_str(),
+                mvtEntities[handle].size());
             requestFrameLocked();
         }
 
@@ -2960,6 +3309,7 @@ namespace
         std::unordered_map<std::string, float> tiles3DLoggedRadii;
         std::unordered_map<std::string, std::string> tiles3DLoggedErrors;
         std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
+        std::unordered_map<std::string, std::vector<entt::entity>> mvtEntities;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;
         std::unordered_map<std::string, entt::entity> labelEntities;

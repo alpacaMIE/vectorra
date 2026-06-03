@@ -70,6 +70,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
@@ -138,6 +139,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private var tiles3DTraversalScheduled = false
     private val vectorTileRuntimeLock = Any()
     private val vectorTileLayers = linkedMapOf<String, VectorraVectorTileRuntimeLayer>()
+    private val vectorTileLoadGenerationByLayerId = linkedMapOf<String, Long>()
+    private var vectorTileLoadScheduled = false
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -230,6 +233,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         scheduleNativeCameraApply()
         scheduleCameraNotification()
         schedule3DTilesTraversal()
+        scheduleVectorTileLoads()
         (location as? VectorraLocationComponentImpl)?.onCameraChanged()
     }
 
@@ -794,10 +798,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 eventSource = VectorraResourceEventSource.ENGINE
             )
             synchronized(vectorTileRuntimeLock) {
+                val nextGeneration = (vectorTileLoadGenerationByLayerId[layer.id] ?: 0L) + 1L
+                vectorTileLoadGenerationByLayerId[layer.id] = nextGeneration
                 vectorTileLayers.remove(layer.id)?.store?.clear()
                 vectorTileLayers[layer.id] = VectorraVectorTileRuntimeLayer(
                     source = source,
                     layer = layer,
+                    loadGeneration = nextGeneration,
                     store = VectorraMvtRuntimeTileStore(
                         sourceId = source.id,
                         layer = layer,
@@ -813,6 +820,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 state = VectorraResourceLoadState.LOADED,
                 eventSource = VectorraResourceEventSource.ENGINE
             )
+            scheduleVectorTileLoads()
         }
     }
 
@@ -820,6 +828,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         require(id.isNotBlank()) { "Vector tile layer id must not be blank." }
         ifOpen {
             val removed = synchronized(vectorTileRuntimeLock) {
+                vectorTileLoadGenerationByLayerId[id] = (vectorTileLoadGenerationByLayerId[id] ?: 0L) + 1L
                 vectorTileLayers.remove(id)
             }
             if (removed != null) {
@@ -841,6 +850,89 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     override fun setLayerVisible(id: String, visible: Boolean) {
         ifOpen {
             VectorraNative.setLayerVisible(nativeHandle, id, visible)
+        }
+    }
+
+    private fun scheduleVectorTileLoads() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { scheduleVectorTileLoads() }
+            return
+        }
+        if (vectorTileLoadScheduled || closed.get()) {
+            return
+        }
+        vectorTileLoadScheduled = true
+        Choreographer.getInstance().postFrameCallback {
+            vectorTileLoadScheduled = false
+            if (closed.get()) {
+                return@postFrameCallback
+            }
+            updateVectorTileLayers(cameraState)
+        }
+    }
+
+    private fun updateVectorTileLayers(camera: CameraState) {
+        val tasks = mutableListOf<VectorraVectorTileRuntimeTask>()
+        synchronized(vectorTileRuntimeLock) {
+            vectorTileLayers.values.forEach { runtimeLayer ->
+                val targetTileId = runtimeLayer.targetTileId(camera)
+                val desiredTiles = targetTileId?.let { setOf(it) } ?: emptySet()
+                (runtimeLayer.store.loadedTileIds() - desiredTiles).forEach(runtimeLayer.store::removeTile)
+                if (targetTileId != null && targetTileId !in runtimeLayer.store.loadedTileIds()) {
+                    tasks += VectorraVectorTileRuntimeTask(
+                        layerId = runtimeLayer.layer.id,
+                        loadGeneration = runtimeLayer.loadGeneration,
+                        tileId = targetTileId
+                    )
+                }
+            }
+        }
+        tasks.forEach { task ->
+            Thread({
+                loadVectorTileTask(task)
+            }, "VectorraMvt-${task.layerId}-${task.tileId.z}-${task.tileId.x}-${task.tileId.y}").start()
+        }
+    }
+
+    private fun loadVectorTileTask(task: VectorraVectorTileRuntimeTask) {
+        val runtimeLayer = synchronized(vectorTileRuntimeLock) {
+            vectorTileLayers[task.layerId]
+        } ?: return
+        val result = runtimeLayer.tileLoader.loadTile(
+            source = runtimeLayer.source,
+            layerId = runtimeLayer.layer.id,
+            tileId = task.tileId
+        )
+        when (result) {
+            is VectorraMvtTileLoadResult.Loaded -> {
+                synchronized(vectorTileRuntimeLock) {
+                    val current = vectorTileLayers[task.layerId] ?: return
+                    if (current.loadGeneration == task.loadGeneration &&
+                        current.targetTileId(cameraState) == task.tileId
+                    ) {
+                        current.store.putDecodedTile(task.tileId, result.decodedTile)
+                    }
+                }
+            }
+            is VectorraMvtTileLoadResult.Failed -> {
+                val isCurrent = synchronized(vectorTileRuntimeLock) {
+                    vectorTileLayers[task.layerId]?.loadGeneration == task.loadGeneration
+                }
+                if (!isCurrent) {
+                    return
+                }
+                emitResourceStatus(
+                    kind = VectorraResourceKind.VECTOR,
+                    sourceId = runtimeLayer.source.id,
+                    layerId = runtimeLayer.layer.id,
+                    state = VectorraResourceLoadState.FAILED,
+                    eventSource = VectorraResourceEventSource.ENGINE,
+                    error = VectorraResourceLoadError(
+                        type = result.errorType,
+                        message = result.message
+                    )
+                )
+            }
         }
     }
 
@@ -1543,6 +1635,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             synchronized(vectorTileRuntimeLock) {
                 vectorTileLayers.values.forEach { it.store.clear() }
                 vectorTileLayers.clear()
+                vectorTileLoadGenerationByLayerId.clear()
+                vectorTileLoadScheduled = false
             }
             VectorraNative.destroy(nativeHandle)
         }
@@ -1704,9 +1798,49 @@ private data class Vectorra3DTilesRuntimeContentTask(
 private data class VectorraVectorTileRuntimeLayer(
     val source: VectorraVectorTileSource,
     val layer: VectorraVectorTileLayer,
+    val loadGeneration: Long,
     val store: VectorraMvtRuntimeTileStore,
     val tileLoader: com.vectorra.maps.mvt.VectorraMvtTileLoader
+) {
+    fun targetTileId(camera: CameraState): VectorraMvtTileId? {
+        if (!layer.visible) {
+            return null
+        }
+        val minZoom = maxOf(source.minZoom, layer.minZoom)
+        val maxZoom = minOf(source.maxZoom, layer.maxZoom)
+        if (camera.zoom < minZoom || camera.zoom > maxZoom) {
+            return null
+        }
+
+        val z = floor(camera.zoom).toInt().coerceIn(minZoom, maxZoom)
+        val tileCount = 1 shl z
+        val x = floor(((camera.longitude + 180.0) / 360.0) * tileCount)
+            .toInt()
+            .floorMod(tileCount)
+        val latitude = camera.latitude.coerceIn(
+            MIN_LATITUDE_FOR_MVT_TILE,
+            MAX_LATITUDE_FOR_MVT_TILE
+        )
+        val sinLatitude = sin(Math.toRadians(latitude))
+        val y = floor(
+            (0.5 - ln((1.0 + sinLatitude) / (1.0 - sinLatitude)) / (4.0 * PI)) * tileCount
+        ).toInt().coerceIn(0, tileCount - 1)
+        return VectorraMvtTileId(z = z, x = x, y = y)
+    }
+}
+
+private data class VectorraVectorTileRuntimeTask(
+    val layerId: String,
+    val loadGeneration: Long,
+    val tileId: VectorraMvtTileId
 )
+
+private fun Int.floorMod(modulus: Int): Int {
+    return ((this % modulus) + modulus) % modulus
+}
+
+private const val MIN_LATITUDE_FOR_MVT_TILE = -85.0511287798066
+private const val MAX_LATITUDE_FOR_MVT_TILE = 85.0511287798066
 
 private data class EcefPoint(
     val x: Double,
