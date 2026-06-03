@@ -3005,6 +3005,38 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Android Instrumentation APK Checker Self-Test
+
+Added a self-test for the Android instrumentation APK packaging checker.
+
+Completed:
+
+- Added `tools/test-android-test-apk-checker.ps1`.
+- The self-test creates valid, missing, empty, and native-library APK fixtures under `build/android-test-apk-checker-test`.
+- Wired the self-test into `tools/check-android-acceptance.ps1` after the real instrumentation APK packaging check.
+- Updated the Android 1.0 acceptance record, release versioning checklist, and 0.8.0 beta development notes to document the instrumentation APK checker self-test.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-android-test-apk.ps1','.\tools\test-android-test-apk-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-android-test-apk-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-android-test-apk.ps1`, `test-android-test-apk-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-android-test-apk-checker.ps1` passed and rejected the missing APK, empty APK, and native `.so` APK fixtures.
+- An initial full acceptance run exposed that the new self-test left `$LASTEXITCODE=1` after expected subprocess failures, which caused the next smoke checker self-test to misread its valid fixture as failed.
+- Fixed `test-android-test-apk-checker.ps1` to preserve and restore the caller's `$LASTEXITCODE`.
+- Reran `test-android-test-apk-checker.ps1` followed by `test-device-smoke-result-checker.ps1`; both passed in sequence.
+- Reran `check-android-acceptance.ps1`; it passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Android Instrumentation APK Packaging Check
 
 Added a local acceptance check for the SDK instrumentation APK packaging policy.
