@@ -3005,6 +3005,37 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Snapshot Count Validation
+
+Tightened snapshot log validation so the runtime gate requires both the initial snapshot smoke and the post-recreate snapshot smoke to report nonblank output.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` to require at least two `Snapshot <width>x<height> nonblank=true` logcat entries.
+- Kept the 3D Tiles close-zoom snapshot as a separate required logcat pattern.
+- Updated `tools/test-device-smoke-result-checker.ps1` valid fixtures to include two sample snapshot logs.
+- Added a negative fixture where only one sample snapshot log is present and must fail.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning checklist, and 0.8.0 beta development notes to document the stricter snapshot-count gate.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed; the blank snapshot fixture failed with zero nonblank snapshot logs and the new single-snapshot fixture failed with one nonblank snapshot log.
+- Search found the snapshot-count requirement in the checker, self-test, Android 1.0 acceptance record, ABI/device matrix, release versioning checklist, release notes, and this log.
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Post-Recreate Snapshot Marker
 
 Made the post-recreate snapshot smoke report marker distinct from the earlier regular snapshot action.
