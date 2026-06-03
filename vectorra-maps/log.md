@@ -3005,6 +3005,40 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Labeled Post-Recreate Snapshot
+
+Replaced snapshot-count inference with an explicit post-recreate snapshot sample action and log label.
+
+Completed:
+
+- Added `runPostRecreateSnapshotSmoke()` in `vectorra-sample` and registered `vectorra.sample.action=post-recreate-snapshot`.
+- The new action calls the existing snapshot helper with label `Post-recreate snapshot`, so logcat distinguishes it from the regular `Snapshot` smoke.
+- Simplified `tools/run-device-smoke.ps1` so the report action and sample action are both `post-recreate-snapshot`.
+- Updated `tools/check-device-smoke-result.ps1` to require both `Snapshot ... nonblank=true` and `Post-recreate snapshot ... nonblank=true`.
+- Updated `tools/test-device-smoke-result-checker.ps1` fixtures so missing the post-recreate snapshot log fails directly.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning checklist, and 0.8.0 beta development notes to document the labeled post-recreate snapshot log requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed; the missing post-recreate snapshot log fixture failed with `Required logcat pattern missing: Post-recreate snapshot\s+\d+x\d+\s+nonblank=true`.
+- Search confirmed `post-recreate-snapshot` and `Post-recreate snapshot` are present in the sample action, runtime smoke script, result checker, self-test, Android 1.0 acceptance record, ABI/device matrix, and this log.
+- The first `:vectorra-sample:assembleDebug` attempt failed because `ANDROID_HOME`/`ANDROID_SDK_ROOT` were not set in that shell; rerunning with `C:\Users\myg\AppData\Local\Android\Sdk` passed.
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Snapshot Count Validation
 
 Tightened snapshot log validation so the runtime gate requires both the initial snapshot smoke and the post-recreate snapshot smoke to report nonblank output.

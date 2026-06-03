@@ -661,6 +661,11 @@ class MainActivity : Activity() {
         logSnapshotSmoke(label = "Snapshot", updateStatus = true)
     }
 
+    private fun runPostRecreateSnapshotSmoke() {
+        statusText.text = "Post-recreate snapshot requested"
+        logSnapshotSmoke(label = "Post-recreate snapshot", updateStatus = true)
+    }
+
     private fun logSnapshotSmoke(label: String, updateStatus: Boolean) {
         mapView.snapshot { bitmap, error ->
             if (error != null || bitmap == null) {
@@ -1004,6 +1009,7 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_OFFLINE_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = false)
                 SAMPLE_ACTION_CANCEL_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = true)
                 SAMPLE_ACTION_SNAPSHOT -> runSnapshotSmoke()
+                SAMPLE_ACTION_POST_RECREATE_SNAPSHOT -> runPostRecreateSnapshotSmoke()
                 SAMPLE_ACTION_GEOJSON -> loadSampleGeoJson()
                 SAMPLE_ACTION_DRAW -> loadSampleDrawAnnotations()
                 SAMPLE_ACTION_CLEAR_DRAW -> clearSampleDrawAnnotations()
@@ -1295,6 +1301,7 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_OFFLINE_PREFETCH = "offline-prefetch"
         const val SAMPLE_ACTION_CANCEL_PREFETCH = "cancel-prefetch"
         const val SAMPLE_ACTION_SNAPSHOT = "snapshot"
+        const val SAMPLE_ACTION_POST_RECREATE_SNAPSHOT = "post-recreate-snapshot"
         const val SAMPLE_ACTION_GEOJSON = "geojson"
         const val SAMPLE_ACTION_DRAW = "draw"
         const val SAMPLE_ACTION_CLEAR_DRAW = "clear-draw"

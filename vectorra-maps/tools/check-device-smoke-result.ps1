@@ -262,9 +262,13 @@ if ($uiText -notmatch 'com\.vectorra\.sample') {
 
 $logText = Get-Content -Path $logcat -Raw
 $snapshotPattern = 'Snapshot\s+\d+x\d+\s+nonblank=true'
-$snapshotMatches = [regex]::Matches($logText, $snapshotPattern)
-if ($snapshotMatches.Count -lt 2) {
-    throw "Expected at least 2 nonblank snapshot log entries, found $($snapshotMatches.Count): $snapshotPattern"
+if ($logText -notmatch $snapshotPattern) {
+    throw "Required logcat pattern missing: $snapshotPattern"
+}
+
+$postRecreateSnapshotPattern = 'Post-recreate snapshot\s+\d+x\d+\s+nonblank=true'
+if ($logText -notmatch $postRecreateSnapshotPattern) {
+    throw "Required logcat pattern missing: $postRecreateSnapshotPattern"
 }
 
 $tilesZoomSnapshotPattern = '3D Tiles zoom snapshot\s+\d+x\d+\s+nonblank=true'
