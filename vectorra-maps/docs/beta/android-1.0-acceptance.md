@@ -8,9 +8,11 @@ Run from `vectorra-maps/`:
 
 ```powershell
 .\tools\check-android-acceptance.ps1
+.\tools\test-device-smoke-result-checker.ps1
 ```
 
 This script runs the full local gate and then checks native library entries in the generated APK/AAR artifacts.
+The checker self-test validates the runtime smoke result verifier against complete, crash-log, and missing-action fixtures before a physical device run is trusted.
 
 Equivalent expanded command:
 
@@ -19,6 +21,7 @@ $env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
 .\tools\check-native-libs.ps1
+.\tools\test-device-smoke-result-checker.ps1
 ```
 
 Current local result: passed.

@@ -2515,3 +2515,30 @@ Results:
 Known remaining work:
 
 - Run `.\tools\run-device-smoke.ps1` and `.\tools\check-device-smoke-result.ps1` after adb reports the physical device as `device`.
+
+### Device Smoke Result Checker Self-Test
+
+Added a local self-test for the runtime smoke result verifier.
+
+Completed:
+
+- Added `tools/test-device-smoke-result-checker.ps1`.
+- The self-test creates synthetic smoke artifacts under `build/device-smoke-checker-test`.
+- It verifies that a complete report passes, a crash-log report fails, and a missing-action report fails.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` to run the self-test before trusting physical device smoke results.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `run-device-smoke.ps1`, `check-device-smoke-result.ps1`, and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed: the valid fixture was accepted, the crash-log fixture failed, and the missing-action fixture failed.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
