@@ -94,6 +94,12 @@ function Assert-PngDimensions {
 
 $requiredReportPatterns = @(
     'installApk=',
+    'serial=',
+    'installedApk=',
+    'model=',
+    'sdk=',
+    'abis=',
+    'gpu=',
     'logcatCleared=true',
     'forceStopBeforeColdStart=true',
     'startSample=cold-start',

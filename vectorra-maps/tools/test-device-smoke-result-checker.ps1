@@ -46,12 +46,27 @@ function New-SmokeFixture {
         [string]$Stamp,
         [string]$LogText = "VectorraSample smoke completed",
         [string]$OmitAction = "",
-        [switch]$InvalidPng
+        [switch]$InvalidPng,
+        [string]$OmitMetadata = ""
     )
 
     $reportPath = Join-Path $testRoot "device-smoke-$Stamp.txt"
-    $lines = @(
+    $lines = @()
+    $metadataLines = @(
         "installApk=vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
+        "serial=test-device",
+        "installedApk=vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
+        "model=Vectorra Test Device",
+        "sdk=35",
+        "abis=arm64-v8a,armeabi-v7a",
+        "gpu=Vulkan 1.3 test renderer"
+    )
+    foreach ($line in $metadataLines) {
+        if ($line -notmatch "^$([regex]::Escape($OmitMetadata))=") {
+            $lines += $line
+        }
+    }
+    $lines += @(
         "logcatCleared=true",
         "forceStopBeforeColdStart=true",
         "startSample=cold-start delaySeconds=10",
@@ -139,5 +154,8 @@ Invoke-CheckerFailure $missingActionReport "missing action"
 
 $invalidPngReport = New-SmokeFixture -Stamp "20260604-000003" -InvalidPng
 Invoke-CheckerFailure $invalidPngReport "invalid png"
+
+$missingMetadataReport = New-SmokeFixture -Stamp "20260604-000004" -OmitMetadata "gpu"
+Invoke-CheckerFailure $missingMetadataReport "missing metadata"
 
 Write-Host "Device smoke result checker self-test passed."

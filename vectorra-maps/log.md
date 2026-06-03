@@ -2543,6 +2543,32 @@ Known remaining work:
 
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Metadata Validation
+
+Strengthened runtime smoke result metadata validation.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` to require `serial`, `installedApk`, `model`, `sdk`, `abis`, and `gpu` report entries.
+- Updated `tools/test-device-smoke-result-checker.ps1` to include device metadata in valid fixtures and to require a missing metadata fixture to fail.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the metadata validation behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1','.\tools\check-android-acceptance.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `check-android-acceptance.ps1`.
+- `test-device-smoke-result-checker.ps1` passed: valid fixture passed; crash-log, missing-action, invalid-screenshot, and missing-metadata fixtures failed as expected.
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Device Smoke Screenshot PNG Validation
 
 Strengthened runtime smoke result artifact validation.
