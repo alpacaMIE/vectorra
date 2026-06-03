@@ -2372,3 +2372,32 @@ Results:
 Known remaining work:
 
 - Run `.\tools\run-device-smoke.ps1` successfully after adb reports a real Vulkan Android device in `device` state.
+
+### Device Runtime Lifecycle Smoke Script
+
+Expanded the real-device runtime smoke script to cover lifecycle gates.
+
+Completed:
+
+- Added cold-start launch before action smokes.
+- Added HOME pause and resume.
+- Added force-stop destroy and recreate.
+- Added UI dump collection next to the screenshot and logcat artifacts.
+- Added per-action delays for longer-running MVT, 3D Tiles, and offline smoke actions.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` to describe the lifecycle and UI dump coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\run-device-smoke.ps1), [ref]$null, [ref]$errors)
+.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+```
+
+Results:
+
+- PowerShell parser check passed for `run-device-smoke.ps1`.
+- `run-device-smoke.ps1` still failed early as expected because adb reported `4tqoz9bmfu8t8pr8 offline`.
+
+Known remaining work:
+
+- Run the lifecycle-capable runtime smoke successfully after adb reports a real Vulkan Android device in `device` state.

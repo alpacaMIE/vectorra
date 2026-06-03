@@ -52,6 +52,20 @@ function Smoke-Action {
     Start-Sleep -Seconds $DelaySeconds
 }
 
+function Start-Sample {
+    param([string]$Label, [int]$DelaySeconds = $ActionDelaySeconds)
+    Write-Host "Starting sample: $Label"
+    Invoke-Adb shell am start -n com.vectorra.sample/.MainActivity | Out-Host
+    Start-Sleep -Seconds $DelaySeconds
+}
+
+function Lifecycle-Step {
+    param([string]$Label, [scriptblock]$Command, [int]$DelaySeconds = $ActionDelaySeconds)
+    Write-Host "Running lifecycle step: $Label"
+    & $Command | Out-Host
+    Start-Sleep -Seconds $DelaySeconds
+}
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $report = Join-Path $out "device-smoke-$stamp.txt"
 
@@ -67,37 +81,49 @@ $props = [ordered]@{
 $props.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Tee-Object -FilePath $report -Append
 
 $actions = @(
-    "mvt",
-    "pan-mvt",
-    "hidden-mvt",
-    "readd-mvt",
-    "mvt-mbtiles",
-    "geojson",
-    "draw",
-    "clear-draw",
-    "location",
-    "location-follow",
-    "clear-location",
-    "snapshot",
-    "3dtiles",
-    "zoom-3dtiles",
-    "bad-3dtiles",
-    "readd-3dtiles",
-    "offline-prefetch",
-    "cancel-prefetch"
+    @{ name = "mvt"; delay = $ActionDelaySeconds },
+    @{ name = "pan-mvt"; delay = 10 },
+    @{ name = "hidden-mvt"; delay = $ActionDelaySeconds },
+    @{ name = "readd-mvt"; delay = 10 },
+    @{ name = "mvt-mbtiles"; delay = $ActionDelaySeconds },
+    @{ name = "geojson"; delay = $ActionDelaySeconds },
+    @{ name = "draw"; delay = $ActionDelaySeconds },
+    @{ name = "clear-draw"; delay = 4 },
+    @{ name = "location"; delay = $ActionDelaySeconds },
+    @{ name = "location-follow"; delay = $ActionDelaySeconds },
+    @{ name = "clear-location"; delay = 4 },
+    @{ name = "snapshot"; delay = 4 },
+    @{ name = "3dtiles"; delay = 14 },
+    @{ name = "zoom-3dtiles"; delay = 24 },
+    @{ name = "bad-3dtiles"; delay = $ActionDelaySeconds },
+    @{ name = "readd-3dtiles"; delay = 24 },
+    @{ name = "offline-prefetch"; delay = 16 },
+    @{ name = "cancel-prefetch"; delay = 10 }
 )
 
 Invoke-Adb logcat -c
+Invoke-Adb shell am force-stop com.vectorra.sample | Out-Null
+Start-Sample "cold-start" 10
 foreach ($action in $actions) {
-    Smoke-Action $action
+    Smoke-Action $action.name $action.delay
 }
 
+Lifecycle-Step "pause-home" { Invoke-Adb shell input keyevent KEYCODE_HOME } 4
+Start-Sample "resume-after-home" 10
+Lifecycle-Step "destroy-force-stop" { Invoke-Adb shell am force-stop com.vectorra.sample } 4
+Start-Sample "recreate-after-force-stop" 10
 Smoke-Action "snapshot" 4
 $screenshotDevice = "/sdcard/vectorra-smoke-$stamp.png"
 $screenshotHost = Join-Path $out "vectorra-smoke-$stamp.png"
 Invoke-Adb shell screencap -p $screenshotDevice | Out-Null
 Invoke-Adb pull $screenshotDevice $screenshotHost | Tee-Object -FilePath $report -Append
 Invoke-Adb shell rm $screenshotDevice | Out-Null
+
+$uiDevice = "/sdcard/vectorra-smoke-$stamp.xml"
+$uiHost = Join-Path $out "vectorra-smoke-$stamp.xml"
+Invoke-Adb shell uiautomator dump $uiDevice | Tee-Object -FilePath $report -Append
+Invoke-Adb pull $uiDevice $uiHost | Tee-Object -FilePath $report -Append
+Invoke-Adb shell rm $uiDevice | Out-Null
 
 Invoke-Adb logcat -d -s VectorraSample VectorraNative Vectorra | Tee-Object -FilePath (Join-Path $out "device-smoke-$stamp.log")
 

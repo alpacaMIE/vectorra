@@ -45,7 +45,7 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 .\tools\run-device-smoke.ps1
 ```
 
-The script installs the `arm64-v8a` sample APK, records device properties, runs the sample smoke actions, captures a screenshot, and writes logs under `build/device-smoke/`.
+The script installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, and writes logs under `build/device-smoke/`.
 
 Record:
 

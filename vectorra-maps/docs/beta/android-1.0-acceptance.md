@@ -43,6 +43,8 @@ Runtime command:
 .\tools\run-device-smoke.ps1
 ```
 
+The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, and logcat export.
+
 Latest adb state:
 
 ```text
