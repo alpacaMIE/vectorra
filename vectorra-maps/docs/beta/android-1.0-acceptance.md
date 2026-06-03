@@ -37,6 +37,12 @@ Validated outputs:
 
 Current device result: not passed.
 
+Runtime command:
+
+```powershell
+.\tools\run-device-smoke.ps1
+```
+
 Latest adb state:
 
 ```text

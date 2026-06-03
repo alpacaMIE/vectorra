@@ -39,6 +39,14 @@ Expected SDK AAR native libraries:
 
 At least one real Vulkan-capable Android device must run the full smoke before release readiness is declared.
 
+Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entry:
+
+```powershell
+.\tools\run-device-smoke.ps1
+```
+
+The script installs the `arm64-v8a` sample APK, records device properties, runs the sample smoke actions, captures a screenshot, and writes logs under `build/device-smoke/`.
+
 Record:
 
 - Device model

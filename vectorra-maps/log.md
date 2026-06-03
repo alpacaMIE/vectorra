@@ -2343,3 +2343,32 @@ Results:
 Known remaining work:
 
 - Run the ABI/device runtime smoke matrix after adb returns to `device`.
+
+### Device Runtime Smoke Script
+
+Made the real-device runtime smoke gate repeatable for when adb returns to `device`.
+
+Completed:
+
+- Added `tools/run-device-smoke.ps1`.
+- The script installs the sample APK, records device properties, runs sample smoke actions, captures a screenshot, and writes logs under `build/device-smoke/`.
+- The script fails early if the selected adb device is missing or not in `device` state, so an `offline` device cannot be accidentally marked as passed.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the runtime smoke command.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\run-device-smoke.ps1), [ref]$null, [ref]$errors)
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\check-native-libs.ps1), [ref]$null, [ref]$errors)
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\check-android-acceptance.ps1), [ref]$null, [ref]$errors)
+```
+
+Results:
+
+- `run-device-smoke.ps1` failed early as expected because adb reported `4tqoz9bmfu8t8pr8 offline`.
+- PowerShell parser checks passed for all three scripts.
+
+Known remaining work:
+
+- Run `.\tools\run-device-smoke.ps1` successfully after adb reports a real Vulkan Android device in `device` state.
