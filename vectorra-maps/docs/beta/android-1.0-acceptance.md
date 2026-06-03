@@ -1,0 +1,41 @@
+# Android 1.0 Acceptance Record
+
+This record separates local release gates from runtime device gates.
+
+## Local Gates
+
+Run from `vectorra-maps/`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
+```
+
+Current local result: passed.
+
+Validated outputs:
+
+- `vectorra-maps-debug.aar`
+- `vectorra-maps-release.aar`
+- `vectorra-maps-turf-debug.aar`
+- `vectorra-maps-turf-release.aar`
+- `vectorra-sample-arm64-v8a-debug.apk`
+- `vectorra-sample-x86_64-debug.apk`
+- `vectorra-sample-universal-debug.apk`
+
+## Runtime Device Gate
+
+Current device result: not passed.
+
+Latest adb state:
+
+```text
+4tqoz9bmfu8t8pr8 offline
+```
+
+Do not declare Android 1.0 release readiness until a real Vulkan-capable Android device completes the [ABI and device matrix](abi-device-matrix.md).
+
+## Release Risk
+
+The current source tree has passed local unit, build, AAR publication, published-AAR consumption, and ABI packaging checks. It has not passed the required runtime device smoke for cold start, map-ready status, bad-resource UI, raster/DEM/MVT/MBTiles/GeoJSON/draw/location/snapshot/3D Tiles flows, pause/resume or rotation, and destroy/recreate.

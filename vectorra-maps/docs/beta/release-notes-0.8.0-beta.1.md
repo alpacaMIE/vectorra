@@ -121,6 +121,7 @@ Targeted tests added or expanded include:
 
 - Device smoke for `offline-prefetch` and `cancel-prefetch` has not run because adb reported device `4tqoz9bmfu8t8pr8` as `offline`.
 - `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` still needs to be rerun on a device once adb returns to `device`.
+- Android 1.0 local acceptance gates have passed, but runtime release readiness is still blocked by the device gate recorded in [Android 1.0 acceptance record](android-1.0-acceptance.md).
 - A published-AAR verification pass was run successfully against the current Gradle project version `0.5.0-beta.1`:
 
 ```powershell

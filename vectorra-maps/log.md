@@ -2276,3 +2276,35 @@ Results:
 Known remaining work:
 
 - P4.T6 is not fully complete until at least one real Vulkan Android device runs the full smoke matrix and records model/API/ABI/GPU/Vulkan details.
+
+### P4.T7 Android 1.0 Local Acceptance Gate
+
+Ran the Android 1.0 local acceptance gate and recorded the remaining runtime release risk.
+
+Completed:
+
+- Added `docs/beta/android-1.0-acceptance.md`.
+- Linked the acceptance record from `README.md`.
+- Updated `docs/beta/release-versioning.md` to point at the acceptance record.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` with the local acceptance result and device-gate risk.
+- Ran SDK unit tests, Turf unit tests, sample debug assemble, full debug assemble, Maven-local publication for both artifacts, and sample build from the published AAR.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps` and `D:\workspace\code\vectorra`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest :vectorra-maps-turf:testDebugUnitTest :vectorra-sample:assembleDebug assembleDebug :vectorra-maps:publishReleasePublicationToMavenLocal :vectorra-maps-turf:publishReleasePublicationToMavenLocal "-Pvectorra.sample.usePublishedAar=true" :vectorra-sample:assembleDebug
+& "$env:ANDROID_HOME\platform-tools\adb.exe" devices -l
+```
+
+Results:
+
+- Local acceptance command passed.
+- Outputs exist for `vectorra-maps-debug.aar`, `vectorra-maps-release.aar`, `vectorra-maps-turf-debug.aar`, `vectorra-maps-turf-release.aar`, `vectorra-sample-arm64-v8a-debug.apk`, `vectorra-sample-x86_64-debug.apk`, and `vectorra-sample-universal-debug.apk`.
+- The sample build emitted the existing non-fatal strip warning for `librocky.so` and `libvectorra_jni.so`, then packaged the libraries as-is.
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Android 1.0 release readiness cannot be declared until the real-device Vulkan smoke matrix passes.
