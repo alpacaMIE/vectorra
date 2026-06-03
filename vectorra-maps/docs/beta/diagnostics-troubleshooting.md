@@ -123,6 +123,7 @@ Sample smoke actions:
 ```powershell
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action offline-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action cancel-prefetch
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action snapshot
 ```
 
 ## Common Failures

@@ -2053,3 +2053,35 @@ Results:
 Known remaining work:
 
 - Keep this guard updated if the smoke API is removed before 1.0 instead of retained as deprecated experimental.
+
+### P4.T3 Snapshot Sample Smoke
+
+Expanded sample coverage for the Android 1.0 sample completeness pass.
+
+Completed:
+
+- Added a `Snapshot` sample button.
+- Added adb smoke action `snapshot`.
+- Implemented `runSnapshotSmoke()` using `VectorraMapView.snapshot(...)`.
+- Snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check, then recycles the bitmap.
+- Updated `docs/beta/release-notes-0.8.0-beta.1.md` and `docs/beta/diagnostics-troubleshooting.md` with the snapshot smoke action.
+
+Verification commands were run from `D:\workspace\code\vectorra` and `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+rg -n "Snapshot|SAMPLE_ACTION_SNAPSHOT|snapshot|hasVisiblePixel|vectorra.sample.action snapshot" .\vectorra-maps\vectorra-sample\src\main\java\com\vectorra\sample\MainActivity.kt .\vectorra-maps\docs\beta
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- Search found the sample button, snapshot helper, adb action, and docs references.
+- `:vectorra-sample:assembleDebug` passed.
+- Attempted `:vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.*Snapshot*"`, but Gradle failed because no tests match that filter; this is a missing-test result, not a snapshot implementation failure.
+
+Known remaining work:
+
+- Run the `snapshot` adb smoke on a real device once adb returns to `device`.
+- P4.T3 still needs explicit sample controls/actions for location and GeoJSON/drawing.

@@ -2,6 +2,7 @@ package com.vectorra.sample
 
 import android.app.Activity
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -238,6 +239,9 @@ class MainActivity : Activity() {
                 },
                 sampleButton("Cancel PF") {
                     runOfflinePrefetchSmoke(cancelAfterFirst = true)
+                },
+                sampleButton("Snapshot") {
+                    runSnapshotSmoke()
                 }
             ))
 
@@ -618,6 +622,34 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun runSnapshotSmoke() {
+        statusText.text = "Snapshot requested"
+        mapView.snapshot { bitmap, error ->
+            if (error != null || bitmap == null) {
+                val text = "Snapshot error: ${error?.message ?: "empty bitmap"}"
+                statusText.text = text
+                Log.e(LOG_TAG, text, error?.cause)
+                return@snapshot
+            }
+            val text = "Snapshot ${bitmap.width}x${bitmap.height} nonblank=${bitmap.hasVisiblePixel()}"
+            statusText.text = text
+            Log.i(LOG_TAG, text)
+            bitmap.recycle()
+        }
+    }
+
+    private fun Bitmap.hasVisiblePixel(): Boolean {
+        if (width <= 0 || height <= 0) {
+            return false
+        }
+        val samplePoints = listOf(
+            0 to 0,
+            width / 2 to height / 2,
+            (width - 1) to (height - 1)
+        )
+        return samplePoints.any { (x, y) -> getPixel(x, y) != Color.TRANSPARENT }
+    }
+
     private fun sampleOfflineMvtSource(): VectorraVectorTileSource {
         return VectorraVectorTileSource.xyz(
             id = "$SAMPLE_MVT_SOURCE_ID-offline-prefetch",
@@ -752,6 +784,7 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_ZOOM_3D_TILES -> zoomSample3DTiles()
                 SAMPLE_ACTION_OFFLINE_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = false)
                 SAMPLE_ACTION_CANCEL_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = true)
+                SAMPLE_ACTION_SNAPSHOT -> runSnapshotSmoke()
                 else -> statusText.text = "Unknown sample action: $action"
             }
         }
@@ -1014,6 +1047,7 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_ZOOM_3D_TILES = "zoom-3dtiles"
         const val SAMPLE_ACTION_OFFLINE_PREFETCH = "offline-prefetch"
         const val SAMPLE_ACTION_CANCEL_PREFETCH = "cancel-prefetch"
+        const val SAMPLE_ACTION_SNAPSHOT = "snapshot"
         const val PBF_WIRE_VARINT = 0
         const val PBF_WIRE_LENGTH_DELIMITED = 2
         const val MVT_TILE_LAYERS_FIELD = 3

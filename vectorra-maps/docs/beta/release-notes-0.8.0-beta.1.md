@@ -68,6 +68,7 @@ Added adb actions:
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt-mbtiles
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action offline-prefetch
 adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action cancel-prefetch
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action snapshot
 ```
 
 Sample UI additions:
@@ -75,8 +76,9 @@ Sample UI additions:
 - `MVT MBTiles`
 - `Offline PF`
 - `Cancel PF`
+- `Snapshot`
 
-The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag.
+The offline prefetch smoke logs progress, final result status, cache status before and after prefetch, and cache status after cleanup using the `VectorraSample` log tag. The snapshot smoke reports bitmap dimensions and a sampled nonblank-pixel check.
 
 ## Fixes And Compatibility Notes
 
