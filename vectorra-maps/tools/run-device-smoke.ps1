@@ -1,7 +1,7 @@
 param(
     [string]$AndroidHome = "C:\Users\myg\AppData\Local\Android\Sdk",
     [string]$DeviceSerial = "",
-    [string]$Apk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
+    [string]$Apk = "",
     [string]$OutputDirectory = "build/device-smoke",
     [int]$ActionDelaySeconds = 8
 )
@@ -12,11 +12,6 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $adb = Join-Path $AndroidHome "platform-tools/adb.exe"
 if (-not (Test-Path $adb)) {
     throw "adb not found at $adb"
-}
-
-$apkPath = Join-Path $repoRoot $Apk
-if (-not (Test-Path $apkPath)) {
-    throw "APK not found: $Apk"
 }
 
 $devices = & $adb devices -l
@@ -35,6 +30,23 @@ if (-not $selectedLine) {
 }
 if ($selectedLine -notmatch "^\S+\s+device(\s|$)") {
     throw "Device $DeviceSerial is not online: $selectedLine"
+}
+
+if ($Apk.Length -eq 0) {
+    $deviceAbis = (& $adb -s $DeviceSerial shell getprop ro.product.cpu.abilist) -join ""
+    if ($deviceAbis -match "(^|,)arm64-v8a(,|$)") {
+        $Apk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk"
+    } elseif ($deviceAbis -match "(^|,)x86_64(,|$)") {
+        $Apk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-x86_64-debug.apk"
+    } else {
+        $Apk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-universal-debug.apk"
+    }
+    Write-Host "Selected APK for ABI list '$deviceAbis': $Apk"
+}
+
+$apkPath = Join-Path $repoRoot $Apk
+if (-not (Test-Path $apkPath)) {
+    throw "APK not found: $Apk"
 }
 
 $out = Join-Path $repoRoot $OutputDirectory
@@ -73,6 +85,7 @@ Invoke-Adb install -r $apkPath | Tee-Object -FilePath $report
 
 $props = [ordered]@{
     serial = $DeviceSerial
+    installedApk = $Apk
     model = (Invoke-Adb shell getprop ro.product.model) -join "`n"
     sdk = (Invoke-Adb shell getprop ro.build.version.sdk) -join "`n"
     abis = (Invoke-Adb shell getprop ro.product.cpu.abilist) -join "`n"

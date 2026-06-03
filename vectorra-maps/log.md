@@ -2401,3 +2401,33 @@ Results:
 Known remaining work:
 
 - Run the lifecycle-capable runtime smoke successfully after adb reports a real Vulkan Android device in `device` state.
+
+### Device Smoke APK Selection
+
+Made the runtime smoke script usable for both physical ARM devices and x86_64 emulators.
+
+Completed:
+
+- Changed `tools/run-device-smoke.ps1` so `-Apk` is optional.
+- When `-Apk` is omitted, the script reads `ro.product.cpu.abilist` from the selected online device and chooses:
+  - `vectorra-sample-arm64-v8a-debug.apk` for `arm64-v8a`
+  - `vectorra-sample-x86_64-debug.apk` for `x86_64`
+  - `vectorra-sample-universal-debug.apk` otherwise
+- Added the selected APK path to the smoke report.
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the automatic APK selection behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\run-device-smoke.ps1), [ref]$null, [ref]$errors)
+.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+```
+
+Results:
+
+- PowerShell parser check passed for `run-device-smoke.ps1`.
+- The script still failed early as expected because adb reported `4tqoz9bmfu8t8pr8 offline`, before any APK install attempt.
+
+Known remaining work:
+
+- Run `.\tools\run-device-smoke.ps1` on an online `arm64-v8a` device and, if available, an online `x86_64` emulator to exercise automatic APK selection.

@@ -45,6 +45,8 @@ Runtime command:
 
 The runtime script performs cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, and logcat export.
 
+The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided.
+
 Latest adb state:
 
 ```text

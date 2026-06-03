@@ -47,6 +47,14 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 
 The script installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, and writes logs under `build/device-smoke/`.
 
+By default the script selects the split sample APK from the device ABI list:
+
+- `arm64-v8a` device -> `vectorra-sample-arm64-v8a-debug.apk`
+- `x86_64` device -> `vectorra-sample-x86_64-debug.apk`
+- otherwise -> `vectorra-sample-universal-debug.apk`
+
+Pass `-Apk <relative-path>` to override this selection.
+
 Record:
 
 - Device model
