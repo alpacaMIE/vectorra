@@ -20,7 +20,7 @@ class VectorraOfflineRasterSourceTest {
             assertEquals(VectorraOfflineRasterSource.DEFAULT_MAX_ZOOM, source.maxZoom)
             assertEquals(TileScheme.XYZ, source.scheme)
             assertTrue(source.templateUrl.startsWith(root.absoluteFile.toURI().toString().trimEnd('/')))
-            assertTrue(source.templateUrl.endsWith("/{z}/{y}/{x}.jpg"))
+            assertTrue(source.templateUrl.endsWith("/{z}/{x}/{y}.jpg"))
         } finally {
             root.deleteRecursively()
         }
@@ -43,7 +43,7 @@ class VectorraOfflineRasterSourceTest {
             assertEquals(512, source.tileSize)
             assertEquals(2, source.minZoom)
             assertEquals(9, source.maxZoom)
-            assertTrue(source.templateUrl.endsWith("/{z}/{y}/{x}.png"))
+            assertTrue(source.templateUrl.endsWith("/{z}/{x}/{y}.png"))
         } finally {
             root.deleteRecursively()
         }

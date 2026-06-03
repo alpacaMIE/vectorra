@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.coroutines.Continuation
@@ -16,6 +17,62 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.startCoroutine
 
 class TileCacheAndSchedulerTest {
+    @Test
+    fun tileCacheStoreServesMemoryHit() {
+        val memoryCache = TileMemoryCache(maxBytes = 1024)
+        val store = TileCacheStore(memoryCache = memoryCache)
+        val request = TileRequest(url = "https://tiles.example/memory.png")
+
+        store.put(TileResponse(request = request, statusCode = 200, body = "memory".toByteArray()))
+        val cached = store.get(request)
+
+        requireNotNull(cached)
+        assertEquals(TileCacheStatus.MEMORY, cached.cacheStatus)
+        assertEquals("memory", cached.body.decodeToString())
+    }
+
+    @Test
+    fun tileCacheStoreServesDiskHit() {
+        val root = Files.createTempDirectory("vectorra-tile-cache-store").toFile()
+        try {
+            val request = TileRequest(url = "https://tiles.example/disk.png")
+            TileCacheStore(diskCache = TileDiskCache(root, maxBytes = 1024))
+                .put(TileResponse(request = request, statusCode = 200, body = "disk".toByteArray()))
+
+            val cached = TileCacheStore(diskCache = TileDiskCache(root, maxBytes = 1024)).get(request)
+
+            requireNotNull(cached)
+            assertEquals(TileCacheStatus.DISK, cached.cacheStatus)
+            assertEquals("disk", cached.body.decodeToString())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun tileCacheStoreWritesSuccessfulResponse() {
+        val memoryCache = TileMemoryCache(maxBytes = 1024)
+        val store = TileCacheStore(memoryCache = memoryCache)
+        val request = TileRequest(url = "https://tiles.example/write.png")
+
+        store.put(TileResponse(request = request, statusCode = 204, body = "write".toByteArray()))
+
+        assertEquals(TileCacheStatus.MEMORY, store.get(request)?.cacheStatus)
+        assertEquals(1, memoryCache.entryCount())
+    }
+
+    @Test
+    fun tileCacheStoreSkipsUncacheableRequest() {
+        val memoryCache = TileMemoryCache(maxBytes = 1024)
+        val store = TileCacheStore(memoryCache = memoryCache)
+        val request = TileRequest(method = "POST", url = "https://tiles.example/post.png")
+
+        store.put(TileResponse(request = request, statusCode = 200, body = "post".toByteArray()))
+
+        assertNull(store.get(request))
+        assertEquals(0, memoryCache.entryCount())
+    }
+
     @Test
     fun servesSuccessfulTileFromMemoryCacheBeforeDelegate() {
         var calls = 0

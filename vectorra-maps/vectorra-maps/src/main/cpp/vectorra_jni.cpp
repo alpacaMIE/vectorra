@@ -21,11 +21,16 @@
 #include <rocky/ecs/Label.h>
 #include <rocky/ecs/Line.h>
 #include <rocky/ecs/Mesh.h>
+#include <rocky/ecs/Model.h>
 #include <rocky/ecs/Transform.h>
+#include <rocky/ecs/Visibility.h>
 #include <rocky/vsg/Application.h>
 #include <rocky/vsg/ecs/FeatureBuilder.h>
+#include <rocky/vsg/ecs/ModelSystem.h>
 #include <rocky/vsg/MapManipulator.h>
 #include <rocky/vsg/terrain/SurfaceNode.h>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <vsg/core/Exception.h>
 
@@ -412,6 +417,17 @@ namespace
         std::vector<std::pair<std::string, std::string>> headers;
     };
 
+    struct ModelLayerConfig
+    {
+        std::string uri;
+        double longitude = 0.0;
+        double latitude = 0.0;
+        double heightMeters = 0.0;
+        double scale = 1.0;
+        double yawDegrees = 0.0;
+        bool visible = true;
+    };
+
     struct LabelAnnotationConfig
     {
         std::string id;
@@ -585,6 +601,39 @@ namespace
         ~VectorraNativeEngine()
         {
             detachSurface();
+            clearResourceStatusCallback();
+        }
+
+        void setResourceStatusCallback(JNIEnv* env, jobject callback)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (statusCallback)
+            {
+                env->DeleteGlobalRef(statusCallback);
+                statusCallback = nullptr;
+            }
+            statusCallbackMethod = nullptr;
+            javaVm = nullptr;
+
+            if (!callback)
+            {
+                return;
+            }
+
+            env->GetJavaVM(&javaVm);
+            statusCallback = env->NewGlobalRef(callback);
+            jclass callbackClass = env->GetObjectClass(callback);
+            statusCallbackMethod = env->GetMethodID(
+                callbackClass,
+                "onNativeResourceStatus",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+            env->DeleteLocalRef(callbackClass);
+            if (!statusCallbackMethod)
+            {
+                env->DeleteGlobalRef(statusCallback);
+                statusCallback = nullptr;
+                javaVm = nullptr;
+            }
         }
 
         std::string setSurface(JNIEnv* env, jobject surface, int width, int height)
@@ -925,6 +974,83 @@ namespace
             }
         }
 
+        void addModelLayer(
+            const std::string& id,
+            const std::string& uri,
+            double longitude,
+            double latitude,
+            double heightMeters,
+            double scale,
+            double yawDegrees,
+            bool visible)
+        {
+            if (id.empty() || uri.empty())
+            {
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            ModelLayerConfig config{
+                uri,
+                longitude,
+                latitude,
+                heightMeters,
+                std::max(0.001, scale),
+                yawDegrees,
+                visible};
+            modelLayers[id] = config;
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "addModelLayer id=%s uri=%s lon=%.6f lat=%.6f height=%.2f scale=%.3f yaw=%.2f visible=%d",
+                id.c_str(),
+                uri.c_str(),
+                longitude,
+                latitude,
+                heightMeters,
+                config.scale,
+                yawDegrees,
+                visible ? 1 : 0);
+            if (app)
+            {
+                queueApplyModelLayerLocked(id, config);
+            }
+        }
+
+        void removeModelLayer(const std::string& id)
+        {
+            if (id.empty())
+            {
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            modelLayers.erase(id);
+            if (app)
+            {
+                queueRemoveModelLayerLocked(id);
+            }
+        }
+
+        void setModelLayerVisible(const std::string& id, bool visible)
+        {
+            if (id.empty())
+            {
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            auto itr = modelLayers.find(id);
+            if (itr != modelLayers.end())
+            {
+                itr->second.visible = visible;
+            }
+            if (app)
+            {
+                queueSetModelLayerVisibleLocked(id, visible);
+            }
+        }
+
         void clearAnnotations()
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -1140,6 +1266,11 @@ namespace
                     app.reset();
                     return "Vectorra renderer initialization failed: " + message;
                 }
+                if (app->systemsNode && !app->systemsNode->get<rocky::ModelSystemNode>())
+                {
+                    app->systemsNode->add(rocky::ModelSystemNode::create(app->registry));
+                    __android_log_print(ANDROID_LOG_INFO, TAG, "enabled rocky ModelSystemNode");
+                }
                 __android_log_print(
                     ANDROID_LOG_INFO,
                     TAG,
@@ -1208,6 +1339,7 @@ namespace
 
                 syncLabelAnnotationsLocked();
                 syncLocationIndicatorLocked();
+                syncModelLayersLocked();
 
                 int renderWidth = surfaceWidth;
                 int renderHeight = surfaceHeight;
@@ -1283,6 +1415,13 @@ namespace
                                         logRenderState(activeApp);
                                     }
                                 }
+                                {
+                                    std::lock_guard<std::mutex> statusLock(mutex);
+                                    if (app.get() == activeApp)
+                                    {
+                                        logModelLayerStatusesLocked(activeApp);
+                                    }
+                                }
                             }
                             catch (const std::exception& e)
                             {
@@ -1340,6 +1479,9 @@ namespace
             }
             labelEntities.clear();
             drawEntities.clear();
+            modelEntities.clear();
+            modelLoggedRadii.clear();
+            modelLoggedErrors.clear();
             locationEntities.clear();
             app.reset();
         }
@@ -1369,6 +1511,302 @@ namespace
             if (app && app->vsgcontext)
             {
                 app->vsgcontext->requestFrame();
+            }
+        }
+
+        void clearResourceStatusCallback()
+        {
+            if (!javaVm || !statusCallback)
+            {
+                statusCallback = nullptr;
+                statusCallbackMethod = nullptr;
+                javaVm = nullptr;
+                return;
+            }
+
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            jint envResult = javaVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+            if (envResult == JNI_EDETACHED)
+            {
+                if (javaVm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+                {
+                    statusCallback = nullptr;
+                    statusCallbackMethod = nullptr;
+                    javaVm = nullptr;
+                    return;
+                }
+                attached = true;
+            }
+
+            if (env)
+            {
+                env->DeleteGlobalRef(statusCallback);
+            }
+            statusCallback = nullptr;
+            statusCallbackMethod = nullptr;
+
+            if (attached)
+            {
+                javaVm->DetachCurrentThread();
+            }
+            javaVm = nullptr;
+        }
+
+        void emitResourceStatusLocked(
+            const char* kind,
+            const std::string& layerId,
+            const char* state,
+            const char* errorType = nullptr,
+            const std::string& errorMessage = std::string())
+        {
+            if (!javaVm || !statusCallback || !statusCallbackMethod || layerId.empty())
+            {
+                return;
+            }
+
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            jint envResult = javaVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+            if (envResult == JNI_EDETACHED)
+            {
+                if (javaVm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+                {
+                    return;
+                }
+                attached = true;
+            }
+            else if (envResult != JNI_OK || !env)
+            {
+                return;
+            }
+
+            jstring jKind = env->NewStringUTF(kind);
+            jstring jLayerId = env->NewStringUTF(layerId.c_str());
+            jstring jState = env->NewStringUTF(state);
+            jstring jErrorType = errorType ? env->NewStringUTF(errorType) : nullptr;
+            jstring jErrorMessage = !errorMessage.empty() ? env->NewStringUTF(errorMessage.c_str()) : nullptr;
+            env->CallVoidMethod(statusCallback, statusCallbackMethod, jKind, jLayerId, jState, jErrorType, jErrorMessage);
+            if (env->ExceptionCheck())
+            {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+            env->DeleteLocalRef(jKind);
+            env->DeleteLocalRef(jLayerId);
+            env->DeleteLocalRef(jState);
+            if (jErrorType)
+            {
+                env->DeleteLocalRef(jErrorType);
+            }
+            if (jErrorMessage)
+            {
+                env->DeleteLocalRef(jErrorMessage);
+            }
+
+            if (attached)
+            {
+                javaVm->DetachCurrentThread();
+            }
+        }
+
+        void queueApplyModelLayerLocked(const std::string& id, const ModelLayerConfig& config)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, id, config]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                applyModelLayerLocked(id, config);
+            });
+            requestFrameLocked();
+        }
+
+        void queueRemoveModelLayerLocked(const std::string& id)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, id]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                removeModelEntityLocked(id);
+            });
+            requestFrameLocked();
+        }
+
+        void queueSetModelLayerVisibleLocked(const std::string& id, bool visible)
+        {
+            auto* activeApp = app.get();
+            activeApp->onNextUpdate([this, activeApp, id, visible]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (app.get() != activeApp)
+                {
+                    return;
+                }
+                setModelEntityVisibleLocked(id, visible);
+            });
+            requestFrameLocked();
+        }
+
+        void syncModelLayersLocked()
+        {
+            if (!app)
+            {
+                return;
+            }
+
+            for (const auto& entry : modelLayers)
+            {
+                applyModelLayerLocked(entry.first, entry.second);
+            }
+        }
+
+        void removeModelEntityLocked(const std::string& id)
+        {
+            auto existing = modelEntities.find(id);
+            if (existing == modelEntities.end())
+            {
+                return;
+            }
+            if (app)
+            {
+                auto [registryLock, registry] = app->registry.write();
+                if (registry.valid(existing->second))
+                {
+                    registry.destroy(existing->second);
+                }
+            }
+            modelEntities.erase(existing);
+            modelLoggedRadii.erase(id);
+            modelLoggedErrors.erase(id);
+            requestFrameLocked();
+        }
+
+        void setModelEntityVisibleLocked(const std::string& id, bool visible)
+        {
+            auto existing = modelEntities.find(id);
+            if (existing == modelEntities.end() || !app)
+            {
+                return;
+            }
+
+            auto [registryLock, registry] = app->registry.write();
+            if (registry.valid(existing->second) && registry.all_of<rocky::Visibility>(existing->second))
+            {
+                rocky::setVisible(registry, existing->second, visible);
+                requestFrameLocked();
+            }
+        }
+
+        void applyModelLayerLocked(const std::string& id, const ModelLayerConfig& config)
+        {
+            if (!app || id.empty() || config.uri.empty())
+            {
+                return;
+            }
+
+            removeModelEntityLocked(id);
+
+            auto [registryLock, registry] = app->registry.write();
+            auto entity = registry.create();
+
+            modelLoggedRadii.erase(id);
+            modelLoggedErrors.erase(id);
+
+            auto& model = registry.emplace<rocky::Model>(entity);
+            model.uri = rocky::URI(config.uri);
+            model.radius = 0.0f;
+            model.error = std::nullopt;
+
+            auto& transform = registry.emplace<rocky::Transform>(entity);
+            transform.position = rocky::GeoPoint(
+                rocky::SRS::WGS84,
+                config.longitude,
+                config.latitude,
+                config.heightMeters);
+            const auto yawRadians = glm::radians(config.yawDegrees);
+            transform.localMatrix =
+                glm::rotate(glm::dmat4(1.0), yawRadians, glm::dvec3(0.0, 0.0, 1.0)) *
+                glm::scale(glm::dmat4(1.0), glm::dvec3(config.scale));
+            transform.topocentric = true;
+            transform.radius = static_cast<float>(std::max(1.0, config.scale));
+            transform.horizonCulled = true;
+            transform.frustumCulled = true;
+
+            (void)registry.get_or_emplace<rocky::Visibility>(entity);
+            rocky::setVisible(registry, entity, config.visible);
+            modelEntities[id] = entity;
+
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "applied native model id=%s uri=%s entity=%u",
+                id.c_str(),
+                config.uri.c_str(),
+                static_cast<unsigned>(entity));
+            requestFrameLocked();
+        }
+
+        void logModelLayerStatusesLocked(rocky::Application* activeApp)
+        {
+            if (!activeApp)
+            {
+                return;
+            }
+
+            auto [registryLock, registry] = activeApp->registry.read();
+            for (const auto& entry : modelEntities)
+            {
+                const auto& id = entry.first;
+                const auto entity = entry.second;
+                if (!registry.valid(entity) || !registry.all_of<rocky::Model>(entity))
+                {
+                    continue;
+                }
+
+                const auto& model = registry.get<rocky::Model>(entity);
+                if (model.error)
+                {
+                    const auto message = model.error->string();
+                    auto errorItr = modelLoggedErrors.find(id);
+                    if (errorItr == modelLoggedErrors.end() || errorItr->second != message)
+                    {
+                        modelLoggedErrors[id] = message;
+                        __android_log_print(
+                            ANDROID_LOG_ERROR,
+                            TAG,
+                            "model load error id=%s uri=%s error=%s",
+                            id.c_str(),
+                            model.uri.full().c_str(),
+                            message.c_str());
+                        emitResourceStatusLocked("MODEL", id, "FAILED", "NATIVE_RENDERER", message);
+                    }
+                    continue;
+                }
+
+                if (model.radius > 0.0f)
+                {
+                    auto radiusItr = modelLoggedRadii.find(id);
+                    if (radiusItr == modelLoggedRadii.end() || radiusItr->second != model.radius)
+                    {
+                        modelLoggedRadii[id] = model.radius;
+                        __android_log_print(
+                            ANDROID_LOG_INFO,
+                            TAG,
+                            "model loaded id=%s uri=%s radius=%.2f",
+                            id.c_str(),
+                            model.uri.full().c_str(),
+                            model.radius);
+                        emitResourceStatusLocked("MODEL", id, "LOADED");
+                    }
+                }
             }
         }
 
@@ -1664,12 +2102,15 @@ namespace
                 auto openResult = layer->open(app->vsgcontext->io);
                 if (openResult.failed())
                 {
+                    const auto message = openResult.error().string();
                     __android_log_print(
                         ANDROID_LOG_WARN,
                         TAG,
                         "raster layer open failed id=%s error=%s",
                         id.c_str(),
-                        openResult.error().string().c_str());
+                        message.c_str());
+                    emitResourceStatusLocked("RASTER", id, "FAILED", "NATIVE_RENDERER", message);
+                    return;
                 }
             }
             app->mapNode->map->add(layer);
@@ -1677,6 +2118,7 @@ namespace
             {
                 app->vsgcontext->requestFrame();
             }
+            emitResourceStatusLocked("RASTER", id, "LOADED");
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
@@ -1815,12 +2257,15 @@ namespace
                 auto openResult = layer->open(app->vsgcontext->io);
                 if (openResult.failed())
                 {
+                    const auto message = openResult.error().string();
                     __android_log_print(
                         ANDROID_LOG_WARN,
                         TAG,
                         "elevation layer open failed id=%s error=%s",
                         id.c_str(),
-                        openResult.error().string().c_str());
+                        message.c_str());
+                    emitResourceStatusLocked("DEM", id, "FAILED", "NATIVE_RENDERER", message);
+                    return;
                 }
             }
             app->mapNode->map->add(layer);
@@ -1828,6 +2273,7 @@ namespace
             {
                 app->vsgcontext->requestFrame();
             }
+            emitResourceStatusLocked("DEM", id, "LOADED");
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
@@ -2083,12 +2529,19 @@ namespace
         std::vector<std::string> rasterLayerOrder;
         std::unordered_map<std::string, ElevationLayerConfig> elevationLayers;
         std::vector<std::string> elevationLayerOrder;
+        std::unordered_map<std::string, ModelLayerConfig> modelLayers;
+        std::unordered_map<std::string, entt::entity> modelEntities;
+        std::unordered_map<std::string, float> modelLoggedRadii;
+        std::unordered_map<std::string, std::string> modelLoggedErrors;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;
         std::unordered_map<std::string, entt::entity> labelEntities;
         std::unordered_map<std::string, std::vector<entt::entity>> drawEntities;
         std::optional<LocationIndicatorConfig> locationIndicator;
         std::vector<entt::entity> locationEntities;
+        JavaVM* javaVm = nullptr;
+        jobject statusCallback = nullptr;
+        jmethodID statusCallbackMethod = nullptr;
     };
 
     VectorraNativeEngine* fromHandle(jlong handle)
@@ -2213,6 +2666,15 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_vectorra_maps_internal_VectorraNative_destroy(JNIEnv*, jobject, jlong handle)
 {
     delete fromHandle(handle);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setResourceStatusCallback(JNIEnv* env, jobject, jlong handle, jobject callback)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->setResourceStatusCallback(env, callback);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -2367,6 +2829,52 @@ Java_com_vectorra_maps_internal_VectorraNative_setLayerVisible(JNIEnv* env, jobj
     if (auto* engine = fromHandle(handle))
     {
         engine->setLayerVisible(jstringToString(env, id), visible == JNI_TRUE);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_addModelLayer(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring id,
+    jstring uri,
+    jdouble longitude,
+    jdouble latitude,
+    jdouble heightMeters,
+    jdouble scale,
+    jdouble yawDegrees,
+    jboolean visible)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->addModelLayer(
+            jstringToString(env, id),
+            jstringToString(env, uri),
+            longitude,
+            latitude,
+            heightMeters,
+            scale,
+            yawDegrees,
+            visible == JNI_TRUE);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_removeModelLayer(JNIEnv* env, jobject, jlong handle, jstring id)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->removeModelLayer(jstringToString(env, id));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setModelLayerVisible(JNIEnv* env, jobject, jlong handle, jstring id, jboolean visible)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->setModelLayerVisible(jstringToString(env, id), visible == JNI_TRUE);
     }
 }
 

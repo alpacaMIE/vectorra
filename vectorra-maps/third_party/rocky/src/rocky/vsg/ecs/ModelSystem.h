@@ -60,6 +60,7 @@ namespace ROCKY_NAMESPACE
         struct LoadRecord {
             Loader promise;
             entt::entity entity;
+            bool pendingLogged = false;
         };
         std::queue<LoadRecord> _loaders;
 

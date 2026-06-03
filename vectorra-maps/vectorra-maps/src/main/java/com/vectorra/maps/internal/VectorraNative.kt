@@ -3,12 +3,23 @@ package com.vectorra.maps.internal
 import android.view.Surface
 
 internal object VectorraNative {
+    interface ResourceStatusCallback {
+        fun onNativeResourceStatus(
+            kind: String,
+            layerId: String,
+            state: String,
+            errorType: String?,
+            errorMessage: String?
+        )
+    }
+
     init {
         System.loadLibrary("vectorra_jni")
     }
 
     external fun create(): Long
     external fun destroy(handle: Long)
+    external fun setResourceStatusCallback(handle: Long, callback: ResourceStatusCallback?)
     external fun setResourcePath(handle: Long, path: String)
     external fun setSurface(handle: Long, surface: Surface?, width: Int, height: Int): String?
     external fun resize(handle: Long, width: Int, height: Int)
@@ -58,6 +69,19 @@ internal object VectorraNative {
     )
     external fun setTerrainExaggeration(handle: Long, value: Double)
     external fun setLayerVisible(handle: Long, id: String, visible: Boolean)
+    external fun addModelLayer(
+        handle: Long,
+        id: String,
+        uri: String,
+        longitude: Double,
+        latitude: Double,
+        heightMeters: Double,
+        scale: Double,
+        yawDegrees: Double,
+        visible: Boolean
+    )
+    external fun removeModelLayer(handle: Long, id: String)
+    external fun setModelLayerVisible(handle: Long, id: String, visible: Boolean)
     external fun clearAnnotations(handle: Long)
     external fun addPointAnnotation(handle: Long, id: String, longitude: Double, latitude: Double)
     external fun clearDrawAnnotations(handle: Long)

@@ -167,29 +167,17 @@ class CachingTileRequestExecutor(
     private val diskCache: TileDiskCache? = null,
     private val policy: TileCachePolicy = TileCachePolicy()
 ) : TileRequestExecutor {
+    private val cacheStore = TileCacheStore(memoryCache, diskCache, policy)
+
     override suspend fun execute(request: TileRequest): TileResponse {
-        if (!policy.isCacheable(request)) {
+        if (!cacheStore.isCacheable(request)) {
             return delegate.execute(request)
         }
 
-        val key = TileCacheKeys.from(request)
-        memoryCache?.get(key, request)?.let { return it }
-        diskCache?.get(key)?.let { body ->
-            val cached = TileResponse(
-                request = request,
-                statusCode = 200,
-                body = body,
-                cacheStatus = TileCacheStatus.DISK
-            )
-            memoryCache?.put(key, cached)
-            return cached
-        }
+        cacheStore.get(request)?.let { return it }
 
         val response = delegate.execute(request)
-        if (policy.isSuccessful(response)) {
-            memoryCache?.put(key, response)
-            diskCache?.put(key, response.body)
-        }
+        cacheStore.put(response)
         return response
     }
 }

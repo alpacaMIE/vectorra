@@ -6,6 +6,8 @@ import com.vectorra.maps.annotation.VectorraDrawLineAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPointAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPolygonAnnotation
 import com.vectorra.maps.location.VectorraLocationComponent
+import com.vectorra.maps.model.VectorraGlbModelLayerOptions
+import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.query.VectorraAnnotationFeature
 import com.vectorra.maps.query.VectorraGeoJsonFeature
 import com.vectorra.maps.query.VectorraGeoJsonLayer
@@ -89,6 +91,12 @@ interface VectorraMap : Closeable {
 
     fun addCameraChangedListener(listener: (CameraState) -> Unit): Closeable
 
+    fun addResourceStatusListener(listener: (VectorraResourceStatus) -> Unit): Closeable
+
+    fun getLayerResourceStatus(layerId: String): VectorraResourceStatus?
+
+    fun getSourceResourceStatus(sourceId: String): VectorraResourceStatus?
+
     fun addOnMapClickListener(listener: VectorraMapClickListener): Closeable
 
     fun queryRenderedFeatures(
@@ -159,6 +167,25 @@ interface VectorraMap : Closeable {
     fun removeTerrain(id: String)
 
     fun setTerrainVisible(id: String, visible: Boolean)
+
+    fun addModelLayer(
+        source: VectorraGlbModelSource,
+        options: VectorraGlbModelLayerOptions = VectorraGlbModelLayerOptions()
+    )
+
+    fun removeModelLayer(id: String)
+
+    fun setModelLayerVisible(id: String, visible: Boolean)
+
+    @VectorraExperimentalApi("0.7.0-beta.1")
+    @Deprecated(
+        message = "Use the Vectorra3DTiles source/layer API when it is available. This method is only a model-rendering smoke entry.",
+        replaceWith = ReplaceWith("addModelLayer(source, options)")
+    )
+    fun add3DTilesModelLayer(
+        source: VectorraGlbModelSource,
+        options: VectorraGlbModelLayerOptions = VectorraGlbModelLayerOptions()
+    )
 
     fun setLayerVisible(id: String, visible: Boolean)
 

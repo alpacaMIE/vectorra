@@ -1,0 +1,31 @@
+diff --git a/src/vsg/vk/Device.cpp b/src/vsg/vk/Device.cpp
+index 9fe8625..25e0779 100644
+--- a/src/vsg/vk/Device.cpp
++++ b/src/vsg/vk/Device.cpp
+@@ -227,10 +227,22 @@ VkDeviceSize Device::availableMemory(VkMemoryPropertyFlags memoryPropertiesFlags
+         {
+             uint32_t heapIndex = memoryProperties.memoryTypes[i].heapIndex;
+ 
+-            VkDeviceSize heapBudget = static_cast<VkDeviceSize>(static_cast<double>(memoryBudget.heapBudget[heapIndex]) * allocatedMemoryLimit);
+-            VkDeviceSize heapUsage = memoryBudget.heapUsage[heapIndex];
+-            VkDeviceSize heapAvailable = (heapUsage < heapBudget) ? heapBudget - heapUsage : 0;
+-            availableSpace += heapAvailable;
++            const bool hasMemoryBudget = supportsDeviceExtension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
++            VkDeviceSize heapBudget = hasMemoryBudget ? memoryBudget.heapBudget[heapIndex] : 0;
++            VkDeviceSize heapUsage = hasMemoryBudget ? memoryBudget.heapUsage[heapIndex] : 0;
++
++            if (hasMemoryBudget && heapBudget > 0)
++            {
++                heapBudget = static_cast<VkDeviceSize>(static_cast<double>(heapBudget) * allocatedMemoryLimit);
++                VkDeviceSize heapAvailable = (heapUsage < heapBudget) ? heapBudget - heapUsage : 0;
++                availableSpace += heapAvailable;
++            }
++            else
++            {
++                VkDeviceSize heapSize = memoryProperties.memoryHeaps[heapIndex].size;
++                heapSize = static_cast<VkDeviceSize>(static_cast<double>(heapSize) * allocatedMemoryLimit);
++                availableSpace += heapSize;
++            }
+ 
+             break;
+         }

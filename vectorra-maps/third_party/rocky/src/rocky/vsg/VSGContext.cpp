@@ -661,6 +661,18 @@ VSGContextImpl::ctor(int& argc, char** argv)
 #ifdef ROCKY_HAS_VSGXCHANGE
     // Adds all the readerwriters in vsgxchange to the options data.
     readerWriterOptions->add(vsgXchange::all::create());
+#ifdef __ANDROID__
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        "rocky_jni",
+        "VSGContext registered vsgXchange::all readerWriters=%zu",
+        readerWriterOptions->readerWriters.size());
+#endif
+#elif defined(__ANDROID__)
+    __android_log_print(
+        ANDROID_LOG_WARN,
+        "rocky_jni",
+        "VSGContext built without ROCKY_HAS_VSGXCHANGE");
 #endif
 
     // For system fonts
@@ -962,51 +974,87 @@ VSGContextImpl::compile(vsg::ref_ptr<vsg::Object> compilable)
     ROCKY_SOFT_ASSERT_AND_RETURN(_viewer && _viewer->compileManager, {});
 
 #ifdef __ANDROID__
+    static std::atomic<int> androidCompileDiagnosticsRemaining{ 3 };
+    const bool logCompileDiagnostics = androidCompileDiagnosticsRemaining.load(std::memory_order_relaxed) > 0;
     vsg::CollectResourceRequirements collector;
-    compilable->accept(collector);
     std::uint64_t bufferBytes = 0;
     std::uint64_t imageBytes = 0;
     std::uint32_t bufferInfoCount = 0;
-    for (const auto& bufferInfo : collector.requirements.dynamicData.bufferInfos)
+    if (logCompileDiagnostics)
     {
-        ++bufferInfoCount;
-        if (bufferInfo && bufferInfo->data)
+        compilable->accept(collector);
+        for (const auto& bufferInfo : collector.requirements.dynamicData.bufferInfos)
         {
-            bufferBytes += bufferInfo->data->dataSize();
+            ++bufferInfoCount;
+            if (bufferInfo && bufferInfo->data)
+            {
+                bufferBytes += bufferInfo->data->dataSize();
+            }
         }
-    }
-    for (const auto& imageInfo : collector.requirements.dynamicData.imageInfos)
-    {
-        if (imageInfo && imageInfo->imageView && imageInfo->imageView->image &&
-            imageInfo->imageView->image->data)
+        for (const auto& imageInfo : collector.requirements.dynamicData.imageInfos)
         {
-            imageBytes += imageInfo->imageView->image->data->dataSize();
+            if (imageInfo && imageInfo->imageView && imageInfo->imageView->image &&
+                imageInfo->imageView->image->data)
+            {
+                imageBytes += imageInfo->imageView->image->data->dataSize();
+            }
         }
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "rocky_jni",
+            "VSGContext::compile requirements buffers=%u bufferBytes=%llu images=%zu imageBytes=%llu descriptorSets=%u",
+            bufferInfoCount,
+            static_cast<unsigned long long>(bufferBytes),
+            collector.requirements.dynamicData.imageInfos.size(),
+            static_cast<unsigned long long>(imageBytes),
+            collector.requirements.computeNumDescriptorSets());
     }
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        "rocky_jni",
-        "VSGContext::compile requirements buffers=%u bufferBytes=%llu images=%zu imageBytes=%llu descriptorSets=%u",
-        bufferInfoCount,
-        static_cast<unsigned long long>(bufferBytes),
-        collector.requirements.dynamicData.imageInfos.size(),
-        static_cast<unsigned long long>(imageBytes),
-        collector.requirements.computeNumDescriptorSets());
 #endif
 
     // note: this can block (with a fence) until a compile traversal is available.
     // Be sure to group as many compiles together as possible for maximum performance.
+#ifdef __ANDROID__
+    auto cr = _viewer->compileManager->compile(compilable, [logCompileDiagnostics](vsg::Context& context)
+        {
+            if (context.device)
+            {
+                const auto localAvailable = context.device->availableMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                const auto hostAvailable = context.device->availableMemory(
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                const bool hasMemoryBudget = context.device->supportsDeviceExtension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+                if (logCompileDiagnostics)
+                {
+                    __android_log_print(
+                        ANDROID_LOG_INFO,
+                        "rocky_jni",
+                        "VSGContext::compile context memoryBudget=%d localAvailable=%llu hostVisibleAvailable=%llu",
+                        hasMemoryBudget ? 1 : 0,
+                        static_cast<unsigned long long>(localAvailable),
+                        static_cast<unsigned long long>(hostAvailable));
+                }
+            }
+            return true;
+        });
+#else
     auto cr = _viewer->compileManager->compile(compilable);
+#endif
 
 #ifdef __ANDROID__
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        "rocky_jni",
-        "VSGContext::compile result=%d requiresUpdate=%d containsPagedLOD=%d message=%s",
-        cr.result,
-        cr.requiresViewerUpdate() ? 1 : 0,
-        cr.containsPagedLOD ? 1 : 0,
-        cr.message.c_str());
+    if (logCompileDiagnostics || cr.result != 0)
+    {
+        __android_log_print(
+            cr.result == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR,
+            "rocky_jni",
+            "VSGContext::compile result=%d requiresUpdate=%d containsPagedLOD=%d message=%s",
+            cr.result,
+            cr.requiresViewerUpdate() ? 1 : 0,
+            cr.containsPagedLOD ? 1 : 0,
+            cr.message.c_str());
+    }
+    if (logCompileDiagnostics)
+    {
+        --androidCompileDiagnosticsRemaining;
+    }
 #endif
 
     if (cr)

@@ -1,6 +1,8 @@
 package com.vectorra.maps
 
 import android.animation.ValueAnimator
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import android.view.Choreographer
 import android.view.animation.DecelerateInterpolator
@@ -15,6 +17,8 @@ import com.vectorra.maps.layer.VectorraRasterLayer
 import com.vectorra.maps.location.VectorraLocation
 import com.vectorra.maps.location.VectorraLocationComponent
 import com.vectorra.maps.location.VectorraLocationComponentImpl
+import com.vectorra.maps.model.VectorraGlbModelLayerOptions
+import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.network.TileNetworkConfig
 import com.vectorra.maps.network.TileProxyServer
 import com.vectorra.maps.network.TileResourceType
@@ -52,6 +56,18 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val closed = AtomicBoolean(false)
     private val nativeHandle: Long = VectorraNative.create()
     private val tileProxyServer = TileProxyServer(File(cacheDirectory, "rocky-tile-cache"))
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val nativeResourceStatusCallback = object : VectorraNative.ResourceStatusCallback {
+        override fun onNativeResourceStatus(
+            kind: String,
+            layerId: String,
+            state: String,
+            errorType: String?,
+            errorMessage: String?
+        ) {
+            handleNativeResourceStatus(kind, layerId, state, errorType, errorMessage)
+        }
+    }
     override val location: VectorraLocationComponent = VectorraLocationComponentImpl(this)
     var loadState: VectorraMapLoadState = VectorraMapLoadState.IDLE
         private set
@@ -69,6 +85,11 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     override var onCameraChanged: ((CameraState) -> Unit)? = null
     private val cameraChangedListeners = CopyOnWriteArrayList<(CameraState) -> Unit>()
+    private val resourceStatusListeners = CopyOnWriteArrayList<(VectorraResourceStatus) -> Unit>()
+    private val resourceStatusLock = Any()
+    private val resourceGenerationByKey = linkedMapOf<String, Long>()
+    private val resourceStatusByLayerId = linkedMapOf<String, VectorraResourceStatus>()
+    private val resourceStatusBySourceId = linkedMapOf<String, VectorraResourceStatus>()
     private var nativeCameraApplyScheduled = false
     private var cameraNotificationScheduled = false
     private var cameraAnimator: ValueAnimator? = null
@@ -79,6 +100,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     )
     private val mapClickListeners = CopyOnWriteArrayList<VectorraMapClickListener>()
     private val mbTilesSources = CopyOnWriteArrayList<VectorraMbTilesRasterSource>()
+    private val modelLayerIds = linkedSetOf<String>()
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -86,6 +108,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     init {
         hitTester.setCamera(cameraState)
+        VectorraNative.setResourceStatusCallback(nativeHandle, nativeResourceStatusCallback)
     }
 
     fun attachSurface(surface: Surface, width: Int, height: Int): VectorraMapLoadError? {
@@ -340,6 +363,27 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    override fun addResourceStatusListener(listener: (VectorraResourceStatus) -> Unit): Closeable {
+        resourceStatusListeners.add(listener)
+        return Closeable {
+            resourceStatusListeners.remove(listener)
+        }
+    }
+
+    override fun getLayerResourceStatus(layerId: String): VectorraResourceStatus? {
+        require(layerId.isNotBlank()) { "Layer id must not be blank." }
+        return synchronized(resourceStatusLock) {
+            resourceStatusByLayerId[layerId]
+        }
+    }
+
+    override fun getSourceResourceStatus(sourceId: String): VectorraResourceStatus? {
+        require(sourceId.isNotBlank()) { "Source id must not be blank." }
+        return synchronized(resourceStatusLock) {
+            resourceStatusBySourceId[sourceId]
+        }
+    }
+
     override fun addOnMapClickListener(listener: VectorraMapClickListener): Closeable {
         mapClickListeners.add(listener)
         return Closeable {
@@ -423,6 +467,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     override fun addRasterLayer(layer: VectorraRasterLayer) {
         ifOpen {
+            emitResourceStatus(
+                kind = VectorraResourceKind.RASTER,
+                sourceId = layer.sourceId,
+                layerId = layer.id,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
             val headers = tileNetworkConfig.headersFor(layer.sourceId) + layer.headers
             val proxiedTemplateUrl = tileProxyServer.proxyTemplateFor(
                 sourceId = layer.sourceId,
@@ -432,50 +483,61 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 resourceType = TileResourceType.RASTER
             )
             val nativeHeaders = if (proxiedTemplateUrl == layer.templateUrl) headers else emptyMap()
-            VectorraNative.addRasterLayer(
-                nativeHandle,
-                layer.id,
-                proxiedTemplateUrl,
-                layer.minZoom,
-                layer.maxZoom,
-                layer.visible,
-                layer.opacity.coerceIn(0.0, 1.0),
-                layer.saturation.coerceIn(-1.0, 1.0),
-                layer.contrast.coerceIn(-1.0, 1.0),
-                layer.tileSize,
-                layer.scheme.name,
-                layer.matrixSet.orEmpty(),
-                nativeHeaders.toNameArray(),
-                nativeHeaders.toValueArray()
-            )
+            runResourceNativeCall(VectorraResourceKind.RASTER, layer.sourceId, layer.id) {
+                VectorraNative.addRasterLayer(
+                    nativeHandle,
+                    layer.id,
+                    proxiedTemplateUrl,
+                    layer.minZoom,
+                    layer.maxZoom,
+                    layer.visible,
+                    layer.opacity.coerceIn(0.0, 1.0),
+                    layer.saturation.coerceIn(-1.0, 1.0),
+                    layer.contrast.coerceIn(-1.0, 1.0),
+                    layer.tileSize,
+                    layer.scheme.name,
+                    layer.matrixSet.orEmpty(),
+                    nativeHeaders.toNameArray(),
+                    nativeHeaders.toValueArray()
+                )
+            }
         }
     }
 
     override fun addMbTilesRasterLayer(source: VectorraMbTilesRasterSource, layerId: String) {
         require(layerId.isNotBlank()) { "MBTiles raster layer id must not be blank." }
         ifOpen {
+            emitResourceStatus(
+                kind = VectorraResourceKind.MBTILES,
+                sourceId = source.id,
+                layerId = layerId,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
             val proxiedTemplateUrl = tileProxyServer.proxyTemplateForLocalProvider(
                 sourceId = source.id,
                 layerId = layerId,
                 resourceType = TileResourceType.RASTER,
                 provider = source::loadTile
             )
-            VectorraNative.addRasterLayer(
-                nativeHandle,
-                layerId,
-                proxiedTemplateUrl,
-                source.minZoom,
-                source.maxZoom,
-                true,
-                1.0,
-                0.0,
-                0.0,
-                source.tileSize,
-                TileScheme.XYZ.name,
-                "",
-                emptyArray(),
-                emptyArray()
-            )
+            runResourceNativeCall(VectorraResourceKind.MBTILES, source.id, layerId) {
+                VectorraNative.addRasterLayer(
+                    nativeHandle,
+                    layerId,
+                    proxiedTemplateUrl,
+                    source.minZoom,
+                    source.maxZoom,
+                    true,
+                    1.0,
+                    0.0,
+                    0.0,
+                    source.tileSize,
+                    TileScheme.XYZ.name,
+                    "",
+                    emptyArray(),
+                    emptyArray()
+                )
+            }
             mbTilesSources.addIfAbsent(source)
         }
     }
@@ -488,6 +550,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     override fun removeLayer(id: String) {
         ifOpen {
             VectorraNative.removeLayer(nativeHandle, id)
+            emitRemovedStatusForLayer(id)
         }
     }
 
@@ -534,6 +597,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         sourceHeaders: Map<String, String>
     ) {
         ifOpen {
+            emitResourceStatus(
+                kind = VectorraResourceKind.DEM,
+                sourceId = id,
+                layerId = id,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
             val headers = tileNetworkConfig.headersFor(id) + sourceHeaders
             val proxiedTemplateUrl = tileProxyServer.proxyTemplateFor(
                 sourceId = id,
@@ -543,15 +613,17 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 resourceType = TileResourceType.DEM
             )
             val nativeHeaders = if (proxiedTemplateUrl == templateUrl) headers else emptyMap()
-            VectorraNative.addElevationLayer(
-                nativeHandle,
-                id,
-                proxiedTemplateUrl,
-                minZoom,
-                maxZoom,
-                nativeHeaders.toNameArray(),
-                nativeHeaders.toValueArray()
-            )
+            runResourceNativeCall(VectorraResourceKind.DEM, id, id) {
+                VectorraNative.addElevationLayer(
+                    nativeHandle,
+                    id,
+                    proxiedTemplateUrl,
+                    minZoom,
+                    maxZoom,
+                    nativeHeaders.toNameArray(),
+                    nativeHeaders.toValueArray()
+                )
+            }
         }
     }
 
@@ -579,6 +651,60 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     override fun setTerrainVisible(id: String, visible: Boolean) {
         setLayerVisible(id, visible)
+    }
+
+    override fun addModelLayer(source: VectorraGlbModelSource, options: VectorraGlbModelLayerOptions) {
+        ifOpen {
+            if (modelLayerIds.contains(source.id)) {
+                VectorraNative.removeModelLayer(nativeHandle, source.id)
+            }
+            emitResourceStatus(
+                kind = VectorraResourceKind.MODEL,
+                sourceId = source.id,
+                layerId = source.id,
+                state = VectorraResourceLoadState.LOADING,
+                eventSource = VectorraResourceEventSource.ENGINE
+            )
+            runResourceNativeCall(VectorraResourceKind.MODEL, source.id, source.id) {
+                VectorraNative.addModelLayer(
+                    nativeHandle,
+                    source.id,
+                    source.uri,
+                    source.longitude,
+                    source.latitude,
+                    source.heightMeters,
+                    source.scale * options.effectiveScaleMultiplier,
+                    source.yawDegrees,
+                    options.visible
+                )
+            }
+            modelLayerIds.add(source.id)
+        }
+    }
+
+    override fun removeModelLayer(id: String) {
+        require(id.isNotBlank()) { "Model layer id must not be blank." }
+        ifOpen {
+            VectorraNative.removeModelLayer(nativeHandle, id)
+            modelLayerIds.remove(id)
+            emitRemovedStatusForLayer(id)
+        }
+    }
+
+    override fun setModelLayerVisible(id: String, visible: Boolean) {
+        require(id.isNotBlank()) { "Model layer id must not be blank." }
+        ifOpen {
+            VectorraNative.setModelLayerVisible(nativeHandle, id, visible)
+        }
+    }
+
+    @VectorraExperimentalApi("0.7.0-beta.1")
+    @Deprecated(
+        message = "Use the Vectorra3DTiles source/layer API when it is available. This method is only a model-rendering smoke entry.",
+        replaceWith = ReplaceWith("addModelLayer(source, options)")
+    )
+    override fun add3DTilesModelLayer(source: VectorraGlbModelSource, options: VectorraGlbModelLayerOptions) {
+        addModelLayer(source, options)
     }
 
     override fun setLayerVisible(id: String, visible: Boolean) {
@@ -842,6 +968,115 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private inline fun runResourceNativeCall(
+        kind: VectorraResourceKind,
+        sourceId: String,
+        layerId: String,
+        block: () -> Unit
+    ) {
+        try {
+            block()
+        } catch (error: RuntimeException) {
+            emitResourceStatus(
+                kind = kind,
+                sourceId = sourceId,
+                layerId = layerId,
+                state = VectorraResourceLoadState.FAILED,
+                eventSource = VectorraResourceEventSource.ENGINE,
+                error = VectorraResourceLoadError(
+                    type = VectorraResourceErrorType.NATIVE_RENDERER,
+                    message = error.message ?: "Native renderer resource operation failed.",
+                    cause = error
+                )
+            )
+            throw error
+        }
+    }
+
+    private fun emitRemovedStatusForLayer(layerId: String) {
+        val previous = synchronized(resourceStatusLock) {
+            resourceStatusByLayerId[layerId]
+        } ?: return
+        emitResourceStatus(
+            kind = previous.kind,
+            sourceId = previous.sourceId,
+            layerId = previous.layerId,
+            state = VectorraResourceLoadState.REMOVED,
+            eventSource = VectorraResourceEventSource.ENGINE
+        )
+    }
+
+    private fun handleNativeResourceStatus(
+        rawKind: String,
+        layerId: String,
+        rawState: String,
+        rawErrorType: String?,
+        rawErrorMessage: String?
+    ) {
+        if (closed.get() || layerId.isBlank()) {
+            return
+        }
+        val previous = synchronized(resourceStatusLock) {
+            resourceStatusByLayerId[layerId]
+        } ?: return
+        val update = VectorraNativeResourceStatusMapper.map(
+            previous = previous,
+            rawKind = rawKind,
+            rawState = rawState,
+            rawErrorType = rawErrorType,
+            rawErrorMessage = rawErrorMessage
+        ) ?: return
+        emitResourceStatus(
+            kind = update.kind,
+            sourceId = update.sourceId,
+            layerId = update.layerId,
+            state = update.state,
+            eventSource = VectorraResourceEventSource.NATIVE,
+            error = update.error
+        )
+    }
+
+    internal fun emitResourceStatus(
+        kind: VectorraResourceKind,
+        sourceId: String,
+        layerId: String,
+        state: VectorraResourceLoadState,
+        eventSource: VectorraResourceEventSource,
+        error: VectorraResourceLoadError? = null
+    ) {
+        val status = synchronized(resourceStatusLock) {
+            val key = "$kind:$sourceId:$layerId"
+            val generation = (resourceGenerationByKey[key] ?: 0L) + 1L
+            resourceGenerationByKey[key] = generation
+            VectorraResourceStatus(
+                kind = kind,
+                sourceId = sourceId,
+                layerId = layerId,
+                generation = generation,
+                state = state,
+                eventSource = eventSource,
+                error = error
+            ).also {
+                resourceStatusByLayerId[layerId] = it
+                resourceStatusBySourceId[sourceId] = it
+            }
+        }
+        dispatchResourceStatus(status)
+    }
+
+    private fun dispatchResourceStatus(status: VectorraResourceStatus) {
+        if (resourceStatusListeners.isEmpty()) {
+            return
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            resourceStatusListeners.forEach { it.invoke(status) }
+        } else {
+            mainHandler.post {
+                resourceStatusListeners.forEach { it.invoke(status) }
+            }
+        }
+    }
+
     private fun classifyLoadError(message: String, cause: Throwable?): VectorraMapLoadError {
         val normalized = message.lowercase()
         return if (
@@ -863,6 +1098,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            VectorraNative.setResourceStatusCallback(nativeHandle, null)
             cameraAnimator?.cancel()
             cameraAnimator = null
             nativeCameraApplyScheduled = false
@@ -870,12 +1106,19 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             loadState = VectorraMapLoadState.IDLE
             mapClickListeners.clear()
             cameraChangedListeners.clear()
+            resourceStatusListeners.clear()
+            synchronized(resourceStatusLock) {
+                resourceGenerationByKey.clear()
+                resourceStatusByLayerId.clear()
+                resourceStatusBySourceId.clear()
+            }
             clearHitTestAnnotations()
             clearDrawAnnotations()
             geoJsonIndex.clear()
             tileProxyServer.close()
             mbTilesSources.forEach { it.close() }
             mbTilesSources.clear()
+            modelLayerIds.clear()
             VectorraNative.destroy(nativeHandle)
         }
     }

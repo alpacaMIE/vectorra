@@ -42,6 +42,6 @@ object VectorraOfflineRasterSource {
         tileExtension: String = DEFAULT_TILE_EXTENSION
     ): String {
         val rootUrl = rootDirectory.absoluteFile.toURI().toString().trimEnd('/')
-        return "$rootUrl/{z}/{y}/{x}.$tileExtension"
+        return "$rootUrl/{z}/{x}/{y}.$tileExtension"
     }
 }

@@ -16,8 +16,11 @@ import com.vectorra.maps.VectorraMap
 import com.vectorra.maps.VectorraMapLifecycleCallback
 import com.vectorra.maps.VectorraMapLoadError
 import com.vectorra.maps.VectorraMapView
+import com.vectorra.maps.VectorraResourceLoadState
 import com.vectorra.maps.VectorraSdk
 import com.vectorra.maps.VectorraSurfaceLifecycleState
+import com.vectorra.maps.model.VectorraGlbModelLayerOptions
+import com.vectorra.maps.model.VectorraGlbModelSource
 import com.vectorra.maps.offline.VectorraMbTilesRasterSource
 import com.vectorra.maps.terrain.VectorraTerrainOptions
 import com.vectorra.maps.terrain.VectorraTerrainSource
@@ -29,7 +32,10 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private var terrainExaggeration = 1.0
     private var layersInstalled = false
+    private var modelInstalled = false
+    private var modelVisible = true
     private var mapLoadErrorSubscription: Closeable? = null
+    private var resourceStatusSubscription: Closeable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +71,14 @@ class MainActivity : Activity() {
         mapLoadErrorSubscription = mapView.addMapLoadErrorListener { _, error ->
             statusText.text = "Vectorra load error: ${error.message}"
         }
+        resourceStatusSubscription = mapView.map.addResourceStatusListener { status ->
+            statusText.text = when (status.state) {
+                VectorraResourceLoadState.FAILED ->
+                    "${status.kind.name.lowercase()} ${status.layerId} failed: ${status.error?.message}"
+                else ->
+                    "${status.kind.name.lowercase()} ${status.layerId} ${status.state.name.lowercase()}"
+            }
+        }
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -84,6 +98,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         mapLoadErrorSubscription?.close()
+        resourceStatusSubscription?.close()
         if (::mapView.isInitialized) {
             mapView.map.close()
         }
@@ -155,6 +170,23 @@ class MainActivity : Activity() {
                     loadSampleMbTiles()
                 }
             ))
+
+            if (ENABLE_MODEL_SMOKE) {
+                addView(controlRow(
+                    sampleButton("Model") {
+                        loadSampleModel()
+                    },
+                    sampleButton("Toggle") {
+                        toggleSampleModel()
+                    },
+                    sampleButton("Remove") {
+                        removeSampleModel()
+                    },
+                    sampleButton("Bad GLB") {
+                        loadBrokenSampleModel()
+                    }
+                ))
+            }
         }
     }
 
@@ -169,10 +201,12 @@ class MainActivity : Activity() {
             minZoom = 0,
             maxZoom = 18
         )
-        map.addTerrain(
-            source = sampleTerrainSource("sample-base-dem"),
-            options = VectorraTerrainOptions(exaggeration = terrainExaggeration)
-        )
+        if (ENABLE_STARTUP_TERRAIN) {
+            map.addTerrain(
+                source = sampleTerrainSource("sample-base-dem"),
+                options = VectorraTerrainOptions(exaggeration = terrainExaggeration)
+            )
+        }
     }
 
     private fun sampleTerrainSource(id: String): VectorraTerrainSource {
@@ -208,6 +242,76 @@ class MainActivity : Activity() {
         }.onFailure { error ->
             statusText.text = "MBTiles error: ${error.message}"
         }
+    }
+
+    private fun loadSampleModel() {
+        runCatching {
+            mapView.map.addModelLayer(
+                source = sampleModelSource(SAMPLE_MODEL_LAYER_ID, SAMPLE_MODEL_URI),
+                options = VectorraGlbModelLayerOptions(visible = true)
+            )
+            modelInstalled = true
+            modelVisible = true
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_MODEL_LONGITUDE,
+                    latitude = SAMPLE_MODEL_LATITUDE,
+                    zoom = 10.5,
+                    pitch = 62.0,
+                    bearing = 0.0
+                )
+            )
+            statusText.text = "Model requested: C130 GLB"
+        }.onFailure { error ->
+            statusText.text = "Model error: ${error.message}"
+        }
+    }
+
+    private fun toggleSampleModel() {
+        if (!modelInstalled) {
+            statusText.text = "Load model first"
+            return
+        }
+
+        modelVisible = !modelVisible
+        mapView.map.setModelLayerVisible(SAMPLE_MODEL_LAYER_ID, modelVisible)
+        statusText.text = if (modelVisible) "Model visible" else "Model hidden"
+    }
+
+    private fun removeSampleModel() {
+        if (!modelInstalled) {
+            statusText.text = "No model layer to remove"
+            return
+        }
+
+        mapView.map.removeModelLayer(SAMPLE_MODEL_LAYER_ID)
+        modelInstalled = false
+        modelVisible = true
+        statusText.text = "Model removed"
+    }
+
+    private fun loadBrokenSampleModel() {
+        runCatching {
+            mapView.map.addModelLayer(
+                source = sampleModelSource("sample-broken-model", SAMPLE_BROKEN_MODEL_URI),
+                options = VectorraGlbModelLayerOptions(visible = true)
+            )
+            statusText.text = "Broken model requested"
+        }.onFailure { error ->
+            statusText.text = "Model error: ${error.message}"
+        }
+    }
+
+    private fun sampleModelSource(id: String, uri: String): VectorraGlbModelSource {
+        return VectorraGlbModelSource(
+            id = id,
+            uri = uri,
+            longitude = SAMPLE_MODEL_LONGITUDE,
+            latitude = SAMPLE_MODEL_LATITUDE,
+            heightMeters = 18000.0,
+            scale = 20000.0,
+            yawDegrees = 0.0
+        )
     }
 
     private fun controlRow(vararg buttons: View): LinearLayout {
@@ -273,4 +377,14 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val ENABLE_MODEL_SMOKE = true
+        const val ENABLE_STARTUP_TERRAIN = false
+        const val SAMPLE_MODEL_LAYER_ID = "sample-c130-model"
+        const val SAMPLE_MODEL_URI = "https://readymap.org/readymap/filemanager/download/public/models/C130_WFF_AIR_0824.glb"
+        const val SAMPLE_BROKEN_MODEL_URI = "https://readymap.org/readymap/filemanager/download/public/models/missing-vectorra-smoke.glb"
+        const val SAMPLE_MODEL_LONGITUDE = 41.8
+        const val SAMPLE_MODEL_LATITUDE = 1.0
+    }
 }

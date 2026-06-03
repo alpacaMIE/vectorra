@@ -46,13 +46,11 @@ class TileProxyServer(
     private var serverThread: Thread? = null
     @Volatile private var scheduler: TileRequestScheduler = schedulerFor(initialConfig)
     @Volatile private var config: TileNetworkConfig = initialConfig
-    @Volatile private var memoryCache: TileMemoryCache = TileMemoryCache(initialConfig.cachePolicy.memoryMaxBytes)
-    @Volatile private var diskCache: TileDiskCache = TileDiskCache(cacheDirectory, initialConfig.cachePolicy.diskMaxBytes)
+    @Volatile private var cacheStore: TileCacheStore = TileCacheStore(cacheDirectory, initialConfig.cachePolicy)
 
     fun updateConfig(config: TileNetworkConfig) {
         this.config = config
-        memoryCache = TileMemoryCache(config.cachePolicy.memoryMaxBytes)
-        diskCache = TileDiskCache(cacheDirectory, config.cachePolicy.diskMaxBytes)
+        cacheStore = TileCacheStore(cacheDirectory, config.cachePolicy)
         val next = schedulerFor(config)
         val previous = scheduler
         scheduler = next
@@ -66,7 +64,7 @@ class TileProxyServer(
         headers: Map<String, String>,
         resourceType: TileResourceType = TileResourceType.RASTER
     ): String {
-        if (!isRemoteTemplate(templateUrl) || isProxyTemplate(templateUrl)) {
+        if (!isRemoteTemplate(templateUrl) || isProxyTemplate(templateUrl) || !hasTilePlaceholders(templateUrl)) {
             return templateUrl
         }
         val socket = startIfNeeded()
@@ -252,29 +250,15 @@ class TileProxyServer(
     }
 
     private fun executeWithCache(request: TileRequest, tileId: TileId): TileResponse {
-        val currentConfig = config
-        if (!currentConfig.cachePolicy.isCacheable(request)) {
+        val currentCacheStore = cacheStore
+        if (!currentCacheStore.isCacheable(request)) {
             return scheduler.enqueue(request, priority = tilePriority(tileId)).awaitOrError(60_000L)
         }
 
-        val key = TileCacheKeys.from(request)
-        memoryCache.get(key, request)?.let { return it }
-        diskCache.get(key)?.let { body ->
-            val cached = TileResponse(
-                request = request,
-                statusCode = 200,
-                body = body,
-                cacheStatus = TileCacheStatus.DISK
-            )
-            memoryCache.put(key, cached)
-            return cached
-        }
+        currentCacheStore.get(request)?.let { return it }
 
         val response = scheduler.enqueue(request, priority = tilePriority(tileId)).awaitOrError(60_000L)
-        if (currentConfig.cachePolicy.isSuccessful(response)) {
-            memoryCache.put(key, response)
-            diskCache.put(key, response.body)
-        }
+        currentCacheStore.put(response)
         return response
     }
 
@@ -346,6 +330,12 @@ class TileProxyServer(
     private fun isRemoteTemplate(templateUrl: String): Boolean {
         val lower = templateUrl.lowercase()
         return lower.startsWith("http://") || lower.startsWith("https://")
+    }
+
+    private fun hasTilePlaceholders(templateUrl: String): Boolean {
+        return (templateUrl.contains("{z}") || templateUrl.contains("\${z}")) &&
+            (templateUrl.contains("{x}") || templateUrl.contains("\${x}")) &&
+            (templateUrl.contains("{y}") || templateUrl.contains("\${y}"))
     }
 
     private fun isProxyTemplate(templateUrl: String): Boolean {

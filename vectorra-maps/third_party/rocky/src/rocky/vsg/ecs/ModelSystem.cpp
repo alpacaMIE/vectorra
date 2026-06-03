@@ -10,6 +10,10 @@
 #include <rocky/vsg/FutureNode.h>
 #include <filesystem>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 using namespace ROCKY_NAMESPACE;
 using namespace ROCKY_NAMESPACE::detail;
 
@@ -234,9 +238,27 @@ ModelSystemNode::update(VSGContext vsgcontext)
                             if (c.canceled())
                                 return Failure_OperationCanceled;
 
+#ifdef __ANDROID__
+                            __android_log_print(
+                                ANDROID_LOG_INFO,
+                                "rocky_jni",
+                                "ModelSystem load started uri=%s readerWriters=%zu",
+                                model.uri.full().c_str(),
+                                options ? options->readerWriters.size() : 0);
+#endif
                             auto rr = model.uri.read(io);
                             if (!rr)
+                            {
+#ifdef __ANDROID__
+                                __android_log_print(
+                                    ANDROID_LOG_ERROR,
+                                    "rocky_jni",
+                                    "ModelSystem read failed uri=%s error=%s",
+                                    model.uri.full().c_str(),
+                                    rr.error().string().c_str());
+#endif
                                 return rr.error();
+                            }
 
                             std::filesystem::path path(model.uri.full());
                             auto opts = vsg::clone(options);
@@ -247,8 +269,31 @@ ModelSystemNode::update(VSGContext vsgcontext)
 
                             auto node = vsg::read_cast<vsg::Node>(buf, opts);
                             if (!node)
+                            {
+#ifdef __ANDROID__
+                                __android_log_print(
+                                    ANDROID_LOG_ERROR,
+                                    "rocky_jni",
+                                    "ModelSystem parse failed uri=%s bytes=%zu contentType=%s extensionHint=%s readerWriters=%zu",
+                                    model.uri.full().c_str(),
+                                    rr.value().content.data.size(),
+                                    rr.value().content.type.c_str(),
+                                    opts->extensionHint.c_str(),
+                                    opts->readerWriters.size());
+#endif
                                 return Failure("vsg::read_cast failed to parse data (type not supported?)");
+                            }
 
+#ifdef __ANDROID__
+                            __android_log_print(
+                                ANDROID_LOG_INFO,
+                                "rocky_jni",
+                                "ModelSystem parse succeeded uri=%s bytes=%zu contentType=%s extensionHint=%s",
+                                model.uri.full().c_str(),
+                                rr.value().content.data.size(),
+                                rr.value().content.type.c_str(),
+                                opts->extensionHint.c_str());
+#endif
                             return node;
                         };
 
@@ -260,6 +305,14 @@ ModelSystemNode::update(VSGContext vsgcontext)
                     record.promise = j.dispatch(loadModel, context);
                     record.entity = entity;
 
+#ifdef __ANDROID__
+                    __android_log_print(
+                        ANDROID_LOG_INFO,
+                        "rocky_jni",
+                        "ModelSystem dispatched future uri=%s entity=%u",
+                        model.uri.full().c_str(),
+                        static_cast<unsigned>(entity));
+#endif
                     _loaders.emplace(std::move(record));
 
                     // and return a "future node" to hold the result.
@@ -284,6 +337,20 @@ ModelSystemNode::update(VSGContext vsgcontext)
         }
         else
         {
+#ifdef __ANDROID__
+            if (!entry.pendingLogged)
+            {
+                auto&& reader = _registry.read();
+                const auto* model = reader->try_get<Model>(entry.entity);
+                __android_log_print(
+                    ANDROID_LOG_INFO,
+                    "rocky_jni",
+                    "ModelSystem future pending entity=%u uri=%s",
+                    static_cast<unsigned>(entry.entity),
+                    model ? model->uri.full().c_str() : "");
+                entry.pendingLogged = true;
+            }
+#endif
             break;
         }
     }

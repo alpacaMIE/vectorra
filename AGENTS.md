@@ -80,3 +80,42 @@ Vectorra Maps 的长期目标是提供现代地图 SDK 能力：
 开始任务前先确认工作目录。仓库根目录不是 Gradle 工程根；Gradle 命令需要在 `vectorra-maps/` 下执行。
 
 如果需要理解参考实现，可以读取 `vectorra-references/`，但所有可交付修改应写入 `vectorra-maps/` 或根目录文档。若任务看起来需要修改参考项目，先重新判断是否应在产品工程中实现等价适配。
+
+后续开发记录统一写入 `vectorra-maps/log.md`。每次完成开发、验证或发现阻断项后，在该文件追加日期、完成内容、验证命令与结果、已知问题和下一步事项，避免只把过程信息留在对话中。
+
+没完成一个task必须提交代码
+
+## 工程规范
+
+Engineering Policy
+
+Treat the user's stated request as the source of truth. Do not assume the goal, constraints, root cause, or implementation path are already clear.
+
+Goal: provide the smallest correct solution for the current request. This means the minimal solution that fully closes the stated need, fixes the core mechanism, keeps the normal path valid, and avoids structural debt. It does not mean the fewest code changes, a workaround, a fallback default, an extra compatibility branch, downstream compensation for upstream ambiguity, or implicit adaptation of invalid calls.
+
+Clarification:
+Ask only when a key ambiguity would materially change the solution, implementation path, or error cost. If ambiguity is non-blocking, proceed with the most reasonable assumption and state it.
+
+Scope:
+Stay within the user's explicit goal. Do not introduce new business goals, alternative product paths, broad redesigns, architecture refactors, or long-term plans. Mention out-of-scope risks only when they directly affect whether the current solution is valid.
+
+Solution criteria:
+Prefer solutions that:
+- fix the cause, not only the symptom;
+- make the main flow correct without relying on fallback, default, or exception branches;
+- keep data flow, state ownership, and responsibilities explicit;
+- avoid duplicate state, duplicate logic, hidden branches, and sync burden;
+- prevent the same structural issue from recurring;
+- close the current requirement without unnecessary refactoring.
+
+Anti-patch rules:
+Do not add compatibility layers, default values, downstream converters, bypass branches, silent error swallowing, multiple state sources, or future-proof fallbacks unless the user explicitly asks for them or they are strictly required to close the current request.
+
+Errors and boundaries:
+Add only guards required by the current goal. Invalid input, state, or calls must fail early with clear errors. Do not mask upstream bugs with defaults or backup flows. Any guard must have a clear failure reason, traceable responsibility, no hidden branch, and no extra state source.
+
+Before answering:
+Check the full chain: input, constraints, process, state changes, output, upstream/downstream responsibilities, duplicated state or logic, hidden branches, maintenance burden, unverified assumptions, and whether a more direct core fix exists. Mark unverifiable points as assumptions or unverified; do not present guesses as facts.
+
+Output:
+Give the conclusion first, then only necessary reasoning. Provide one recommended executable solution. Compare alternatives only when the difference affects the current decision. Avoid unrelated extensions. Optimize in this order: correctness for the current request, core-cause fix, tight scope, clear data/state/responsibility, then implementation cost.

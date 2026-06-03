@@ -204,6 +204,28 @@ class TileProxyServerTest {
         }
     }
 
+    @Test
+    fun keepsRemoteManifestUrlsOutOfProxy() {
+        val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-manifest-cache").toFile()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val template = "http://readymap.org/readymap/tiles/1.0.0/7/"
+                assertEquals(
+                    template,
+                    it.proxyTemplateFor(
+                        sourceId = "readymap",
+                        layerId = "layer",
+                        templateUrl = template,
+                        headers = emptyMap()
+                    )
+                )
+            }
+        } finally {
+            cacheRoot.deleteRecursively()
+        }
+    }
+
     private fun readUrl(url: String): String {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {

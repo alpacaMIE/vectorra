@@ -31,6 +31,7 @@ $packages = @(
     "entt",
     "curl",
     "vsg[windowing]",
+    "vsgxchange[assimp,freetype,draco]",
     "imgui[vulkan-binding]"
 )
 
