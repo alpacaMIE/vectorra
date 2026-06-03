@@ -239,7 +239,9 @@ namespace ROCKY_NAMESPACE
             return {};
 
         auto data = wrapImageData(image);
-        data->properties.origin = vsg::TOP_LEFT;
+        // rocky Image/GeoImage data is stored bottom-up: row 0 samples the
+        // southern edge of the tile, matching terrain UV t=0.
+        data->properties.origin = vsg::BOTTOM_LEFT;
 #if VSG_API_VERSION_LESS(1,1,12)
         data->properties.maxNumMipmaps = 0;
 #else

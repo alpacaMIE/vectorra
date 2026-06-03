@@ -215,6 +215,10 @@ namespace
             m.revision = layer->revision();
             m.image = geoimage;
             m.key = key;
+            if (model.key.valid() && key.valid() && key != model.key)
+            {
+                m.matrix = matrixFromAncestorToKey(key, model.key);
+            }
         }
 
         // ResourceUnavailable just means the driver could not produce data

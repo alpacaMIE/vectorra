@@ -104,8 +104,8 @@ TMSImageLayer::createTileImplementation(const TileKey& key, const IOOptions& io)
     if (r.ok())
     {
         auto image = r.value();
-        // GeoImage samples from ymin upward; decoded raster rows are top-down.
-        image->flipVerticalInPlace();
+        // IO image readers normalize decoded rasters to rocky's bottom-left
+        // Image convention; flipping again would invert north/south.
         return GeoImage(image, key.extent());
     }
     else
