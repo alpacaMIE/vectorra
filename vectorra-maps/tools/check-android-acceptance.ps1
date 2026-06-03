@@ -27,6 +27,7 @@ try {
     & (Join-Path $PSScriptRoot "test-android-test-apk-checker.ps1")
     & (Join-Path $PSScriptRoot "test-device-smoke-contract.ps1")
     & (Join-Path $PSScriptRoot "test-device-smoke-result-checker.ps1")
+    & (Join-Path $PSScriptRoot "test-mbtiles-vector-instrumentation-runner.ps1")
 
     Write-Host "Android local acceptance gate passed."
 }

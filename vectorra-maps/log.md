@@ -3760,3 +3760,32 @@ Results:
 Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
+### MBTiles Instrumentation Runner Contract Gate
+
+Completed:
+
+- Added `tools/test-mbtiles-vector-instrumentation-runner.ps1`.
+- Wired the new self-test into `tools/check-android-acceptance.ps1`.
+- Updated the Android 1.0 acceptance record, release versioning doc, and 0.8.0 beta development notes so the documented local gate includes the MBTiles vector instrumentation runner contract check.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-android-acceptance.ps1','.\tools\test-mbtiles-vector-instrumentation-runner.ps1','.\tools\run-mbtiles-vector-instrumentation.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }
+.\tools\test-mbtiles-vector-instrumentation-runner.ps1
+rg -n "test-mbtiles-vector-instrumentation-runner|MBTiles vector instrumentation runner contract|run-mbtiles-vector-instrumentation" tools docs\beta\android-1.0-acceptance.md docs\beta\release-versioning.md docs\beta\release-notes-0.8.0-beta.1.md
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-mbtiles-vector-instrumentation-runner.ps1` passed.
+- Documentation search found the new runner contract self-test and runner command in the expected acceptance/release docs.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- The local gate output included `MBTiles vector instrumentation runner contract self-test passed.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.

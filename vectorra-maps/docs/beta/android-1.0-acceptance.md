@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, and validates the runtime smoke result verifier against the complete fixture plus crash, native renderer startup failure, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster loaded, 3D Tiles high-LOD runtime/re-add, MVT pan/hidden/remove, MVT MBTiles native render, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, validates the device smoke script contract across runner, result checker, fixtures, and sample actions, validates the runtime smoke result verifier against the complete fixture plus crash, native renderer startup failure, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, snapshot, base raster loaded, 3D Tiles high-LOD runtime/re-add, MVT pan/hidden/remove, MVT MBTiles native render, offline prefetch cleanup, and GeoJSON/Draw/Location interaction failure fixtures, and validates the targeted MBTiles vector instrumentation runner contract.
 
 Equivalent expanded command:
 
@@ -23,6 +23,7 @@ $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 .\tools\test-android-test-apk-checker.ps1
 .\tools\test-device-smoke-contract.ps1
 .\tools\test-device-smoke-result-checker.ps1
+.\tools\test-mbtiles-vector-instrumentation-runner.ps1
 ```
 
 Current local result: passed with `.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home`.
@@ -36,6 +37,7 @@ Latest local evidence:
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
 - `test-device-smoke-contract.ps1`: passed; runner actions, checker required actions, fixture actions, sample action constants, and post-recreate snapshot markers are aligned
 - `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, native renderer startup failure rejection, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, missing post-recreate snapshot log rejection, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, missing 3D Tiles zoom-snapshot rejection, missing 3D Tiles high-LOD native evidence rejection, missing 3D Tiles re-add loaded rejection, missing MVT pan query, hidden no-features, removed no-features, MVT MBTiles native render rejection, missing offline prefetch cleanup rejection, and missing GeoJSON/Draw/Location interaction rejection
+- `test-mbtiles-vector-instrumentation-runner.ps1`: passed; runner parameters, adb online-device guards, targeted test class, and docs commands are aligned
 - `VectorraMbTilesVectorSourceInstrumentedTest`: passed on `emulator-5554` through `:vectorra-maps:connectedDebugAndroidTest`, proving the Android SQLite MBTiles vector source can open and read a real MBTiles file
 
 Validated outputs:
