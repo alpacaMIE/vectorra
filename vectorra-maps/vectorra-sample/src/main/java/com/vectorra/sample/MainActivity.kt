@@ -63,6 +63,7 @@ import java.util.concurrent.atomic.AtomicReference
 class MainActivity : Activity() {
     private lateinit var mapView: VectorraMapView
     private lateinit var statusText: TextView
+    private lateinit var controlsView: View
     private var terrainExaggeration = 1.0
     private var layersInstalled = false
     private var modelInstalled = false
@@ -129,6 +130,7 @@ class MainActivity : Activity() {
             event.features.isNotEmpty()
         }
 
+        controlsView = createControls()
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(
@@ -139,7 +141,7 @@ class MainActivity : Activity() {
                 )
             )
             addView(statusText, statusLayoutParams())
-            addView(createControls(), controlsLayoutParams())
+            addView(controlsView, controlsLayoutParams())
         }
 
         setContentView(root)
@@ -969,6 +971,7 @@ class MainActivity : Activity() {
                     bearing = 0.0
                 )
             )
+            controlsView.visibility = View.GONE
             statusText.text = "3D Tiles zoom smoke requested"
             Log.i(LOG_TAG, "3D Tiles zoom smoke: loaded at zoom=14.0")
             statusText.postDelayed({
@@ -1000,7 +1003,13 @@ class MainActivity : Activity() {
             statusText.postDelayed({
                 logSnapshotSmoke(label = "3D Tiles zoom snapshot", updateStatus = false)
             }, SAMPLE_3D_TILES_ZOOM_SNAPSHOT_DELAY_MS)
+            statusText.postDelayed({
+                controlsView.visibility = View.VISIBLE
+            }, SAMPLE_3D_TILES_ZOOM_RESTORE_CONTROLS_DELAY_MS)
         }.onFailure { error ->
+            if (::controlsView.isInitialized) {
+                controlsView.visibility = View.VISIBLE
+            }
             statusText.text = "3D Tiles zoom smoke error: ${error.message}"
         }
     }
@@ -1271,8 +1280,8 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
         const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
         const val SAMPLE_3D_TILES_LATITUDE = 40.04253061142592
-        const val SAMPLE_3D_TILES_ZOOM_CLOSE = 20.0
-        const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 22.0
+        const val SAMPLE_3D_TILES_ZOOM_CLOSE = 18.0
+        const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 20.0
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
         const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
@@ -1297,6 +1306,7 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS = 7_000L
         const val SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS = 14_000L
         const val SAMPLE_3D_TILES_ZOOM_SNAPSHOT_DELAY_MS = 20_000L
+        const val SAMPLE_3D_TILES_ZOOM_RESTORE_CONTROLS_DELAY_MS = 30_000L
         const val SNAPSHOT_SMOKE_MAX_ATTEMPTS = 2
         const val SNAPSHOT_SMOKE_RETRY_DELAY_MS = 1_500L
         const val SAMPLE_MVT_REMOVE_DELAY_MS = 6_000L

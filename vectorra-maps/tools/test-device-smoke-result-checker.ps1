@@ -157,6 +157,14 @@ function New-SmokeFixture {
         }
         $lines += "screenshot=$path bytes=4"
     }
+    if ($OmitArtifact -ne "zoom3dTilesScreenshot") {
+        $path = if ($MismatchedArtifact -eq "zoom3dTilesScreenshot") {
+            Join-Path $testRoot "wrong-vectorra-smoke-zoom-3dtiles-$Stamp.png"
+        } else {
+            Join-Path $testRoot "vectorra-smoke-zoom-3dtiles-$Stamp.png"
+        }
+        $lines += "zoom3dTilesScreenshot=$path bytes=4"
+    }
     if ($OmitArtifact -ne "uiDump") {
         $path = if ($MismatchedArtifact -eq "uiDump") {
             Join-Path $testRoot "wrong-vectorra-smoke-$Stamp.xml"
@@ -200,6 +208,7 @@ function New-SmokeFixture {
             )
         )
     }
+    Copy-Item -LiteralPath $pngPath -Destination (Join-Path $testRoot "vectorra-smoke-zoom-3dtiles-$Stamp.png")
     Set-Content -Path (Join-Path $testRoot "vectorra-smoke-$Stamp.xml") -Value '<node package="com.vectorra.sample" />' -Encoding utf8
     Set-Content -Path (Join-Path $testRoot "device-smoke-$Stamp.log") -Value $LogText -Encoding utf8
     return $reportPath
@@ -283,8 +292,14 @@ Invoke-CheckerFailure $missingSampleInteractionReport "missing sample interactio
 $missingArtifactReport = New-SmokeFixture -Stamp "20260604-000014" -OmitArtifact "logcat"
 Invoke-CheckerFailure $missingArtifactReport "missing artifact report line"
 
+$missing3dTilesZoomScreenshotReport = New-SmokeFixture -Stamp "20260604-000024" -OmitArtifact "zoom3dTilesScreenshot"
+Invoke-CheckerFailure $missing3dTilesZoomScreenshotReport "missing 3D Tiles close-zoom screenshot"
+
 $mismatchedArtifactReport = New-SmokeFixture -Stamp "20260604-000015" -MismatchedArtifact "screenshot"
 Invoke-CheckerFailure $mismatchedArtifactReport "mismatched artifact report path"
+
+$mismatched3dTilesZoomScreenshotReport = New-SmokeFixture -Stamp "20260604-000025" -MismatchedArtifact "zoom3dTilesScreenshot"
+Invoke-CheckerFailure $mismatched3dTilesZoomScreenshotReport "mismatched 3D Tiles close-zoom screenshot path"
 
 $mismatchedInstalledApkReport = New-SmokeFixture `
     -Stamp "20260604-000016" `

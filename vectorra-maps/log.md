@@ -3734,6 +3734,42 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### 3D Tiles Close-Zoom Screenshot Smoke Evidence
+
+Completed:
+
+- Added a dedicated close-zoom 3D Tiles screenshot capture to `tools/run-device-smoke.ps1` immediately after the `zoom-3dtiles` action.
+- Updated `tools/check-device-smoke-result.ps1` to require the `zoom3dTilesScreenshot` artifact, verify the reported path, and validate the PNG signature/dimensions.
+- Expanded `tools/test-device-smoke-result-checker.ps1` with missing and mismatched close-zoom 3D Tiles screenshot failure fixtures.
+- Strengthened `tools/test-device-smoke-contract.ps1` so runner, checker, and checker fixture coverage for the close-zoom screenshot artifact stay aligned.
+- Updated the sample `zoom-3dtiles` smoke path to hide the bottom control panel during close-zoom evidence capture and changed the smoke zoom sequence from `20.0 -> 22.0` to `18.0 -> 20.0`, which still triggers high-LOD `dragon_high.b3dm.glb` while keeping the Cesium dragon visible enough for screenshot evidence.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning doc, and 0.8.0 beta development notes to include the close-zoom 3D Tiles screenshot artifact.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\run-device-smoke.ps1','.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null; if($errors){ throw ($errors | Out-String) } }; .\tools\test-device-smoke-contract.ps1; .\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\tools\run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed.
+- `test-device-smoke-contract.ps1` passed.
+- `test-device-smoke-result-checker.ps1` passed, including missing and mismatched close-zoom 3D Tiles screenshot fixtures.
+- `:vectorra-sample:assembleDebug` passed.
+- `run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554` passed and checked `build/device-smoke/device-smoke-20260604-065746.txt`.
+- The latest emulator smoke report includes `zoom3dTilesScreenshot=D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\vectorra-smoke-zoom-3dtiles-20260604-065746.png bytes=186003`.
+- Visual inspection of `vectorra-smoke-zoom-3dtiles-20260604-065746.png` showed the close-zoom high-LOD dragon content visible without the bottom controls overlay.
+- Logcat showed the close-zoom smoke sequence `zoom=18.0` then `zoom=20.0`, `dragon_high.b3dm.glb` registration/application/load, and `3D Tiles zoom snapshot 1080x2219 nonblank=true`.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
 ### Emulator Smoke Gate Runner
 
 Completed:

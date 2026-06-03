@@ -38,6 +38,7 @@ if (-not (Test-Path $reportPath)) {
 $reportText = Get-Content -Path $reportPath -Raw
 $stamp = [System.IO.Path]::GetFileNameWithoutExtension($reportPath) -replace '^device-smoke-', ''
 $screenshot = Join-Path $smokeRoot "vectorra-smoke-$stamp.png"
+$zoom3dTilesScreenshot = Join-Path $smokeRoot "vectorra-smoke-zoom-3dtiles-$stamp.png"
 $uiDump = Join-Path $smokeRoot "vectorra-smoke-$stamp.xml"
 $logcat = Join-Path $smokeRoot "device-smoke-$stamp.log"
 
@@ -231,6 +232,7 @@ foreach ($key in $requiredMetadataKeys) {
 }
 Assert-InstalledApkConsistency $reportText
 Assert-ArtifactReportLine $reportText 'screenshot' $screenshot
+Assert-ArtifactReportLine $reportText 'zoom3dTilesScreenshot' $zoom3dTilesScreenshot
 Assert-ArtifactReportLine $reportText 'uiDump' $uiDump
 Assert-ArtifactReportLine $reportText 'logcat' $logcat
 foreach ($action in $requiredActions) {
@@ -263,9 +265,11 @@ $orderedReportPatterns += @(
 Assert-OrderedReportPatterns $reportText $orderedReportPatterns
 
 Assert-NonEmptyFile $screenshot "screenshot"
+Assert-NonEmptyFile $zoom3dTilesScreenshot "3D Tiles close-zoom screenshot"
 Assert-NonEmptyFile $uiDump "ui dump"
 Assert-NonEmptyFile $logcat "logcat"
 Assert-PngDimensions $screenshot
+Assert-PngDimensions $zoom3dTilesScreenshot
 
 $uiText = Get-Content -Path $uiDump -Raw
 if ($uiText -notmatch 'com\.vectorra\.sample') {

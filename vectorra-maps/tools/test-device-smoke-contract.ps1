@@ -89,6 +89,11 @@ if ($checkerText -notmatch 'tiles3d sample-3d-tiles-layer loaded' -or
     $checkerText -notmatch 'tiles3d sample-3d-tiles-layer-bad failed:') {
     throw "check-device-smoke-result.ps1 missing 3D Tiles runtime log requirements"
 }
+if ($runnerText -notmatch 'Capture-Screenshot\s+"zoom-3dtiles"\s+"zoom3dTilesScreenshot"' -or
+    $checkerText -notmatch 'zoom3dTilesScreenshot' -or
+    $checkerTestText -notmatch 'missing 3D Tiles close-zoom screenshot') {
+    throw "device smoke scripts missing 3D Tiles close-zoom screenshot artifact coverage"
+}
 if ($checkerTestText -notmatch 'missing 3D Tiles high LOD native evidence') {
     throw "test-device-smoke-result-checker.ps1 missing 3D Tiles high LOD failure fixture"
 }

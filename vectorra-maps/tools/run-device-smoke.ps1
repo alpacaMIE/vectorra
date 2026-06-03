@@ -111,6 +111,16 @@ function Assert-NonEmptyFile {
     "$Label=$Path bytes=$($item.Length)" | Tee-Object -FilePath $report -Append
 }
 
+function Capture-Screenshot {
+    param([string]$Suffix, [string]$ReportKey)
+    $screenshotDevice = "/sdcard/vectorra-smoke-$Suffix-$stamp.png"
+    $screenshotHost = Join-Path $out "vectorra-smoke-$Suffix-$stamp.png"
+    Invoke-Adb shell screencap '-p' $screenshotDevice | Out-Null
+    Invoke-Adb pull $screenshotDevice $screenshotHost | Tee-Object -FilePath $report -Append
+    Invoke-Adb shell rm $screenshotDevice | Out-Null
+    Assert-NonEmptyFile $screenshotHost $ReportKey
+}
+
 function First-MatchingLines {
     param([string]$Text, [string]$Pattern, [int]$Count = 10)
     return (($Text -split "`r?`n") | Select-String -Pattern $Pattern | Select-Object -First $Count) -join "`n"
@@ -168,6 +178,9 @@ Write-Report "forceStopBeforeColdStart=true"
 Start-Sample "cold-start" 10
 foreach ($action in $actions) {
     Smoke-Action $action.name $action.delay
+    if ($action.name -eq "zoom-3dtiles") {
+        Capture-Screenshot "zoom-3dtiles" "zoom3dTilesScreenshot"
+    }
 }
 
 Lifecycle-Step "pause-home" { Invoke-Adb shell input keyevent KEYCODE_HOME } 4
