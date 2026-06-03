@@ -3005,6 +3005,35 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### Device Smoke Post-Recreate Snapshot Validation
+
+Tightened the device smoke result checker so the runtime gate proves that the sample can still run a snapshot action after force-stop/recreate.
+
+Completed:
+
+- Updated `tools/check-device-smoke-result.ps1` so the ordered smoke report markers require `actionStart=snapshot` and `actionEnd=snapshot` after `startSampleEnd=recreate-after-force-stop`.
+- Updated `tools/test-device-smoke-result-checker.ps1` so the valid fixture includes the post-recreate snapshot markers.
+- Added a negative fixture that omits the post-recreate snapshot and must fail.
+- Updated the Android 1.0 acceptance record, ABI/device matrix, release versioning checklist, and 0.8.0 beta development notes to document the stricter smoke checker coverage.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$files=@('.\tools\check-device-smoke-result.ps1','.\tools\test-device-smoke-result-checker.ps1'); foreach($path in $files){ $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null; if($errors.Count -gt 0){ foreach($err in $errors){ Write-Error ($path + ': ' + $err.Message) }; exit 1 }; Write-Output ($path + ' syntax ok') }
+.\tools\test-device-smoke-result-checker.ps1
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1` and `test-device-smoke-result-checker.ps1`.
+- `test-device-smoke-result-checker.ps1` passed; the new missing post-recreate snapshot fixture failed as expected with `Ordered smoke report marker missing after line 56: actionStart=snapshot(\s|$)`.
+- `check-android-acceptance.ps1` passed with `BUILD SUCCESSFUL`, `Native library check passed.`, `Android instrumentation APK check passed.`, `Android instrumentation APK checker self-test passed.`, `Device smoke result checker self-test passed.`, and `Android local acceptance gate passed.`
+
+Known remaining work:
+
+- Run the real device smoke and result checker after adb reports the physical device as `device`.
+
 ### Android Instrumentation APK Checker Self-Test
 
 Added a self-test for the Android instrumentation APK packaging checker.

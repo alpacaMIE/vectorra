@@ -10,7 +10,7 @@ Run from `vectorra-maps/`:
 .\tools\check-android-acceptance.ps1
 ```
 
-This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
+This script runs the full local gate, builds the SDK instrumentation APK, checks native library entries in the generated SDK AAR and sample APK artifacts, verifies the SDK instrumentation APK exists without packaged native `.so` entries, validates the instrumentation APK checker against missing, empty, and native-library failure fixtures, and validates the runtime smoke result verifier against the complete fixture plus crash, missing-action, ordering, post-recreate snapshot, metadata, APK/ABI, artifact, screenshot, and snapshot failure fixtures.
 
 Equivalent expanded command:
 
@@ -33,7 +33,7 @@ Latest local evidence:
 - `check-native-libs.ps1`: passed
 - `check-android-test-apk.ps1`: passed; `vectorra-maps-debug-androidTest.apk` exists and contains no native `.so` entries
 - `test-android-test-apk-checker.ps1`: passed, including missing APK, empty APK, and native `.so` rejection
-- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
+- `test-device-smoke-result-checker.ps1`: passed, including invalid screenshot PNG, missing device metadata, empty device metadata, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank snapshot rejection, and missing 3D Tiles zoom-snapshot rejection
 
 Validated outputs:
 
@@ -57,7 +57,7 @@ Runtime command:
 .\tools\check-device-smoke-result.ps1
 ```
 
-The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
+The runtime script performs adb device enumeration, cold start, sample smoke actions, home/resume, force-stop/recreate, post-recreate snapshot action, screenshot capture, UI dump, logcat export, adb exit-code checks, non-empty artifact checks, device metadata recording, and action/lifecycle start-end reporting. The logcat export includes Vectorra tags plus Android crash/ANR tags. The result checker also verifies install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action/lifecycle records including the post-recreate snapshot action, positive-byte screenshot/UI/log artifact records point to the checked files, screenshot PNG signature, dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, and non-empty required device metadata keys, including Vulkan metadata.
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 

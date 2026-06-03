@@ -244,7 +244,9 @@ $orderedReportPatterns += @(
     'lifecycleStart=destroy-force-stop(\s|$)',
     'lifecycleEnd=destroy-force-stop(\s|$)',
     'startSample=recreate-after-force-stop(\s|$)',
-    'startSampleEnd=recreate-after-force-stop(\s|$)'
+    'startSampleEnd=recreate-after-force-stop(\s|$)',
+    'actionStart=snapshot(\s|$)',
+    'actionEnd=snapshot(\s|$)'
 )
 Assert-OrderedReportPatterns $reportText $orderedReportPatterns
 

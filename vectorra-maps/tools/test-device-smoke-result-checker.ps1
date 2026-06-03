@@ -51,7 +51,8 @@ function New-SmokeFixture {
         [string]$OmitArtifact = "",
         [string]$MismatchedArtifact = "",
         [string]$InstalledApk = "vectorra-sample/build/outputs/apk/debug/vectorra-sample-arm64-v8a-debug.apk",
-        [string]$Abis = "arm64-v8a,armeabi-v7a"
+        [string]$Abis = "arm64-v8a,armeabi-v7a",
+        [switch]$OmitPostRecreateSnapshot
     )
 
     $reportPath = Join-Path $testRoot "device-smoke-$Stamp.txt"
@@ -93,6 +94,12 @@ function New-SmokeFixture {
         "startSample=recreate-after-force-stop delaySeconds=10",
         "startSampleEnd=recreate-after-force-stop"
     )
+    if (-not $OmitPostRecreateSnapshot) {
+        $lines += @(
+            "actionStart=snapshot delaySeconds=1",
+            "actionEnd=snapshot"
+        )
+    }
     if ($OmitArtifact -ne "screenshot") {
         $path = if ($MismatchedArtifact -eq "screenshot") {
             Join-Path $testRoot "wrong-vectorra-smoke-$Stamp.png"
@@ -219,5 +226,8 @@ $outOfOrderReport = New-SmokeFixture -Stamp "20260604-000012"
     -replace 'actionStart=mvt delaySeconds=1\r?\nactionEnd=mvt', "actionEnd=mvt`nactionStart=mvt delaySeconds=1" |
     Set-Content -Path $outOfOrderReport -Encoding utf8
 Invoke-CheckerFailure $outOfOrderReport "out-of-order action markers"
+
+$missingPostRecreateSnapshotReport = New-SmokeFixture -Stamp "20260604-000013" -OmitPostRecreateSnapshot
+Invoke-CheckerFailure $missingPostRecreateSnapshotReport "missing post-recreate snapshot"
 
 Write-Host "Device smoke result checker self-test passed."

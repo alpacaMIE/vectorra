@@ -46,8 +46,8 @@ Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entr
 .\tools\run-device-smoke.ps1
 ```
 
-The script first requires `adb devices -l` to complete successfully, then installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
-The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, missing-action, out-of-order action/lifecycle markers, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, and missing 3D Tiles zoom-snapshot failures before the device run.
+The script first requires `adb devices -l` to complete successfully, then installs the `arm64-v8a` sample APK, records device properties, performs cold start, runs the sample smoke actions, exercises home/resume and force-stop/recreate lifecycle flows, runs a post-recreate snapshot action, captures a screenshot and UI dump, writes logs under `build/device-smoke/`, and fails if an adb step fails or if the screenshot, UI dump, or logcat artifact is missing or empty. The logcat artifact includes Vectorra tags plus Android crash/ANR tags. The text report includes start/end records for every sample action and lifecycle step.
+The checker self-test runs against synthetic local fixtures so the result verifier is known to catch crash-log, missing-action, out-of-order action/lifecycle markers, missing post-recreate snapshot markers, invalid-screenshot, missing-device-metadata, empty-device-metadata, install/installed APK mismatch, APK/ABI mismatch, missing artifact byte record, mismatched artifact path, blank-snapshot, and missing 3D Tiles zoom-snapshot failures before the device run.
 
 After a run completes, verify the generated artifacts:
 
@@ -55,7 +55,7 @@ After a run completes, verify the generated artifacts:
 .\tools\check-device-smoke-result.ps1
 ```
 
-This validates non-empty device metadata records, including the Vulkan metadata line, install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action and lifecycle completion records, positive-byte screenshot/UI/log artifact records that point to the checked files, screenshot PNG signature and dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, UI package ownership, and common crash patterns.
+This validates non-empty device metadata records, including the Vulkan metadata line, install/installed APK consistency, installed APK compatibility with the reported ABI list, ordered action and lifecycle completion records through the post-recreate snapshot action, positive-byte screenshot/UI/log artifact records that point to the checked files, screenshot PNG signature and dimensions, sample snapshot `nonblank=true` log output, 3D Tiles close-zoom snapshot `nonblank=true` log output, UI package ownership, and common crash patterns.
 
 By default the script selects the split sample APK from the device ABI list:
 
