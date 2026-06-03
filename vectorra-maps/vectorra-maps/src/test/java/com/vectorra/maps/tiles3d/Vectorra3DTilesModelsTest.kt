@@ -47,4 +47,23 @@ class Vectorra3DTilesModelsTest {
     fun rejectsInvalidLoadedTileBudget() {
         Vectorra3DTilesOptions(maximumLoadedTiles = 0)
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsNonFiniteTileTransform() {
+        VectorraTileset3DTile(
+            boundingVolume = VectorraTileset3DBoundingVolume.Sphere(
+                centerX = 0.0,
+                centerY = 0.0,
+                centerZ = 0.0,
+                radius = 1.0
+            ),
+            geometricError = 0.0,
+            transform = listOf(
+                Double.NaN, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            )
+        )
+    }
 }

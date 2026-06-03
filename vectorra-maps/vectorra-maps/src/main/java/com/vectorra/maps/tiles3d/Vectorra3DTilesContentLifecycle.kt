@@ -25,7 +25,8 @@ internal data class Vectorra3DTilesContentLoadTask(
     val content: VectorraTileset3DContent,
     val request: TileRequest,
     val priority: Int,
-    val generation: Long
+    val generation: Long,
+    val transform: List<Double>
 )
 
 internal data class Vectorra3DTilesContentLifecycleResult(
@@ -124,14 +125,16 @@ internal class Vectorra3DTilesContentLifecycle(
                             )
                         ),
                         priority = request.priority,
-                        generation = generation
+                        generation = generation,
+                        transform = request.transform
                     )
                 }
                 "file" -> {
                     val input = rendererInput(
                         tileId = request.tileId,
                         content = request.content,
-                        renderUri = uri.toString()
+                        renderUri = uri.toString(),
+                        transform = request.transform
                     )
                     renderer.addContent(input)
                     entries[request.tileId] = Entry(
@@ -185,7 +188,8 @@ internal class Vectorra3DTilesContentLifecycle(
         val input = rendererInput(
             tileId = task.tileId,
             content = task.content,
-            renderUri = renderFile.toURI().toString()
+            renderUri = renderFile.toURI().toString(),
+            transform = task.transform
         )
         renderer.addContent(input)
         entries[task.tileId] = current.copy(
@@ -211,7 +215,8 @@ internal class Vectorra3DTilesContentLifecycle(
     private fun rendererInput(
         tileId: String,
         content: VectorraTileset3DContent,
-        renderUri: String
+        renderUri: String,
+        transform: List<Double>
     ): Vectorra3DTilesRendererContentInput {
         return Vectorra3DTilesRendererContentInput(
             layerId = layerId,
@@ -220,9 +225,7 @@ internal class Vectorra3DTilesContentLifecycle(
             contentKind = content.kind,
             renderUri = renderUri,
             payloadSource = Vectorra3DTilesRendererContentInput.expectedPayloadSource(content.kind),
-            transform = Vectorra3DTilesRendererTransform.Matrix(
-                Vectorra3DTilesRendererTransform.IDENTITY_MATRIX
-            )
+            transform = Vectorra3DTilesRendererTransform.Matrix(transform)
         )
     }
 

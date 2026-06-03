@@ -180,6 +180,60 @@ class Vectorra3DTilesTraversalTest {
         assertFalse(result.requests.any { it.tileId in result.overBudgetTileIds })
     }
 
+    @Test
+    fun tileTransformsAreComposedAndUsedForVisibility() {
+        val result = traversal.traverse(
+            tileset = tileset(
+                root = tile(
+                    sphere = sphere(z = 0.0, radius = 10.0),
+                    geometricError = 100.0,
+                    refine = VectorraTileset3DRefine.ADD,
+                    content = content("root.glb"),
+                    transform = Vectorra3DTilesSpatial.translation(0.0, 0.0, -100.0),
+                    children = listOf(
+                        tile(
+                            sphere = sphere(z = 0.0, radius = 5.0),
+                            geometricError = 0.0,
+                            content = content("child.glb"),
+                            transform = Vectorra3DTilesSpatial.translation(10.0, 0.0, 0.0)
+                        )
+                    )
+                )
+            ),
+            camera = camera,
+            options = options(maximumScreenSpaceError = 1.0)
+        )
+
+        assertEquals(listOf("root", "root/0"), result.requests.map { it.tileId })
+        assertEquals(
+            Vectorra3DTilesSpatial.translation(0.0, 0.0, -100.0),
+            result.requests.first { it.tileId == "root" }.transform
+        )
+        assertEquals(
+            Vectorra3DTilesSpatial.translation(10.0, 0.0, -100.0),
+            result.requests.first { it.tileId == "root/0" }.transform
+        )
+    }
+
+    @Test
+    fun transformedBoundsCanCullTileOutsideMaximumDistance() {
+        val result = traversal.traverse(
+            tileset = tileset(
+                root = tile(
+                    sphere = sphere(z = 0.0, radius = 5.0),
+                    geometricError = 0.0,
+                    content = content("root.glb"),
+                    transform = Vectorra3DTilesSpatial.translation(0.0, 0.0, -1_000.0)
+                )
+            ),
+            camera = camera.copy(maximumDistanceMeters = 50.0),
+            options = options()
+        )
+
+        assertTrue(result.selectedTiles.isEmpty())
+        assertTrue(result.requests.isEmpty())
+    }
+
     private fun options(
         maximumScreenSpaceError: Double = 16.0,
         maximumLoadedTiles: Int = 256
@@ -203,12 +257,14 @@ class Vectorra3DTilesTraversalTest {
         geometricError: Double,
         refine: VectorraTileset3DRefine? = null,
         content: VectorraTileset3DContent? = null,
-        children: List<VectorraTileset3DTile> = emptyList()
+        children: List<VectorraTileset3DTile> = emptyList(),
+        transform: List<Double>? = null
     ): VectorraTileset3DTile {
         return VectorraTileset3DTile(
             boundingVolume = sphere,
             geometricError = geometricError,
             refine = refine,
+            transform = transform,
             contents = listOfNotNull(content),
             children = children
         )

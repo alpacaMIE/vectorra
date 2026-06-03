@@ -68,6 +68,9 @@ data class VectorraTileset3DTile(
         require(transform == null || transform.size == MATRIX_4_SIZE) {
             "3D Tiles tile transform must contain 16 numbers."
         }
+        require(transform == null || transform.all(Double::isFinite)) {
+            "3D Tiles tile transform values must be finite."
+        }
     }
 
     val content: VectorraTileset3DContent?

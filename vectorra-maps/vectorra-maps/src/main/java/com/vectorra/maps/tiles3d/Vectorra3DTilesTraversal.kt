@@ -1,10 +1,7 @@
 package com.vectorra.maps.tiles3d
 
-import kotlin.math.PI
 import kotlin.math.acos
-import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
 
@@ -12,7 +9,8 @@ internal data class Vectorra3DTilesRuntimeTile(
     val id: String,
     val tile: VectorraTileset3DTile,
     val depth: Int,
-    val parentId: String?
+    val parentId: String?,
+    val transform: List<Double> = Vectorra3DTilesSpatial.IDENTITY_MATRIX
 ) {
     val contents: List<VectorraTileset3DContent>
         get() = tile.contents
@@ -75,7 +73,8 @@ internal data class Vectorra3DTilesTraversalOptions(
 internal data class Vectorra3DTilesRequest(
     val tileId: String,
     val content: VectorraTileset3DContent,
-    val priority: Int
+    val priority: Int,
+    val transform: List<Double> = Vectorra3DTilesSpatial.IDENTITY_MATRIX
 )
 
 internal data class Vectorra3DTilesTraversalResult(
@@ -94,7 +93,16 @@ internal class Vectorra3DTilesTraversal {
     ): Vectorra3DTilesTraversalResult {
         val selected = mutableListOf<Vectorra3DTilesRuntimeTile>()
         selectTile(
-            runtimeTile = Vectorra3DTilesRuntimeTile(ROOT_TILE_ID, tileset.root, depth = 0, parentId = null),
+            runtimeTile = Vectorra3DTilesRuntimeTile(
+                id = ROOT_TILE_ID,
+                tile = tileset.root,
+                depth = 0,
+                parentId = null,
+                transform = Vectorra3DTilesSpatial.composeTransform(
+                    parentTransform = Vectorra3DTilesSpatial.IDENTITY_MATRIX,
+                    tileTransform = tileset.root.transform
+                )
+            ),
             camera = camera,
             options = options,
             selected = selected
@@ -126,7 +134,8 @@ internal class Vectorra3DTilesTraversal {
                         Vectorra3DTilesRequest(
                             tileId = runtimeTile.id,
                             content = content,
-                            priority = requestPriority(runtimeTile, camera)
+                            priority = requestPriority(runtimeTile, camera),
+                            transform = runtimeTile.transform
                         )
                     }
             } else {
@@ -148,7 +157,7 @@ internal class Vectorra3DTilesTraversal {
         options: Vectorra3DTilesTraversalOptions,
         selected: MutableList<Vectorra3DTilesRuntimeTile>
     ) {
-        if (!isVisible(runtimeTile.tile.boundingVolume, camera)) {
+        if (!isVisible(runtimeTile.tile.boundingVolume, runtimeTile.transform, camera)) {
             return
         }
 
@@ -157,11 +166,15 @@ internal class Vectorra3DTilesTraversal {
                 id = "${runtimeTile.id}/$index",
                 tile = child,
                 depth = runtimeTile.depth + 1,
-                parentId = runtimeTile.id
+                parentId = runtimeTile.id,
+                transform = Vectorra3DTilesSpatial.composeTransform(
+                    parentTransform = runtimeTile.transform,
+                    tileTransform = child.transform
+                )
             )
         }
         val needsRefinement = runtimeTile.tile.geometricError > 0.0 &&
-            screenSpaceError(runtimeTile.tile, camera) > options.maximumScreenSpaceError &&
+            screenSpaceError(runtimeTile, camera) > options.maximumScreenSpaceError &&
             children.isNotEmpty()
         if (!needsRefinement) {
             selected += runtimeTile
@@ -187,21 +200,29 @@ internal class Vectorra3DTilesTraversal {
         }
     }
 
-    private fun screenSpaceError(tile: VectorraTileset3DTile, camera: Vectorra3DTilesCamera): Double {
-        val distance = max(EPSILON_DISTANCE, distanceTo(tile.boundingVolume, camera))
+    private fun screenSpaceError(tile: Vectorra3DTilesRuntimeTile, camera: Vectorra3DTilesCamera): Double {
+        val distance = max(EPSILON_DISTANCE, distanceTo(tile.tile.boundingVolume, tile.transform, camera))
         val fovRadians = Math.toRadians(camera.verticalFovDegrees)
-        return tile.geometricError * camera.viewportHeightPixels / (2.0 * distance * tan(fovRadians / 2.0))
+        return tile.tile.geometricError * camera.viewportHeightPixels / (2.0 * distance * tan(fovRadians / 2.0))
     }
 
     private fun requestPriority(tile: Vectorra3DTilesRuntimeTile, camera: Vectorra3DTilesCamera): Int {
-        val sse = screenSpaceError(tile.tile, camera)
-        val distanceScore = max(0.0, 1_000_000.0 - distanceTo(tile.tile.boundingVolume, camera)) / 1_000.0
+        val sse = screenSpaceError(tile, camera)
+        val distanceScore = max(
+            0.0,
+            1_000_000.0 - distanceTo(tile.tile.boundingVolume, tile.transform, camera)
+        ) / 1_000.0
         return (sse * 100.0 + distanceScore + tile.depth).toInt()
     }
 
-    private fun isVisible(volume: VectorraTileset3DBoundingVolume, camera: Vectorra3DTilesCamera): Boolean {
-        val center = volume.center()
-        val radius = volume.radius()
+    private fun isVisible(
+        volume: VectorraTileset3DBoundingVolume,
+        transform: List<Double>,
+        camera: Vectorra3DTilesCamera
+    ): Boolean {
+        val sphere = Vectorra3DTilesSpatial.boundingSphere(volume, transform)
+        val center = sphere.center
+        val radius = sphere.radius
         val toTileX = center.x - camera.positionX
         val toTileY = center.y - camera.positionY
         val toTileZ = center.z - camera.positionZ
@@ -223,55 +244,21 @@ internal class Vectorra3DTilesTraversal {
         return angle <= Math.toRadians(camera.verticalFovDegrees) / 2.0 + angularRadius
     }
 
-    private fun distanceTo(volume: VectorraTileset3DBoundingVolume, camera: Vectorra3DTilesCamera): Double {
-        val center = volume.center()
+    private fun distanceTo(
+        volume: VectorraTileset3DBoundingVolume,
+        transform: List<Double>,
+        camera: Vectorra3DTilesCamera
+    ): Double {
+        val sphere = Vectorra3DTilesSpatial.boundingSphere(volume, transform)
+        val center = sphere.center
         val dx = center.x - camera.positionX
         val dy = center.y - camera.positionY
         val dz = center.z - camera.positionZ
-        return max(0.0, sqrt(dx * dx + dy * dy + dz * dz) - volume.radius())
+        return max(0.0, sqrt(dx * dx + dy * dy + dz * dz) - sphere.radius)
     }
-
-    private fun VectorraTileset3DBoundingVolume.center(): Point3D {
-        return when (this) {
-            is VectorraTileset3DBoundingVolume.Sphere -> Point3D(centerX, centerY, centerZ)
-            is VectorraTileset3DBoundingVolume.Box -> Point3D(values[0], values[1], values[2])
-            is VectorraTileset3DBoundingVolume.Region -> {
-                val longitude = (west + east) / 2.0
-                val latitude = (south + north) / 2.0
-                val height = (minimumHeight + maximumHeight) / 2.0
-                wgs84RadiansToEcef(longitude, latitude, height)
-            }
-        }
-    }
-
-    private fun VectorraTileset3DBoundingVolume.radius(): Double {
-        return when (this) {
-            is VectorraTileset3DBoundingVolume.Sphere -> radius
-            is VectorraTileset3DBoundingVolume.Box -> {
-                val x = sqrt(values[3] * values[3] + values[4] * values[4] + values[5] * values[5])
-                val y = sqrt(values[6] * values[6] + values[7] * values[7] + values[8] * values[8])
-                val z = sqrt(values[9] * values[9] + values[10] * values[10] + values[11] * values[11])
-                x + y + z
-            }
-            is VectorraTileset3DBoundingVolume.Region -> max(1.0, maximumHeight - minimumHeight)
-        }
-    }
-
-    private fun wgs84RadiansToEcef(longitude: Double, latitude: Double, height: Double): Point3D {
-        val radius = WGS84_RADIUS_METERS + height
-        val cosLatitude = cos(latitude)
-        return Point3D(
-            x = radius * cosLatitude * cos(longitude),
-            y = radius * cosLatitude * sin(longitude),
-            z = radius * sin(latitude)
-        )
-    }
-
-    private data class Point3D(val x: Double, val y: Double, val z: Double)
 
     private companion object {
         const val ROOT_TILE_ID = "root"
         const val EPSILON_DISTANCE = 0.001
-        const val WGS84_RADIUS_METERS = 6_378_137.0
     }
 }

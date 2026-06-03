@@ -57,6 +57,7 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(listOf("3d-layer:root"), renderer.added.map { it.nativeContentId })
         assertEquals(VectorraTileset3DContentKind.GLB, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLB_URI, renderer.added.single().payloadSource)
+        assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
         assertTrue(renderer.added.single().renderUri.startsWith("file:/"))
         assertTrue(File(java.net.URI(renderer.added.single().renderUri)).readBytes().contentEquals(byteArrayOf(1, 2, 3)))
         assertEquals(
@@ -79,6 +80,7 @@ class Vectorra3DTilesContentLifecycleTest {
         assertEquals(listOf("3d-layer:root"), renderer.added.map { it.nativeContentId })
         assertEquals(VectorraTileset3DContentKind.GLTF, renderer.added.single().contentKind)
         assertEquals(Vectorra3DTilesRendererPayloadSource.GLTF_URI, renderer.added.single().payloadSource)
+        assertEquals(Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0), renderer.added.single().nativeMatrix().toList())
         assertEquals(localFile.toURI().toString(), renderer.added.single().renderUri)
     }
 
@@ -184,7 +186,12 @@ class Vectorra3DTilesContentLifecycleTest {
         content: VectorraTileset3DContent,
         priority: Int = 42
     ): Vectorra3DTilesRequest {
-        return Vectorra3DTilesRequest(tileId = tileId, content = content, priority = priority)
+        return Vectorra3DTilesRequest(
+            tileId = tileId,
+            content = content,
+            priority = priority,
+            transform = Vectorra3DTilesSpatial.translation(1.0, 2.0, 3.0)
+        )
     }
 
     private fun remoteContent(fileName: String): VectorraTileset3DContent {

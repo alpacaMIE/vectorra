@@ -356,3 +356,38 @@ Known remaining Phase 1 work:
 
 - P1.T4 is implemented as a tested lifecycle core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
 - P1.T5 is next for tileset/tile transform composition, bounds, `RTC_CENTER`, and renderer visibility semantics.
+
+### P1.T5 Transform And Bounds Core
+
+Continued Phase 1 by adding the platform-neutral 3D Tiles transform and bounds core used by traversal and renderer content input.
+
+Completed:
+
+- Added internal `Vectorra3DTilesSpatial` utilities for column-major 4x4 matrix multiplication, translation matrices, transform composition, point transforms, and optional `RTC_CENTER` composition.
+- Added bounding sphere derivation for 3D Tiles `sphere`, `box`, and `region` bounding volumes, including WGS84-radians region corners converted to ECEF.
+- Updated traversal runtime tiles to carry composed world transforms from parent tile transform and child tile transform.
+- Updated traversal culling, screen-space error distance, and request priority to use transformed bounding spheres instead of untransformed local volumes.
+- Updated traversal requests to carry the composed renderer transform for each selected tile content.
+- Updated GLB/GLTF content lifecycle to forward traversal transforms into `Vectorra3DTilesRendererContentInput` instead of submitting identity transforms.
+- Added finite-value validation for parsed tile transform matrices so invalid transforms fail early.
+- Added fixture tests for matrix composition, `RTC_CENTER` composition, sphere/box/region bounds, transformed visibility culling, transform propagation into traversal requests, renderer input transform propagation, and non-finite transform rejection.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed and rebuilt native debug JNI for `arm64-v8a` and `x86_64`.
+
+Known remaining Phase 1 work:
+
+- P1.T5 transform/bounds is implemented as a tested core but is not yet connected to live map camera traversal scheduling in `VectorraMapEngine`.
+- `RTC_CENTER` is supported by the transform composer; b3dm feature table extraction and automatic `RTC_CENTER` application remain part of P1.T6.
+- P1.T6 is next: parse b3dm header/feature table/batch table, extract inner GLB to cache URI, apply `RTC_CENTER`, and render through the existing renderer contract.
