@@ -57,25 +57,37 @@ function Invoke-Adb {
     & $adb -s $DeviceSerial @Args
 }
 
+function Write-Report {
+    param([string]$Message)
+    $line = "$(Get-Date -Format o) $Message"
+    $line | Tee-Object -FilePath $report -Append
+}
+
 function Smoke-Action {
     param([string]$Action, [int]$DelaySeconds = $ActionDelaySeconds)
+    Write-Report "actionStart=$Action delaySeconds=$DelaySeconds"
     Write-Host "Running sample action: $Action"
     Invoke-Adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action $Action | Out-Host
     Start-Sleep -Seconds $DelaySeconds
+    Write-Report "actionEnd=$Action"
 }
 
 function Start-Sample {
     param([string]$Label, [int]$DelaySeconds = $ActionDelaySeconds)
+    Write-Report "startSample=$Label delaySeconds=$DelaySeconds"
     Write-Host "Starting sample: $Label"
     Invoke-Adb shell am start -n com.vectorra.sample/.MainActivity | Out-Host
     Start-Sleep -Seconds $DelaySeconds
+    Write-Report "startSampleEnd=$Label"
 }
 
 function Lifecycle-Step {
     param([string]$Label, [scriptblock]$Command, [int]$DelaySeconds = $ActionDelaySeconds)
+    Write-Report "lifecycleStart=$Label delaySeconds=$DelaySeconds"
     Write-Host "Running lifecycle step: $Label"
     & $Command | Out-Host
     Start-Sleep -Seconds $DelaySeconds
+    Write-Report "lifecycleEnd=$Label"
 }
 
 function Assert-NonEmptyFile {
@@ -94,6 +106,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $report = Join-Path $out "device-smoke-$stamp.txt"
 
 Invoke-Adb install -r $apkPath | Tee-Object -FilePath $report
+Write-Report "installApk=$Apk"
 
 $props = [ordered]@{
     serial = $DeviceSerial
@@ -127,7 +140,9 @@ $actions = @(
 )
 
 Invoke-Adb logcat -c
+Write-Report "logcatCleared=true"
 Invoke-Adb shell am force-stop com.vectorra.sample | Out-Null
+Write-Report "forceStopBeforeColdStart=true"
 Start-Sample "cold-start" 10
 foreach ($action in $actions) {
     Smoke-Action $action.name $action.delay

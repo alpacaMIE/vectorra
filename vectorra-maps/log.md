@@ -2458,3 +2458,33 @@ Results:
 Known remaining work:
 
 - Validate the new artifact checks on an online real device.
+
+### Device Smoke Step Reporting
+
+Improved runtime smoke reports so interrupted device runs are diagnosable.
+
+Completed:
+
+- Added `Write-Report` helper in `tools/run-device-smoke.ps1`.
+- The smoke report now records:
+  - APK install path
+  - logcat clear
+  - pre-cold-start force stop
+  - start/end for cold start, every sample action, and every lifecycle step
+- Updated `docs/beta/abi-device-matrix.md` and `docs/beta/android-1.0-acceptance.md` with the action/lifecycle reporting behavior.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\run-device-smoke.ps1), [ref]$null, [ref]$errors)
+.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+```
+
+Results:
+
+- PowerShell parser check passed for `run-device-smoke.ps1`.
+- The script still failed early as expected because adb reported `4tqoz9bmfu8t8pr8 offline`.
+
+Known remaining work:
+
+- Confirm action/lifecycle report output on an online runtime smoke.
