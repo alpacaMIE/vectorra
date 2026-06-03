@@ -70,6 +70,31 @@ class VectorraMvtTileLoaderTest {
     }
 
     @Test
+    fun cacheHitResponseDecodesWithSameLoadedSemantics() {
+        val loader = VectorraMvtTileLoader { request, _ ->
+            TileResponse(
+                request = request,
+                statusCode = 200,
+                body = mvtTile("roads"),
+                cacheStatus = TileCacheStatus.MEMORY
+            )
+        }
+
+        val result = loader.loadTile(
+            source = VectorraVectorTileSource.xyz(
+                id = "vector",
+                templateUrl = "https://tiles.example/{z}/{x}/{y}.mvt"
+            ),
+            layerId = "roads-line",
+            tileId = VectorraMvtTileId(z = 4, x = 2, y = 3)
+        ) as VectorraMvtTileLoadResult.Loaded
+
+        assertEquals(TileCacheStatus.MEMORY, result.response.cacheStatus)
+        assertEquals("roads", result.decodedTile.layers.single().name)
+        assertEquals(1L, result.decodedTile.layers.single().features.single().id)
+    }
+
+    @Test
     fun failedHttpResponseDoesNotDecode() {
         val loader = VectorraMvtTileLoader { request, _ ->
             TileResponse(request = request, statusCode = 404, errorMessage = "not found")

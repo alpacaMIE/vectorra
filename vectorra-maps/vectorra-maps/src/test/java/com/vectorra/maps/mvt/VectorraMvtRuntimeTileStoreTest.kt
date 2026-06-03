@@ -87,6 +87,35 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
+    fun queryFeaturesComeOnlyFromCurrentlyLoadedTilesAcrossTileChanges() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+        val westTile = VectorraMvtTileId(z = 1, x = 0, y = 0)
+        val eastTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
+        store.putDecodedTile(westTile, vectorTile(roadId = 10L, roadName = "West"))
+        store.putDecodedTile(eastTile, vectorTile(roadId = 20L, roadName = "East"))
+
+        assertEquals(setOf(westTile, eastTile), store.loadedTileIds())
+        assertEquals(listOf("10", "20"), store.queryFeatures().map { it.id })
+        assertEquals(listOf("West", "East"), store.queryHitFeatures().map { it.properties["name"] })
+
+        store.removeTile(westTile)
+
+        assertEquals(setOf(eastTile), store.loadedTileIds())
+        assertEquals(listOf("20"), store.queryFeatures().map { it.id })
+        assertEquals(listOf("East"), store.queryHitFeatures().map { it.properties["name"] })
+        assertEquals(listOf("roads-line:1/0/0"), renderer.removedTileHandles)
+    }
+
+    @Test
     fun clearRemovesNativeLayerAndAllOwnedState() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
@@ -110,7 +139,11 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(listOf("place-labels"), renderer.removedLayers)
     }
 
-    private fun vectorTile(poiId: Long = 7L): VectorraMvtTile {
+    private fun vectorTile(
+        roadId: Long = 1L,
+        roadName: String = "Main",
+        poiId: Long = 7L
+    ): VectorraMvtTile {
         return VectorraMvtTile(
             layers = listOf(
                 VectorraMvtLayer(
@@ -119,7 +152,7 @@ class VectorraMvtRuntimeTileStoreTest {
                     extent = 4096,
                     features = listOf(
                         VectorraMvtFeature(
-                            id = 1L,
+                            id = roadId,
                             layerName = "roads",
                             geometry = VectorraMvtGeometry.LineString(
                                 listOf(
@@ -129,7 +162,7 @@ class VectorraMvtRuntimeTileStoreTest {
                                     )
                                 )
                             ),
-                            properties = mapOf("name" to VectorraMvtValue.StringValue("Main"))
+                            properties = mapOf("name" to VectorraMvtValue.StringValue(roadName))
                         )
                     )
                 ),

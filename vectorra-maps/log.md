@@ -1330,3 +1330,32 @@ Known remaining Phase 2 work:
 
 - P2.T6/P2.T7 still need broader fixture coverage for cross-tile query ordering and cache-hit query consistency.
 - MVT MBTiles remains Phase 3 work.
+
+### P2.T6/P2.T7 MVT Cross-tile and Cache-hit Fixtures
+
+Continued Phase 2 fixture coverage for MVT query ownership and cache-hit load semantics.
+
+Completed:
+
+- Added a `VectorraMvtRuntimeTileStoreTest` fixture with two concurrently loaded MVT tiles.
+- Verified `queryFeatures()` and `queryHitFeatures()` include only features from the currently loaded tile set and that removing one tile removes its query state while preserving the other loaded tile.
+- Added a `VectorraMvtTileLoaderTest` fixture proving a `TileCacheStatus.MEMORY` cache-hit response decodes into the same `Loaded` result shape as a network miss.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Results:
+
+- MVT unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+
+Known remaining Phase 2 work:
+
+- Query result ordering across multiple visible tiles is still mostly covered by hit-test sorting rather than an end-to-end engine fixture.
+- Phase 3 will need MVT MBTiles/offline cache integration on top of the same loaded-store semantics.
