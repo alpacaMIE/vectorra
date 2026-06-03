@@ -170,7 +170,8 @@ if ($uiText -notmatch 'com\.vectorra\.sample') {
 
 $logText = Get-Content -Path $logcat -Raw
 $requiredLogPatterns = @(
-    'Snapshot\s+\d+x\d+\s+nonblank=true'
+    'Snapshot\s+\d+x\d+\s+nonblank=true',
+    '3D Tiles zoom snapshot\s+\d+x\d+\s+nonblank=true'
 )
 foreach ($pattern in $requiredLogPatterns) {
     if ($logText -notmatch $pattern) {

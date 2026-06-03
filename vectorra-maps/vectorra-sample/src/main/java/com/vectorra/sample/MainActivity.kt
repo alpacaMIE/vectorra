@@ -658,15 +658,23 @@ class MainActivity : Activity() {
 
     private fun runSnapshotSmoke() {
         statusText.text = "Snapshot requested"
+        logSnapshotSmoke(label = "Snapshot", updateStatus = true)
+    }
+
+    private fun logSnapshotSmoke(label: String, updateStatus: Boolean) {
         mapView.snapshot { bitmap, error ->
             if (error != null || bitmap == null) {
-                val text = "Snapshot error: ${error?.message ?: "empty bitmap"}"
-                statusText.text = text
+                val text = "$label error: ${error?.message ?: "empty bitmap"}"
+                if (updateStatus) {
+                    statusText.text = text
+                }
                 Log.e(LOG_TAG, text, error?.cause)
                 return@snapshot
             }
-            val text = "Snapshot ${bitmap.width}x${bitmap.height} nonblank=${bitmap.hasVisiblePixel()}"
-            statusText.text = text
+            val text = "$label ${bitmap.width}x${bitmap.height} nonblank=${bitmap.hasVisiblePixel()}"
+            if (updateStatus) {
+                statusText.text = text
+            }
             Log.i(LOG_TAG, text)
             bitmap.recycle()
         }
@@ -969,6 +977,9 @@ class MainActivity : Activity() {
                 statusText.text = "3D Tiles zoom smoke closest"
                 Log.i(LOG_TAG, "3D Tiles zoom smoke: camera zoom=$SAMPLE_3D_TILES_ZOOM_CLOSEST")
             }, SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS)
+            statusText.postDelayed({
+                logSnapshotSmoke(label = "3D Tiles zoom snapshot", updateStatus = false)
+            }, SAMPLE_3D_TILES_ZOOM_SNAPSHOT_DELAY_MS)
         }.onFailure { error ->
             statusText.text = "3D Tiles zoom smoke error: ${error.message}"
         }
@@ -1263,6 +1274,7 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
         const val SAMPLE_3D_TILES_ZOOM_IN_DELAY_MS = 7_000L
         const val SAMPLE_3D_TILES_ZOOM_CLOSE_DELAY_MS = 14_000L
+        const val SAMPLE_3D_TILES_ZOOM_SNAPSHOT_DELAY_MS = 20_000L
         const val SAMPLE_MVT_REMOVE_DELAY_MS = 6_000L
         const val SAMPLE_MVT_READD_DELAY_MS = 2_000L
         const val SAMPLE_MVT_PAN_DELAY_MS = 7_000L

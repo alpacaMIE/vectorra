@@ -2805,6 +2805,43 @@ Known remaining work:
 - Run the full `.\tools\check-android-acceptance.ps1` gate after the next broad local verification cycle.
 - Run the real device smoke and result checker after adb reports the physical device as `device`.
 
+### 3D Tiles Close-Zoom Snapshot Smoke Evidence
+
+Tightened the device smoke gate around the 3D Tiles close-zoom disappearance investigation.
+
+Completed:
+
+- Refactored the sample snapshot smoke into a reusable `logSnapshotSmoke(...)` helper.
+- Added a delayed `3D Tiles zoom snapshot <width>x<height> nonblank=<value>` log after the `zoom-3dtiles` action reaches its closest camera step.
+- Updated `tools/check-device-smoke-result.ps1` to require `3D Tiles zoom snapshot ... nonblank=true` in logcat.
+- Updated `tools/test-device-smoke-result-checker.ps1` so the valid fixture includes the 3D Tiles zoom snapshot and a missing zoom-snapshot fixture fails.
+- Updated the ABI/device matrix and Android 1.0 acceptance docs with the new close-zoom snapshot requirement.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\check-device-smoke-result.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\test-device-smoke-result-checker.ps1'), [ref]$tokens, [ref]$errors)
+$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\tools\run-device-smoke.ps1'), [ref]$tokens, [ref]$errors)
+.\tools\test-device-smoke-result-checker.ps1
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\tools\check-android-acceptance.ps1 -GradleUserHome .\.gradle-agent-home
+```
+
+Results:
+
+- PowerShell parser checks passed for `check-device-smoke-result.ps1`, `test-device-smoke-result-checker.ps1`, and `run-device-smoke.ps1`.
+- `test-device-smoke-result-checker.ps1` passed, including the expected failure for a report missing the 3D Tiles zoom snapshot.
+- `:vectorra-sample:assembleDebug` passed. The existing non-fatal strip warning for `librocky.so` and `libvectorra_jni.so` remained.
+- `check-android-acceptance.ps1` passed and reported `Android local acceptance gate passed.`
+- adb still reported device `4tqoz9bmfu8t8pr8` as `offline`.
+
+Known remaining work:
+
+- Re-run `tools/run-device-smoke.ps1` and `tools/check-device-smoke-result.ps1` once adb reports the device as `device`; the real close-zoom visual snapshot remains unverified on hardware.
+
 ### Android Local Acceptance Rerun
 
 Reran the full documented local Android 1.0 acceptance gate after adding the smoke result checker self-test to the gate.
