@@ -85,10 +85,13 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executors
+import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
@@ -168,7 +171,16 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val vectorTileLoadGenerationByLayerId = linkedMapOf<String, Long>()
     private var vectorTileLoadScheduled = false
     private val vectorTileLoadThreadCounter = AtomicInteger()
-    private val vectorTileLoadExecutor = Executors.newFixedThreadPool(VECTOR_TILE_LOAD_WORKER_COUNT) { runnable ->
+    private val vectorTileLoadOrder = AtomicLong()
+    private val vectorTileLoadRequestIds = AtomicLong()
+    private var vectorTileUpdateSequence = 0L
+    private val vectorTileLoadExecutor = ThreadPoolExecutor(
+        VECTOR_TILE_LOAD_WORKER_COUNT,
+        VECTOR_TILE_LOAD_WORKER_COUNT,
+        0L,
+        TimeUnit.MILLISECONDS,
+        PriorityBlockingQueue<Runnable>()
+    ) { runnable ->
         Thread(runnable, "VectorraMvtWorker-${vectorTileLoadThreadCounter.incrementAndGet()}")
     }
     private val pointHitAnnotationIds = linkedSetOf<String>()
@@ -953,6 +965,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private fun updateVectorTileLayers(camera: CameraState) {
         val tasks = mutableListOf<VectorraVectorTileRuntimeTask>()
         synchronized(vectorTileRuntimeLock) {
+            vectorTileUpdateSequence += 1L
+            val updateSequence = vectorTileUpdateSequence
             vectorTileLayers.values.forEach { runtimeLayer ->
                 val idealTiles = runtimeLayer.visibleTileIds(
                     camera = camera,
@@ -975,25 +989,43 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 runtimeLayer.store.setRenderedTileIds(renderTiles)
                 runtimeLayer.store.trimLoadedTiles(
                     maxLoadedTiles = VECTOR_TILE_DECODED_CACHE_SIZE,
-                    retainTileIds = idealTiles + prefetchTiles + renderTiles + runtimeLayer.pendingTileIds.keys
+                    retainTileIds = idealTiles + prefetchTiles + renderTiles + runtimeLayer.pendingTileLoads.keys
                 )
                 val remainingLoadedTiles = runtimeLayer.store.loadedTileIds()
-                (idealTiles - remainingLoadedTiles).forEach { tileId ->
-                    enqueueVectorTileTask(runtimeLayer, tileId, VectorraVectorTileRuntimeTaskKind.IDEAL, tasks)
+                (idealTiles - remainingLoadedTiles).forEachIndexed { index, tileId ->
+                    enqueueVectorTileTask(
+                        runtimeLayer,
+                        tileId,
+                        VectorraVectorTileRuntimeTaskKind.IDEAL,
+                        updateSequence,
+                        index,
+                        tasks
+                    )
                 }
-                (prefetchTiles - remainingLoadedTiles - idealTiles).forEach { tileId ->
-                    enqueueVectorTileTask(runtimeLayer, tileId, VectorraVectorTileRuntimeTaskKind.PREFETCH, tasks)
+                (prefetchTiles - remainingLoadedTiles - idealTiles).forEachIndexed { index, tileId ->
+                    enqueueVectorTileTask(
+                        runtimeLayer,
+                        tileId,
+                        VectorraVectorTileRuntimeTaskKind.PREFETCH,
+                        updateSequence,
+                        index,
+                        tasks
+                    )
                 }
             }
         }
         tasks.forEach { task ->
             try {
-                vectorTileLoadExecutor.execute {
-                    loadVectorTileTask(task)
-                }
+                vectorTileLoadExecutor.execute(
+                    PrioritizedVectorTileLoad(
+                        task = task,
+                        order = vectorTileLoadOrder.incrementAndGet(),
+                        runTask = ::loadVectorTileTask
+                    )
+                )
             } catch (_: RejectedExecutionException) {
                 synchronized(vectorTileRuntimeLock) {
-                    vectorTileLayers[task.layerId]?.pendingTileIds?.remove(task.tileId)
+                    vectorTileLayers[task.layerId]?.removePendingLoadForTask(task)
                 }
             }
         }
@@ -1003,21 +1035,29 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         runtimeLayer: VectorraVectorTileRuntimeLayer,
         tileId: VectorraMvtTileId,
         kind: VectorraVectorTileRuntimeTaskKind,
+        updateSequence: Long,
+        priorityIndex: Int,
         tasks: MutableList<VectorraVectorTileRuntimeTask>
     ) {
-        val previousKind = runtimeLayer.pendingTileIds[tileId]
-        if (previousKind == null) {
-            runtimeLayer.pendingTileIds[tileId] = kind
+        val previousLoad = runtimeLayer.pendingTileLoads[tileId]
+        if (previousLoad == null ||
+            previousLoad.kind == VectorraVectorTileRuntimeTaskKind.PREFETCH &&
+            kind == VectorraVectorTileRuntimeTaskKind.IDEAL
+        ) {
+            val requestId = vectorTileLoadRequestIds.incrementAndGet()
+            runtimeLayer.pendingTileLoads[tileId] = VectorraVectorTilePendingLoad(
+                kind = kind,
+                requestId = requestId
+            )
             tasks += VectorraVectorTileRuntimeTask(
                 layerId = runtimeLayer.layer.id,
                 loadGeneration = runtimeLayer.loadGeneration,
                 tileId = tileId,
-                kind = kind
+                kind = kind,
+                updateSequence = updateSequence,
+                priorityIndex = priorityIndex,
+                requestId = requestId
             )
-        } else if (previousKind == VectorraVectorTileRuntimeTaskKind.PREFETCH &&
-            kind == VectorraVectorTileRuntimeTaskKind.IDEAL
-        ) {
-            runtimeLayer.pendingTileIds[tileId] = VectorraVectorTileRuntimeTaskKind.IDEAL
         }
     }
 
@@ -1032,7 +1072,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             is VectorraMvtTileLoadResult.Loaded -> {
                 synchronized(vectorTileRuntimeLock) {
                     val current = vectorTileLayers[task.layerId] ?: return
-                    val completedKind = current.pendingTileIds.remove(task.tileId) ?: task.kind
+                    val completedLoad = current.pendingLoadForTask(task) ?: return
+                    current.pendingTileLoads.remove(task.tileId)
                     if (current.loadGeneration == task.loadGeneration &&
                         current.shouldRetainTileForTask(
                             tileId = task.tileId,
@@ -1044,7 +1085,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                         current.store.putDecodedTile(
                             tileId = task.tileId,
                             decodedTile = result.decodedTile,
-                            renderNow = completedKind == VectorraVectorTileRuntimeTaskKind.IDEAL
+                            renderNow = completedLoad.kind == VectorraVectorTileRuntimeTaskKind.IDEAL
                         )
                     }
                 }
@@ -1053,9 +1094,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             is VectorraMvtTileLoadResult.Failed -> {
                 val current = synchronized(vectorTileRuntimeLock) {
                     val runtimeLayer = vectorTileLayers[task.layerId] ?: return@synchronized null
-                    val pendingKind = runtimeLayer.pendingTileIds.remove(task.tileId) ?: task.kind
+                    val pendingLoad = runtimeLayer.pendingLoadForTask(task) ?: return@synchronized null
+                    runtimeLayer.pendingTileLoads.remove(task.tileId)
                     runtimeLayer.takeIf {
-                        pendingKind == VectorraVectorTileRuntimeTaskKind.IDEAL &&
+                        pendingLoad.kind == VectorraVectorTileRuntimeTaskKind.IDEAL &&
                         it.loadGeneration == task.loadGeneration &&
                             task.tileId in it.visibleTileIds(
                                 camera = cameraState,
@@ -1087,6 +1129,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     ): VectorraVectorTileRuntimeLayer? {
         return synchronized(vectorTileRuntimeLock) {
             val runtimeLayer = vectorTileLayers[task.layerId] ?: return@synchronized null
+            runtimeLayer.pendingLoadForTask(task) ?: return@synchronized null
             val stillRetained = runtimeLayer.loadGeneration == task.loadGeneration &&
                 runtimeLayer.shouldRetainTileForTask(
                     tileId = task.tileId,
@@ -1097,7 +1140,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             if (stillRetained) {
                 runtimeLayer
             } else {
-                runtimeLayer.pendingTileIds.remove(task.tileId)
+                runtimeLayer.pendingTileLoads.remove(task.tileId)
                 null
             }
         }
@@ -2093,7 +2136,7 @@ private data class VectorraVectorTileRuntimeLayer(
     val loadGeneration: Long,
     val store: VectorraMvtRuntimeTileStore,
     val tileLoader: com.vectorra.maps.mvt.VectorraMvtTileLoader,
-    val pendingTileIds: MutableMap<VectorraMvtTileId, VectorraVectorTileRuntimeTaskKind> = linkedMapOf()
+    val pendingTileLoads: MutableMap<VectorraMvtTileId, VectorraVectorTilePendingLoad> = linkedMapOf()
 ) {
     fun visibleTileIds(
         camera: CameraState,
@@ -2165,16 +2208,75 @@ private data class VectorraVectorTileRuntimeLayer(
     }
 }
 
+private fun VectorraVectorTileRuntimeLayer.pendingLoadForTask(
+    task: VectorraVectorTileRuntimeTask
+): VectorraVectorTilePendingLoad? {
+    if (loadGeneration != task.loadGeneration) {
+        return null
+    }
+    val pendingLoad = pendingTileLoads[task.tileId] ?: return null
+    if (pendingLoad.requestId == task.requestId) {
+        return pendingLoad
+    }
+    return pendingLoad.takeIf {
+        it.kind == VectorraVectorTileRuntimeTaskKind.IDEAL &&
+            task.kind == VectorraVectorTileRuntimeTaskKind.PREFETCH
+    }
+}
+
+private fun VectorraVectorTileRuntimeLayer.removePendingLoadForTask(
+    task: VectorraVectorTileRuntimeTask
+) {
+    if (pendingLoadForTask(task)?.requestId == task.requestId) {
+        pendingTileLoads.remove(task.tileId)
+    }
+}
+
+private data class VectorraVectorTilePendingLoad(
+    val kind: VectorraVectorTileRuntimeTaskKind,
+    val requestId: Long
+)
+
 private data class VectorraVectorTileRuntimeTask(
     val layerId: String,
     val loadGeneration: Long,
     val tileId: VectorraMvtTileId,
-    val kind: VectorraVectorTileRuntimeTaskKind
+    val kind: VectorraVectorTileRuntimeTaskKind,
+    val updateSequence: Long,
+    val priorityIndex: Int,
+    val requestId: Long
 )
 
 private enum class VectorraVectorTileRuntimeTaskKind {
     IDEAL,
     PREFETCH
+}
+
+private class PrioritizedVectorTileLoad(
+    private val task: VectorraVectorTileRuntimeTask,
+    private val order: Long,
+    private val runTask: (VectorraVectorTileRuntimeTask) -> Unit
+) : Runnable, Comparable<PrioritizedVectorTileLoad> {
+    override fun run() {
+        runTask(task)
+    }
+
+    override fun compareTo(other: PrioritizedVectorTileLoad): Int {
+        return compareValuesBy(
+            this,
+            other,
+            { it.task.kind.priorityRank },
+            { -it.task.updateSequence },
+            { it.task.priorityIndex },
+            { it.order }
+        )
+    }
+
+    private val VectorraVectorTileRuntimeTaskKind.priorityRank: Int
+        get() = when (this) {
+            VectorraVectorTileRuntimeTaskKind.IDEAL -> 0
+            VectorraVectorTileRuntimeTaskKind.PREFETCH -> 1
+        }
 }
 
 private const val MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS = 256

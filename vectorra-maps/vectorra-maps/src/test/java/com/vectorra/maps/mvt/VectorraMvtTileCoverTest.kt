@@ -89,6 +89,21 @@ class VectorraMvtTileCoverTest {
     }
 
     @Test
+    fun ordersTilesClosestToViewportCenterFirst() {
+        val tiles = visibleTiles(
+            longitude = 1.0,
+            latitude = -1.0,
+            zoom = 3.0,
+            viewportWidthPixels = 1,
+            viewportHeightPixels = 1,
+            tilePadding = 1,
+            tileMaxZoom = 4
+        ).toList()
+
+        assertEquals(VectorraMvtTileId(z = 3, x = 4, y = 4), tiles.first())
+    }
+
+    @Test
     fun overscalesTileZoomPastSourceMaxWhileLayerIsVisible() {
         val tiles = visibleTiles(
             longitude = -122.4194,

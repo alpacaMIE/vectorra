@@ -81,7 +81,9 @@ internal object VectorraMvtTileCover {
 
         val minTileX = lowerTileIndex(minWorldX, tileWorldSize) - request.tilePadding
         val maxTileX = upperTileIndex(maxWorldX, tileWorldSize) + request.tilePadding
-        val tileIds = linkedSetOf<VectorraMvtTileId>()
+        val centerTileX = center.x / tileWorldSize
+        val centerTileY = center.y / tileWorldSize
+        val tileIds = mutableListOf<TileCoverCandidate>()
         val xSpan = maxTileX.toLong() - minTileX.toLong() + 1L
         val xValues = if (xSpan >= tileCount.toLong()) {
             0 until tileCount
@@ -91,10 +93,18 @@ internal object VectorraMvtTileCover {
         for (x in xValues) {
             val wrappedX = x.floorMod(tileCount)
             for (y in minTileY..maxTileY) {
-                tileIds += VectorraMvtTileId(z = z, x = wrappedX, y = y)
+                val distanceX = x.toDouble() + 0.5 - centerTileX
+                val distanceY = y.toDouble() + 0.5 - centerTileY
+                tileIds += TileCoverCandidate(
+                    tileId = VectorraMvtTileId(z = z, x = wrappedX, y = y),
+                    distanceSquared = distanceX * distanceX + distanceY * distanceY
+                )
             }
         }
         return tileIds
+            .sortedBy { it.distanceSquared }
+            .distinctBy { it.tileId }
+            .mapTo(linkedSetOf()) { it.tileId }
     }
 
     private fun worldSizeFor(zoom: Double, tileSizePixels: Int): Double {
@@ -141,6 +151,11 @@ internal object VectorraMvtTileCover {
     }
 
     private data class WorldPoint(val x: Double, val y: Double)
+
+    private data class TileCoverCandidate(
+        val tileId: VectorraMvtTileId,
+        val distanceSquared: Double
+    )
 
     private const val MAX_MVT_COVER_ZOOM = 30
     private const val TILE_EDGE_EPSILON = 1e-9

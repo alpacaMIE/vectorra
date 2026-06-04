@@ -71,4 +71,5 @@ class VectorraMvtTilePyramidTest {
 
         assertTrue(renderTiles.isEmpty())
     }
+
 }

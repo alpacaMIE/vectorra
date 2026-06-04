@@ -4306,3 +4306,33 @@ Results:
 Known remaining work:
 
 - Physical-device MVT drag smoke was not run in this pass.
+
+## 2026-06-04
+
+### MVT Tile Pyramid Drag Scheduling Alignment
+
+Completed:
+
+- Compared the current MVT drag path with MapLibre Native tile pyramid behavior in `vectorra-references/maplibre-native`.
+- Root cause: manual dragging could enqueue many stale visible/prefetch tile loads in FIFO order, so current viewport ideal tiles were delayed behind old work; additionally, prefetch-to-ideal upgrades only changed pending state and did not reprioritize the queued task.
+- Changed MVT visible tile cover ordering to sort tiles nearest to the viewport center first, matching MapLibre's tile cover priority behavior.
+- Replaced FIFO vector tile loading with a priority queue that orders ideal tiles before prefetch, newer camera updates before older ones, and center-nearest tiles first.
+- Added per-tile load request ids so upgraded ideal requests supersede stale prefetch queue entries without allowing old tasks to clear newer pending state.
+- Kept the render set strict to the tile pyramid output. A temporary previous-render retention experiment was removed because MapLibre only keeps previous tiles through `holdForFade()`, and Vectorra does not yet have that fade lifecycle.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- MVT unit tests passed.
+- `:vectorra-sample:assembleDebug` passed, including native CMake debug builds for `arm64-v8a` and `x86_64`.
+
+Known remaining work:
+
+- After removing the previous-render accumulation path, a final repeated emulator drag smoke was not rerun before commit.
+- Physical-device MVT drag smoke was not run in this pass.
