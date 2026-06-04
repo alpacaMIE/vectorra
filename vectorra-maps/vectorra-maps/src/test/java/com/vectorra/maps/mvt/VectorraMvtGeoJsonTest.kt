@@ -67,6 +67,59 @@ class VectorraMvtGeoJsonTest {
     }
 
     @Test
+    fun convertsEveryLineStringPart() {
+        val feature = VectorraMvtFeature(
+            id = 42,
+            layerName = "roads",
+            geometry = VectorraMvtGeometry.LineString(
+                listOf(
+                    listOf(VectorraMvtPoint(0, 0), VectorraMvtPoint(1024, 1024)),
+                    listOf(VectorraMvtPoint(2048, 2048), VectorraMvtPoint(4096, 4096))
+                )
+            ),
+            properties = mapOf("name" to VectorraMvtValue.StringValue("Split Road"))
+        )
+
+        val decoded = feature.toDecodedFeatures(VectorraMvtTileId(0, 0, 0), 4096)
+
+        assertEquals(listOf("42:0", "42:1"), decoded.map { it.id })
+        assertEquals(2, decoded.size)
+        assertTrue(decoded.all { it.geometry is VectorraAnnotationGeometry.LineString })
+        assertEquals("Split Road", decoded[1].properties["name"])
+    }
+
+    @Test
+    fun geoJsonConversionKeepsEveryLineStringPart() {
+        val tile = VectorraMvtTile(
+            layers = listOf(
+                VectorraMvtLayer(
+                    name = "roads",
+                    version = 2,
+                    extent = 4096,
+                    features = listOf(
+                        VectorraMvtFeature(
+                            id = 7,
+                            layerName = "roads",
+                            geometry = VectorraMvtGeometry.LineString(
+                                listOf(
+                                    listOf(VectorraMvtPoint(0, 0), VectorraMvtPoint(1024, 1024)),
+                                    listOf(VectorraMvtPoint(2048, 2048), VectorraMvtPoint(4096, 4096))
+                                )
+                            ),
+                            properties = emptyMap()
+                        )
+                    )
+                )
+            )
+        )
+
+        val features = tile.toGeoJsonFeatures(VectorraMvtTileId(0, 0, 0))
+
+        assertEquals(listOf("7:0", "7:1"), features.map { it.id })
+        assertEquals(listOf("roads", "roads"), features.map { it.properties["mvt_layer"] })
+    }
+
+    @Test
     fun convertsTileCornersWithYDownWebMercator() {
         val tile = VectorraMvtTileId(z = 1, x = 1, y = 0)
 

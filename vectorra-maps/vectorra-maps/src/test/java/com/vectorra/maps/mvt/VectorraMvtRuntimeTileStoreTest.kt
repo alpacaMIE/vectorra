@@ -124,6 +124,27 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
+    fun renderInputContainsEveryLineStringPart() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+
+        store.putDecodedTile(VectorraMvtTileId(z = 0, x = 0, y = 0), multiPartLineVectorTile())
+
+        val renderedFeatures = renderer.renderedInputs.single().features
+        assertEquals(listOf("42:0", "42:1"), renderedFeatures.map { it.featureId })
+        assertEquals(2, renderedFeatures.size)
+        assertEquals(listOf("42:0", "42:1"), store.queryFeatures().map { it.id })
+    }
+
+    @Test
     fun clearRemovesNativeLayerAndAllOwnedState() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
@@ -229,6 +250,37 @@ class VectorraMvtRuntimeTileStoreTest {
                             layerName = "poi",
                             geometry = VectorraMvtGeometry.Point(listOf(VectorraMvtPoint(2048, 2048))),
                             properties = mapOf("name" to VectorraMvtValue.StringValue("Center"))
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    private fun multiPartLineVectorTile(): VectorraMvtTile {
+        return VectorraMvtTile(
+            layers = listOf(
+                VectorraMvtLayer(
+                    name = "roads",
+                    version = 2,
+                    extent = 4096,
+                    features = listOf(
+                        VectorraMvtFeature(
+                            id = 42L,
+                            layerName = "roads",
+                            geometry = VectorraMvtGeometry.LineString(
+                                listOf(
+                                    listOf(
+                                        VectorraMvtPoint(0, 2048),
+                                        VectorraMvtPoint(1024, 2048)
+                                    ),
+                                    listOf(
+                                        VectorraMvtPoint(2048, 2048),
+                                        VectorraMvtPoint(4096, 2048)
+                                    )
+                                )
+                            ),
+                            properties = mapOf("name" to VectorraMvtValue.StringValue("Split Road"))
                         )
                     )
                 )

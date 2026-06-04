@@ -1,7 +1,6 @@
 package com.vectorra.maps.mvt
 
 import com.vectorra.maps.query.VectorraAnnotationFeature
-import com.vectorra.maps.query.VectorraAnnotationGeometry
 import com.vectorra.maps.vector.VectorraVectorTileLayer
 
 internal data class VectorraMvtRuntimeTile(
@@ -90,9 +89,10 @@ internal class VectorraMvtRuntimeTileStore(
             .asSequence()
             .filter { it.name == layer.sourceLayer }
             .flatMap { mvtLayer ->
-                mvtLayer.features.asSequence().mapIndexedNotNull { index, feature ->
-                    feature.toRenderFeature(tileId, mvtLayer.extent, index)
+                mvtLayer.features.asSequence().mapIndexed { index, feature ->
+                    feature.toRenderFeatures(tileId, mvtLayer.extent, index)
                 }
+                    .flatten()
             }
             .toList()
         return VectorraMvtRenderTileInput(
@@ -109,36 +109,39 @@ internal class VectorraMvtRuntimeTileStore(
             .asSequence()
             .filter { it.name == layer.sourceLayer }
             .flatMap { mvtLayer ->
-                mvtLayer.features.asSequence().mapNotNull { feature ->
-                    feature.toDecodedFeature(tileId, mvtLayer.extent)
+                mvtLayer.features.asSequence().flatMap { feature ->
+                    feature.toDecodedFeatures(tileId, mvtLayer.extent).asSequence()
                 }
             }
             .toList()
     }
 
-    private fun VectorraMvtFeature.toRenderFeature(
+    private fun VectorraMvtFeature.toRenderFeatures(
         tileId: VectorraMvtTileId,
         extent: Int,
         featureIndex: Int
-    ): VectorraMvtRenderFeature? {
-        val decoded = toDecodedFeature(tileId, extent) ?: return null
+    ): List<VectorraMvtRenderFeature> {
         val geometryType = layer.expectedGeometryType()
-        val coordinates = decoded.geometry.coordinatesForGeometry(geometryType) ?: return null
-        val ringEnds = if (geometryType == VectorraMvtRenderGeometryType.POLYGON) {
-            decoded.geometry.polygonRingEnds()
-        } else {
-            emptyList()
+        val coordinateParts = geometry.coordinatesForGeometry(tileId, extent, geometryType)
+        if (coordinateParts.isEmpty()) {
+            return emptyList()
         }
-        if (coordinates.isEmpty()) {
-            return null
+        val featureIds = renderFeatureIds(geometry.toRenderGeometries(tileId, extent))
+        val ringEndParts = geometry.ringEndsForGeometry(geometryType)
+        return coordinateParts.mapIndexedNotNull { partIndex, coordinates ->
+            val flatCoordinates = coordinates.toFlatCoordinateList()
+            if (flatCoordinates.isEmpty()) {
+                return@mapIndexedNotNull null
+            }
+            VectorraMvtRenderFeature(
+                featureId = featureIds.getOrNull(partIndex)
+                    ?: "${layer.sourceLayer}:$featureIndex:$partIndex",
+                sourceLayer = layer.sourceLayer,
+                geometryType = geometryType,
+                coordinates = flatCoordinates,
+                ringEnds = ringEndParts.getOrElse(partIndex) { emptyList() }
+            )
         }
-        return VectorraMvtRenderFeature(
-            featureId = decoded.id.ifBlank { "${layer.sourceLayer}:$featureIndex" },
-            sourceLayer = layer.sourceLayer,
-            geometryType = geometryType,
-            coordinates = coordinates,
-            ringEnds = ringEnds
-        )
     }
 
     private fun VectorraVectorTileLayer.toRenderStyle(): VectorraMvtRenderStyle {
@@ -200,35 +203,4 @@ internal class VectorraMvtRuntimeTileStore(
         }
     }
 
-    private fun VectorraAnnotationGeometry.coordinatesForGeometry(
-        geometryType: VectorraMvtRenderGeometryType
-    ): List<Double>? {
-        return when (geometryType) {
-            VectorraMvtRenderGeometryType.POINT -> {
-                val point = this as? VectorraAnnotationGeometry.Point ?: return null
-                listOf(point.coordinate.longitude, point.coordinate.latitude)
-            }
-            VectorraMvtRenderGeometryType.LINE -> {
-                val line = this as? VectorraAnnotationGeometry.LineString ?: return null
-                line.coordinates.flatMap { coordinate ->
-                    listOf(coordinate.longitude, coordinate.latitude)
-                }
-            }
-            VectorraMvtRenderGeometryType.POLYGON -> {
-                val polygon = this as? VectorraAnnotationGeometry.Polygon ?: return null
-                polygon.rings.flatten().flatMap { coordinate ->
-                    listOf(coordinate.longitude, coordinate.latitude)
-                }
-            }
-        }
-    }
-
-    private fun VectorraAnnotationGeometry.polygonRingEnds(): List<Int> {
-        val polygon = this as? VectorraAnnotationGeometry.Polygon ?: return emptyList()
-        var cursor = 0
-        return polygon.rings.map { ring ->
-            cursor += ring.size
-            cursor
-        }
-    }
 }

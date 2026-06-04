@@ -2031,7 +2031,7 @@ private data class VectorraVectorTileRuntimeLayer(
                 bearing = camera.bearing,
                 viewportWidthPixels = viewportWidthPixels,
                 viewportHeightPixels = viewportHeightPixels,
-                tileSizePixels = source.tileSize,
+                tileSizePixels = MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS,
                 visible = layer.visible,
                 visibleMinZoom = maxOf(source.minZoom, layer.minZoom),
                 visibleMaxZoom = layer.maxZoom,
@@ -2047,3 +2047,5 @@ private data class VectorraVectorTileRuntimeTask(
     val loadGeneration: Long,
     val tileId: VectorraMvtTileId
 )
+
+private const val MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS = 256

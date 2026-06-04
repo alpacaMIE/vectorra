@@ -32,10 +32,14 @@ class VectorraMvtTileCoverTest {
 
         assertEquals(
             setOf(
+                VectorraMvtTileId(z = 2, x = 0, y = 1),
+                VectorraMvtTileId(z = 2, x = 0, y = 2),
                 VectorraMvtTileId(z = 2, x = 1, y = 1),
                 VectorraMvtTileId(z = 2, x = 1, y = 2),
                 VectorraMvtTileId(z = 2, x = 2, y = 1),
-                VectorraMvtTileId(z = 2, x = 2, y = 2)
+                VectorraMvtTileId(z = 2, x = 2, y = 2),
+                VectorraMvtTileId(z = 2, x = 3, y = 1),
+                VectorraMvtTileId(z = 2, x = 3, y = 2)
             ),
             tiles
         )
@@ -52,7 +56,7 @@ class VectorraMvtTileCoverTest {
             tileMaxZoom = 4
         )
 
-        assertEquals(setOf(0, 2, 3), tiles.map { it.x }.toSet())
+        assertEquals(setOf(0, 1, 2, 3), tiles.map { it.x }.toSet())
         assertEquals(setOf(2), tiles.map { it.z }.toSet())
     }
 
@@ -85,7 +89,7 @@ class VectorraMvtTileCoverTest {
         bearing: Double = 0.0,
         viewportWidthPixels: Int = 512,
         viewportHeightPixels: Int = 512,
-        tileSizePixels: Int = 512,
+        tileSizePixels: Int = 256,
         visible: Boolean = true,
         visibleMinZoom: Int = 0,
         visibleMaxZoom: Int = 22,

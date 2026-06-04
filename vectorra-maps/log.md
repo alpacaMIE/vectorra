@@ -3766,6 +3766,40 @@ Known remaining work:
 
 - Full all-action device smoke was not rerun for this focused fix.
 
+### MVT Missing Geometry Root-cause Fix
+
+Date: 2026-06-04
+
+Completed:
+
+- Fixed the remaining MVT gaps from two root causes:
+  - `VectorraMvtTileCover` was using the vector source `tileSize` value (`512`) as the screen/WebMercator pixel scale, while native camera and gesture math use `256`; this under-covered the real viewport and left edge/dragged areas without loaded vector tiles.
+  - MVT `LineString` features with multiple MoveTo parts were decoded into `lines`, but render/query conversion kept only the first part, so loaded tiles still dropped valid road/transportation geometry before native rendering.
+- Updated MVT viewport scheduling to use the native/gesture WebMercator scale (`256`) for tile cover while still keeping source request zoom bounded by the vector source.
+- Expanded MVT GeoJSON/query conversion so multi-part line and multi-point features become distinct decoded/query features instead of silently discarding later parts.
+- Updated `VectorraMvtRuntimeTileStore` so native render input receives every line part from a multi-part MVT feature.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Manual emulator smoke on `emulator-5554` installed `vectorra-sample-x86_64-debug.apk`, launched `mvt`, then launched `pan-mvt`.
+
+Results:
+
+- Focused MVT unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- MVT emulator logcat showed initial viewport registration expanded to 50 MVT render tiles, `sample-mvt-transportation:12/655/1583` increased to `features=4222 coordinates=10997`, pan loaded replacement x=658 tiles, and `MVT pan center query: Click: 26 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+
+Known remaining work:
+
+- Full all-action device smoke was not rerun for this focused fix.
+
 ### Current Progress Review
 
 Completed:

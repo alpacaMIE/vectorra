@@ -17,7 +17,9 @@ fun VectorraMvtTile.toGeoJsonFeatures(
     return layers
         .asSequence()
         .filter { layerNames.isEmpty() || it.name in layerNames }
-        .flatMap { layer -> layer.features.asSequence().mapNotNull { it.toGeoJsonFeature(tileId, layer.extent) } }
+        .flatMap { layer ->
+            layer.features.asSequence().flatMap { it.toGeoJsonFeatures(tileId, layer.extent).asSequence() }
+        }
         .toList()
 }
 
@@ -26,45 +28,144 @@ fun VectorraMvtFeature.toDecodedFeature(
     tileId: VectorraMvtTileId,
     extent: Int
 ): VectorraMvtDecodedFeature? {
-    val geometry = geometry.toAnnotationGeometry(tileId, extent) ?: return null
-    return VectorraMvtDecodedFeature(
-        id = id?.toString() ?: "$layerName:${geometry.hashCode()}",
-        layerName = layerName,
-        geometry = geometry,
-        properties = stringProperties()
-    )
+    return toDecodedFeatures(tileId, extent).firstOrNull()
 }
 
-private fun VectorraMvtFeature.toGeoJsonFeature(tileId: VectorraMvtTileId, extent: Int): VectorraGeoJsonFeature? {
-    val decoded = toDecodedFeature(tileId, extent) ?: return null
-    return VectorraGeoJsonFeature(
-        id = decoded.id,
-        geometry = decoded.geometry,
-        properties = decoded.properties + mapOf("mvt_layer" to decoded.layerName)
-    )
-}
-
-private fun VectorraMvtGeometry.toAnnotationGeometry(
+internal fun VectorraMvtFeature.toDecodedFeatures(
     tileId: VectorraMvtTileId,
     extent: Int
-): VectorraAnnotationGeometry? {
+): List<VectorraMvtDecodedFeature> {
+    val geometries = geometry.toAnnotationGeometries(tileId, extent)
+    return geometries.mapIndexed { index, geometry ->
+        VectorraMvtDecodedFeature(
+            id = decodedFeatureId(geometry, index, geometries.size),
+            layerName = layerName,
+            geometry = geometry,
+            properties = stringProperties()
+        )
+    }
+}
+
+private fun VectorraMvtFeature.toGeoJsonFeatures(tileId: VectorraMvtTileId, extent: Int): List<VectorraGeoJsonFeature> {
+    return toDecodedFeatures(tileId, extent).map { decoded ->
+        VectorraGeoJsonFeature(
+            id = decoded.id,
+            geometry = decoded.geometry,
+            properties = decoded.properties + mapOf("mvt_layer" to decoded.layerName)
+        )
+    }
+}
+
+private fun VectorraMvtFeature.decodedFeatureId(
+    geometry: VectorraAnnotationGeometry,
+    index: Int,
+    geometryCount: Int
+): String {
+    val baseId = id?.toString() ?: "$layerName:${geometry.hashCode()}"
+    return if (geometryCount == 1) baseId else "$baseId:$index"
+}
+
+private fun VectorraMvtGeometry.toAnnotationGeometries(
+    tileId: VectorraMvtTileId,
+    extent: Int
+): List<VectorraAnnotationGeometry> {
     require(extent > 0) { "MVT layer extent must be greater than 0." }
     return when (this) {
         is VectorraMvtGeometry.Point -> {
-            val first = points.firstOrNull() ?: return null
-            VectorraAnnotationGeometry.Point(first.toCoordinate(tileId, extent))
+            points.map { point ->
+                VectorraAnnotationGeometry.Point(point.toCoordinate(tileId, extent))
+            }
         }
         is VectorraMvtGeometry.LineString -> {
-            val line = lines.firstOrNull { it.size >= 2 } ?: return null
-            VectorraAnnotationGeometry.LineString(line.map { it.toCoordinate(tileId, extent) })
+            lines
+                .filter { it.size >= 2 }
+                .map { line ->
+                    VectorraAnnotationGeometry.LineString(line.map { it.toCoordinate(tileId, extent) })
+                }
         }
         is VectorraMvtGeometry.Polygon -> {
             val validRings = rings.filter { it.size >= 4 }
-            if (validRings.isEmpty()) return null
-            VectorraAnnotationGeometry.Polygon(
-                validRings.map { ring -> ring.map { it.toCoordinate(tileId, extent) } }
-            )
+            if (validRings.isEmpty()) {
+                emptyList()
+            } else {
+                listOf(
+                    VectorraAnnotationGeometry.Polygon(
+                        validRings.map { ring -> ring.map { it.toCoordinate(tileId, extent) } }
+                    )
+                )
+            }
         }
+    }
+}
+
+internal fun VectorraMvtGeometry.toRenderGeometries(
+    tileId: VectorraMvtTileId,
+    extent: Int
+): List<VectorraAnnotationGeometry> {
+    return toAnnotationGeometries(tileId, extent)
+}
+
+internal fun VectorraMvtFeature.renderFeatureIds(
+    geometries: List<VectorraAnnotationGeometry>
+): List<String> {
+    return geometries.mapIndexed { index, geometry ->
+        decodedFeatureId(
+            geometry = geometry,
+            index = index,
+            geometryCount = geometries.size
+        )
+    }
+}
+
+internal fun VectorraMvtGeometry.coordinatesForGeometry(
+    tileId: VectorraMvtTileId,
+    extent: Int,
+    geometryType: VectorraMvtRenderGeometryType
+): List<List<VectorraCoordinate>> {
+    return when (geometryType) {
+        VectorraMvtRenderGeometryType.POINT -> {
+            val points = this as? VectorraMvtGeometry.Point ?: return emptyList()
+            points.points.map { point -> listOf(point.toCoordinate(tileId, extent)) }
+        }
+        VectorraMvtRenderGeometryType.LINE -> {
+            val lineString = this as? VectorraMvtGeometry.LineString ?: return emptyList()
+            lineString.lines
+                .filter { it.size >= 2 }
+                .map { line -> line.map { it.toCoordinate(tileId, extent) } }
+        }
+        VectorraMvtRenderGeometryType.POLYGON -> {
+            val polygon = this as? VectorraMvtGeometry.Polygon ?: return emptyList()
+            val validRings = polygon.rings.filter { it.size >= 4 }
+            if (validRings.isEmpty()) {
+                emptyList()
+            } else {
+                listOf(validRings.flatten().map { it.toCoordinate(tileId, extent) })
+            }
+        }
+    }
+}
+
+internal fun VectorraMvtGeometry.ringEndsForGeometry(geometryType: VectorraMvtRenderGeometryType): List<List<Int>> {
+    if (geometryType != VectorraMvtRenderGeometryType.POLYGON) {
+        return emptyList()
+    }
+    val polygon = this as? VectorraMvtGeometry.Polygon ?: return emptyList()
+    val validRings = polygon.rings.filter { it.size >= 4 }
+    if (validRings.isEmpty()) {
+        return emptyList()
+    }
+    var cursor = 0
+    return listOf(
+        validRings.map { ring ->
+            cursor += ring.size
+            cursor
+        }
+    )
+}
+
+internal fun List<VectorraCoordinate>.toFlatCoordinateList(): List<Double> {
+    return flatMap { coordinate ->
+        listOf(coordinate.longitude, coordinate.latitude)
     }
 }
 
