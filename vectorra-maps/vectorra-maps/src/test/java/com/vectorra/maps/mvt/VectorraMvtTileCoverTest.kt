@@ -61,6 +61,34 @@ class VectorraMvtTileCoverTest {
     }
 
     @Test
+    fun paddingPrefetchesNeighborTiles() {
+        val tiles = visibleTiles(
+            longitude = 1.0,
+            latitude = -1.0,
+            zoom = 3.0,
+            viewportWidthPixels = 1,
+            viewportHeightPixels = 1,
+            tilePadding = 1,
+            tileMaxZoom = 4
+        )
+
+        assertEquals(
+            setOf(
+                VectorraMvtTileId(z = 3, x = 3, y = 3),
+                VectorraMvtTileId(z = 3, x = 3, y = 4),
+                VectorraMvtTileId(z = 3, x = 3, y = 5),
+                VectorraMvtTileId(z = 3, x = 4, y = 3),
+                VectorraMvtTileId(z = 3, x = 4, y = 4),
+                VectorraMvtTileId(z = 3, x = 4, y = 5),
+                VectorraMvtTileId(z = 3, x = 5, y = 3),
+                VectorraMvtTileId(z = 3, x = 5, y = 4),
+                VectorraMvtTileId(z = 3, x = 5, y = 5)
+            ),
+            tiles
+        )
+    }
+
+    @Test
     fun overscalesTileZoomPastSourceMaxWhileLayerIsVisible() {
         val tiles = visibleTiles(
             longitude = -122.4194,
@@ -90,6 +118,7 @@ class VectorraMvtTileCoverTest {
         viewportWidthPixels: Int = 512,
         viewportHeightPixels: Int = 512,
         tileSizePixels: Int = 256,
+        tilePadding: Int = 0,
         visible: Boolean = true,
         visibleMinZoom: Int = 0,
         visibleMaxZoom: Int = 22,
@@ -105,6 +134,7 @@ class VectorraMvtTileCoverTest {
                 viewportWidthPixels = viewportWidthPixels,
                 viewportHeightPixels = viewportHeightPixels,
                 tileSizePixels = tileSizePixels,
+                tilePadding = tilePadding,
                 visible = visible,
                 visibleMinZoom = visibleMinZoom,
                 visibleMaxZoom = visibleMaxZoom,

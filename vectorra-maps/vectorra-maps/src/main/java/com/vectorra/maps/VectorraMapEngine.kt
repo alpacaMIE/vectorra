@@ -84,7 +84,10 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
@@ -162,6 +165,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val vectorTileLayers = linkedMapOf<String, VectorraVectorTileRuntimeLayer>()
     private val vectorTileLoadGenerationByLayerId = linkedMapOf<String, Long>()
     private var vectorTileLoadScheduled = false
+    private val vectorTileLoadThreadCounter = AtomicInteger()
+    private val vectorTileLoadExecutor = Executors.newFixedThreadPool(VECTOR_TILE_LOAD_WORKER_COUNT) { runnable ->
+        Thread(runnable, "VectorraMvtWorker-${vectorTileLoadThreadCounter.incrementAndGet()}")
+    }
     private val pointHitAnnotationIds = linkedSetOf<String>()
     private val labelHitAnnotationIds = linkedSetOf<String>()
     private val drawHitAnnotationIds = linkedSetOf<String>()
@@ -951,7 +958,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     viewportHeightPixels = viewportHeightPixels
                 )
                 val loadedTiles = runtimeLayer.store.loadedTileIds()
-                (loadedTiles - desiredTiles).forEach(runtimeLayer.store::removeTile)
+                val missingDesiredTiles = desiredTiles - loadedTiles
+                if (missingDesiredTiles.isEmpty()) {
+                    (loadedTiles - desiredTiles).forEach(runtimeLayer.store::removeTile)
+                }
                 val remainingLoadedTiles = runtimeLayer.store.loadedTileIds()
                 (desiredTiles - remainingLoadedTiles).forEach { tileId ->
                     if (runtimeLayer.pendingTileIds.add(tileId)) {
@@ -965,16 +975,20 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             }
         }
         tasks.forEach { task ->
-            Thread({
-                loadVectorTileTask(task)
-            }, "VectorraMvt-${task.layerId}-${task.tileId.z}-${task.tileId.x}-${task.tileId.y}").start()
+            try {
+                vectorTileLoadExecutor.execute {
+                    loadVectorTileTask(task)
+                }
+            } catch (_: RejectedExecutionException) {
+                synchronized(vectorTileRuntimeLock) {
+                    vectorTileLayers[task.layerId]?.pendingTileIds?.remove(task.tileId)
+                }
+            }
         }
     }
 
     private fun loadVectorTileTask(task: VectorraVectorTileRuntimeTask) {
-        val runtimeLayer = synchronized(vectorTileRuntimeLock) {
-            vectorTileLayers[task.layerId]
-        } ?: return
+        val runtimeLayer = currentVectorTileRuntimeForTask(task) ?: return
         val result = runtimeLayer.tileLoader.loadTile(
             source = runtimeLayer.source,
             layerId = runtimeLayer.layer.id,
@@ -995,6 +1009,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                         current.store.putDecodedTile(task.tileId, result.decodedTile)
                     }
                 }
+                scheduleVectorTileLoads()
             }
             is VectorraMvtTileLoadResult.Failed -> {
                 val current = synchronized(vectorTileRuntimeLock) {
@@ -1023,6 +1038,26 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                         message = result.message
                     )
                 )
+            }
+        }
+    }
+
+    private fun currentVectorTileRuntimeForTask(
+        task: VectorraVectorTileRuntimeTask
+    ): VectorraVectorTileRuntimeLayer? {
+        return synchronized(vectorTileRuntimeLock) {
+            val runtimeLayer = vectorTileLayers[task.layerId] ?: return@synchronized null
+            val stillVisible = runtimeLayer.loadGeneration == task.loadGeneration &&
+                task.tileId in runtimeLayer.visibleTileIds(
+                    camera = cameraState,
+                    viewportWidthPixels = viewportWidthPixels,
+                    viewportHeightPixels = viewportHeightPixels
+                )
+            if (stillVisible) {
+                runtimeLayer
+            } else {
+                runtimeLayer.pendingTileIds.remove(task.tileId)
+                null
             }
         }
     }
@@ -1826,6 +1861,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             clearDrawAnnotations()
             geoJsonIndex.clear()
             tileProxyServer.close()
+            vectorTileLoadExecutor.shutdownNow()
             tileResourceFetcher.close()
             mbTilesSources.forEach { it.close() }
             mbTilesSources.clear()
@@ -2032,6 +2068,7 @@ private data class VectorraVectorTileRuntimeLayer(
                 viewportWidthPixels = viewportWidthPixels,
                 viewportHeightPixels = viewportHeightPixels,
                 tileSizePixels = MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS,
+                tilePadding = MVT_COVER_PREFETCH_PADDING_TILES,
                 visible = layer.visible,
                 visibleMinZoom = maxOf(source.minZoom, layer.minZoom),
                 visibleMaxZoom = layer.maxZoom,
@@ -2049,3 +2086,5 @@ private data class VectorraVectorTileRuntimeTask(
 )
 
 private const val MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS = 256
+private const val MVT_COVER_PREFETCH_PADDING_TILES = 1
+private const val VECTOR_TILE_LOAD_WORKER_COUNT = 6

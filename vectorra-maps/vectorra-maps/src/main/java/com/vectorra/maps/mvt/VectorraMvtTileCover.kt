@@ -15,6 +15,7 @@ internal data class VectorraMvtTileCoverRequest(
     val viewportWidthPixels: Int,
     val viewportHeightPixels: Int,
     val tileSizePixels: Int,
+    val tilePadding: Int = 0,
     val visible: Boolean,
     val visibleMinZoom: Int,
     val visibleMaxZoom: Int,
@@ -25,6 +26,7 @@ internal data class VectorraMvtTileCoverRequest(
         require(viewportWidthPixels > 0) { "MVT viewport width must be greater than 0." }
         require(viewportHeightPixels > 0) { "MVT viewport height must be greater than 0." }
         require(tileSizePixels > 0) { "MVT tile size must be greater than 0." }
+        require(tilePadding >= 0) { "MVT tile padding must be greater than or equal to 0." }
         require(visibleMinZoom >= 0) { "MVT visible minZoom must be greater than or equal to 0." }
         require(visibleMaxZoom >= 0) { "MVT visible maxZoom must be greater than or equal to 0." }
         require(tileMinZoom >= 0) { "MVT tile minZoom must be greater than or equal to 0." }
@@ -64,14 +66,14 @@ internal object VectorraMvtTileCover {
         val minWorldY = corners.minOf { it.y }
         val maxWorldY = corners.maxOf { it.y }
 
-        val minTileY = lowerTileIndex(minWorldY, tileWorldSize).coerceAtLeast(0)
-        val maxTileY = upperTileIndex(maxWorldY, tileWorldSize).coerceAtMost(tileCount - 1)
+        val minTileY = (lowerTileIndex(minWorldY, tileWorldSize) - request.tilePadding).coerceAtLeast(0)
+        val maxTileY = (upperTileIndex(maxWorldY, tileWorldSize) + request.tilePadding).coerceAtMost(tileCount - 1)
         if (minTileY > maxTileY) {
             return emptySet()
         }
 
-        val minTileX = lowerTileIndex(minWorldX, tileWorldSize)
-        val maxTileX = upperTileIndex(maxWorldX, tileWorldSize)
+        val minTileX = lowerTileIndex(minWorldX, tileWorldSize) - request.tilePadding
+        val maxTileX = upperTileIndex(maxWorldX, tileWorldSize) + request.tilePadding
         val tileIds = linkedSetOf<VectorraMvtTileId>()
         val xSpan = maxTileX.toLong() - minTileX.toLong() + 1L
         val xValues = if (xSpan >= tileCount.toLong()) {

@@ -3734,6 +3734,40 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### MVT Interaction Tile Loading Stabilization
+
+Date: 2026-06-04
+
+Completed:
+
+- Analyzed the remaining sample MVT issue where the initial MVT click load worked, but drag/zoom could leave some areas blank or late to load.
+- Root cause: the MVT runtime switched tile sets too aggressively during camera changes. It removed loaded tiles outside the newest exact viewport before replacement tiles had finished loading, and it submitted every tile as its own thread so rapid interactions could push stale viewport requests into the network scheduler ahead of current visible tiles.
+- Added a one-tile MVT cover padding used by the engine, while preserving exact-cover behavior as the default for the internal tile-cover API.
+- Reworked SDK MVT loading to use a fixed worker pool and to re-check the latest camera/viewport before each worker starts a network request, so stale interaction tasks do not consume the network queue.
+- Changed vector tile cleanup to progressive replacement: old MVT tiles are retained until the desired current viewport is already loaded, then stale tiles are removed.
+- Added a focused tile-cover test for explicit padding.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Manual emulator smoke on `emulator-5554` installed `vectorra-sample-x86_64-debug.apk` and launched `pan-mvt`.
+
+Results:
+
+- Focused MVT unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- `pan-mvt` logcat showed padded prefetch tiles, current-pan replacement tiles through `sample-mvt-transportation:12/659/...` registered/applied, old `12/652/...` tiles removed only after replacement coverage was present, no `Tile request queue is full` or MVT request failure logs, and `MVT pan center query: Click: 26 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+
+Known remaining work:
+
+- Pinch-zoom was not separately automated; the same progressive replacement and stale-request gate applies to zoom-triggered tile set changes.
+
 ### MVT Viewport Tile Stability Fix
 
 Date: 2026-06-04
