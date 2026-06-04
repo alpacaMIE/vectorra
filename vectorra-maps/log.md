@@ -3759,6 +3759,37 @@ Known remaining work:
 
 - Run the complete runtime smoke on a real Vulkan-capable Android device once adb reports the physical device as `device`.
 
+### Physical Device Smoke Retry
+
+Completed:
+
+- Confirmed physical device `4tqoz9bmfu8t8pr8` returned to adb `device` state alongside `emulator-5554`.
+- Rebuilt the sample debug APK before running the physical-device smoke.
+- Started the full physical-device runtime smoke against `4tqoz9bmfu8t8pr8`.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed and rebuilt the sample APK.
+- Initial `adb devices -l` reported `4tqoz9bmfu8t8pr8` as `device`.
+- The first smoke attempt installed `vectorra-sample-arm64-v8a-debug.apk`, recorded model `2312DRAABC`, Android API `35`, ABI list `arm64-v8a,armeabi-v7a,armeabi`, and GPU `Mali-G57 MC2`.
+- The first smoke attempt completed actions through `zoom-3dtiles`, then failed while pulling `/sdcard/vectorra-smoke-zoom-3dtiles-20260604-084759.png` to the host.
+- The device-side close-zoom screenshot existed after the failure and was non-empty (`192439` bytes). A manual `adb pull` of the same file succeeded to `build/device-smoke/manual-pull-zoom-3dtiles-20260604-084759.png`, so this failure appears to be an adb pull/transport interruption rather than a missing sample screenshot.
+- A second full smoke attempt failed at `adb install -r` with no package-manager error text.
+- A direct `adb push` of the APK then failed with `no response: Broken pipe`.
+- `adb reconnect` and an adb server restart left `4tqoz9bmfu8t8pr8` in `offline` state.
+
+Known remaining work:
+
+- Re-authorize or reconnect the physical device until `adb devices -l` reports `4tqoz9bmfu8t8pr8 device`, then rerun `.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8` and validate the generated report with `.\tools\check-device-smoke-result.ps1`.
+- Do not mark the real-device release gate passed from the interrupted report.
+
 ### Final Screenshot Visible-Pixel Smoke Gate
 
 Completed:
