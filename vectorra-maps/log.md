@@ -4309,6 +4309,37 @@ Known remaining work:
 
 ## 2026-06-04
 
+### MVT Resource Cache Key Alignment
+
+Completed:
+
+- Started the refactor order with the coupled MVT tile pyramid and offline/network/cache loading path.
+- Compared the current MVT renderable update flow with MapLibre's source/tile-oriented tile model in `vectorra-references/maplibre-native`.
+- Root cause: `TileCacheKeys` included `layerId`, so the same vector source tile used by multiple style layers missed both in-flight request deduplication and cache reuse.
+- Removed `layerId` from the resource cache/scheduler key. Resource identity remains explicit through method, source id, resource type, URL, and headers.
+- Normalized `TileRequestHandle.await()` so a shared in-flight response is returned with the caller's own `TileRequest`, preventing the first layer's request metadata from leaking to another layer.
+- Added regression tests for vector tile cache reuse across layers and scheduler in-flight deduplication across layers.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.*" --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+git diff --check
+```
+
+Results:
+
+- Network and MVT unit tests passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `git diff --check` passed.
+
+Known remaining work:
+
+- `:vectorra-sample:assembleDebug` and manual emulator MVT smoke were not rerun in this pass because the change is limited to JVM network/cache request identity.
+
+## 2026-06-04
+
 ### MVT Tile Pyramid Drag Scheduling Alignment
 
 Completed:

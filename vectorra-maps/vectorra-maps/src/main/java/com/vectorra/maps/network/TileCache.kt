@@ -160,7 +160,6 @@ object TileCacheKeys {
         return listOf(
             request.method.uppercase(),
             request.sourceId.orEmpty(),
-            request.layerId.orEmpty(),
             request.resourceType.name,
             request.url,
             headers

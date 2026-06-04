@@ -180,6 +180,49 @@ class TileCacheAndSchedulerTest {
     }
 
     @Test
+    fun tileResourceFetcherSharesVectorTileCacheAcrossLayers() {
+        val root = Files.createTempDirectory("vectorra-resource-fetcher-layer-cache").toFile()
+        try {
+            var calls = 0
+            val fetcher = TileResourceFetcher(
+                cacheDirectory = root,
+                initialConfig = TileNetworkConfig(
+                    interceptors = listOf(
+                        TileRequestInterceptor { chain ->
+                            calls += 1
+                            TileResponse(
+                                request = chain.request,
+                                statusCode = 200,
+                                body = "shared-vector-tile".toByteArray()
+                            )
+                        }
+                    )
+                )
+            )
+            val firstLayerRequest = TileRequest(
+                sourceId = "vector",
+                layerId = "roads-line",
+                url = "https://tiles.example.com/12/655/1583.mvt",
+                tileId = TileId(z = 12, x = 655, y = 1583),
+                resourceType = TileResourceType.VECTOR
+            )
+            val secondLayerRequest = firstLayerRequest.copy(layerId = "roads-fill")
+
+            val first = fetcher.fetch(firstLayerRequest)
+            val second = fetcher.fetch(secondLayerRequest)
+
+            assertEquals(1, calls)
+            assertEquals(TileCacheStatus.MISS, first.cacheStatus)
+            assertEquals(TileCacheStatus.MEMORY, second.cacheStatus)
+            assertEquals("roads-fill", second.request.layerId)
+            assertEquals("shared-vector-tile", second.body.decodeToString())
+            fetcher.close()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun tileResourceFetcherReportsAndClearsCacheStatus() {
         val root = Files.createTempDirectory("vectorra-resource-fetcher-cache-status").toFile()
         try {
@@ -373,6 +416,46 @@ class TileCacheAndSchedulerTest {
             assertEquals("shared", first.await().body.decodeToString())
             assertEquals("shared", second.await().body.decodeToString())
             assertEquals(1, calls.get())
+        } finally {
+            scheduler.close()
+        }
+    }
+
+    @Test
+    fun schedulerDeduplicatesSameSourceTileAcrossLayers() {
+        val calls = AtomicInteger()
+        val firstStarted = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val scheduler = TileRequestScheduler(
+            executor = TileRequestExecutor { request ->
+                calls.incrementAndGet()
+                firstStarted.countDown()
+                assertTrue(releaseFirst.await(5, TimeUnit.SECONDS))
+                TileResponse(request, 200, body = "shared".toByteArray())
+            },
+            maxConcurrentRequests = 1
+        )
+        try {
+            val firstRequest = TileRequest(
+                sourceId = "vector",
+                layerId = "roads-line",
+                url = "https://tiles.example.com/12/655/1583.mvt",
+                tileId = TileId(z = 12, x = 655, y = 1583),
+                resourceType = TileResourceType.VECTOR
+            )
+            val secondRequest = firstRequest.copy(layerId = "roads-fill")
+            val first = scheduler.enqueue(firstRequest)
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS))
+            val second = scheduler.enqueue(secondRequest)
+
+            releaseFirst.countDown()
+            val firstResponse = first.await()
+            val secondResponse = second.await()
+
+            assertEquals(1, calls.get())
+            assertEquals("roads-line", firstResponse.request.layerId)
+            assertEquals("roads-fill", secondResponse.request.layerId)
+            assertEquals("shared", secondResponse.body.decodeToString())
         } finally {
             scheduler.close()
         }

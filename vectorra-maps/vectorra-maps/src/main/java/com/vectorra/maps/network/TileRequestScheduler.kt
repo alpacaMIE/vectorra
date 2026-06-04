@@ -138,7 +138,8 @@ class TileRequestHandle internal constructor(
     fun isDone(): Boolean = future.isDone
 
     fun await(timeoutMillis: Long = 30_000L): TileResponse {
-        return future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+        val response = future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+        return if (response.request === request) response else response.copy(request = request)
     }
 }
 
