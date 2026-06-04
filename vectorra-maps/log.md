@@ -3852,6 +3852,38 @@ Known remaining work:
 - Restore stable large-file adb transfer for `4tqoz9bmfu8t8pr8`; a small-file push is no longer sufficient as the readiness check.
 - After recovery, reinstall `com.vectorra.sample` and rerun the complete real-device smoke.
 
+### Emulator Runtime Smoke Rerun
+
+Completed:
+
+- Started AVD `Rocky_Vulkan_API36_1` after no adb devices were online.
+- Waited for `emulator-5554` to report `sys.boot_completed=1`.
+- Rebuilt the sample debug APK.
+- Ran the emulator runtime smoke gate as the requested substitute for the unstable physical device.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+.\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+.\tools\run-emulator-smoke-gate.ps1 -DeviceSerial emulator-5554
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed.
+- `run-emulator-smoke-gate.ps1` passed on `emulator-5554`.
+- Checked report: `build/device-smoke/device-smoke-20260604-090522.txt`.
+- Device metadata: model `sdk_gphone64_x86_64`, API `36`, ABIs `x86_64,arm64-v8a`.
+- Installed APK: `vectorra-sample-arm64-v8a-debug.apk`.
+- Final screenshot `build/device-smoke/vectorra-smoke-20260604-090522.png` was valid PNG `1080x2424` with `8588` visible samples.
+- 3D Tiles close-zoom screenshot `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-090522.png` was non-empty (`186289` bytes) with `2573` visible samples.
+- Smoke checker reported `Device smoke result check passed`.
+
+Known remaining work:
+
+- Emulator evidence is refreshed and passing. The real-device release gate remains separate and still depends on stable adb large-file transfer for `4tqoz9bmfu8t8pr8`.
+
 ### Final Screenshot Visible-Pixel Smoke Gate
 
 Completed:
