@@ -4248,3 +4248,20 @@ Results:
 Known remaining work:
 
 - Visual verification was performed on emulator only; no physical-device MVT pan smoke was run in this pass.
+
+## 2026-06-04
+
+### Agent Reference Reuse Guidance
+
+Completed:
+
+- Updated root `AGENTS.md` to require checking `vectorra-references/` for reusable open-source implementations before feature work or debugging.
+- Clarified that directly copied or adapted reference code must be minimal, license-compatible, attributed when needed, and must not modify `vectorra-references/`.
+
+Verification:
+
+- Documentation-only change; reviewed the edited text with `git diff`.
+
+Known remaining work:
+
+- None.

@@ -15,6 +15,12 @@ Vectorra 当前包含两个主要目录：
 
 `vectorra-maps/third_party/rocky/` 是 SDK 当前接入的 native 渲染依赖。除非任务明确要求修改 vendored rocky，否则优先在 `vectorra-maps/vectorra-maps/src/main/cpp/` 的 JNI/桥接层或 Kotlin API 层完成适配。
 
+## 参考实现使用
+
+实现新功能或 debug 前，优先在 `vectorra-references/` 中检查 Mapbox/MapLibre、Cesium Native、3D Tiles、glTF、osmdroid、Tangram ES、rocky upstream、Vulkan/ANGLE 等开源项目或规范是否已有可复用实现。
+
+如果存在与当前需求直接匹配的实现，优先复用该实现：在许可证允许、边界清晰、依赖可控的前提下，可以把当前需求所需的最小代码复制或改写到 `vectorra-maps/` 中，并保留必要的许可证头、来源说明或归属记录。不要复制许可证不兼容的代码，不要搬运与当前需求无关的大段实现，也不要修改 `vectorra-references/`。
+
 ## 当前工程结构
 
 `vectorra-maps/` 是 Android Gradle 多模块工程：
