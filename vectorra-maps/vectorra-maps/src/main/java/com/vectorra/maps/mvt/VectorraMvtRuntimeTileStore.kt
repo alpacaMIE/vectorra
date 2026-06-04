@@ -6,7 +6,7 @@ import com.vectorra.maps.vector.VectorraVectorTileLayer
 internal data class VectorraMvtRuntimeTile(
     val tileId: VectorraMvtTileId,
     val decodedTile: VectorraMvtTile,
-    val nativeTileHandle: String,
+    val nativeTileHandle: String?,
     val queryFeatures: List<VectorraMvtDecodedFeature>
 )
 
@@ -16,6 +16,7 @@ internal class VectorraMvtRuntimeTileStore(
     private val nativeRenderer: VectorraMvtNativeRenderer
 ) {
     private val loadedTiles = linkedMapOf<VectorraMvtTileId, VectorraMvtRuntimeTile>()
+    private val activeNativeTileHandles = linkedMapOf<VectorraMvtTileId, String>()
 
     init {
         require(sourceId.isNotBlank()) { "MVT runtime sourceId must not be blank." }
@@ -26,9 +27,13 @@ internal class VectorraMvtRuntimeTileStore(
 
     fun loadedTileIds(): Set<VectorraMvtTileId> = loadedTiles.keys.toSet()
 
-    fun nativeTileHandles(): Set<String> = loadedTiles.values.mapTo(linkedSetOf()) { it.nativeTileHandle }
+    fun nativeTileHandles(): Set<String> = activeNativeTileHandles.values.toSet()
 
-    fun queryFeatures(): List<VectorraMvtDecodedFeature> = loadedTiles.values.flatMap { it.queryFeatures }
+    fun queryFeatures(): List<VectorraMvtDecodedFeature> {
+        return activeNativeTileHandles.keys.flatMap { tileId ->
+            loadedTiles[tileId]?.queryFeatures ?: emptyList()
+        }
+    }
 
     fun queryHitFeatures(): List<VectorraAnnotationFeature> {
         return queryFeatures().map { feature ->
@@ -47,41 +52,84 @@ internal class VectorraMvtRuntimeTileStore(
         }
     }
 
-    fun putDecodedTile(tileId: VectorraMvtTileId, decodedTile: VectorraMvtTile): VectorraMvtRuntimeTile {
-        loadedTiles.remove(tileId)?.let { previous ->
-            nativeRenderer.removeTile(previous.nativeTileHandle)
-        }
-        val renderInput = decodedTile.toRenderInput(tileId)
-        val nativeTileHandle = nativeRenderer.renderTile(renderInput)
+    fun putDecodedTile(
+        tileId: VectorraMvtTileId,
+        decodedTile: VectorraMvtTile,
+        renderNow: Boolean = true
+    ): VectorraMvtRuntimeTile {
+        removeActiveNativeTile(tileId)
+        loadedTiles.remove(tileId)
         val runtimeTile = VectorraMvtRuntimeTile(
             tileId = tileId,
             decodedTile = decodedTile,
-            nativeTileHandle = nativeTileHandle,
+            nativeTileHandle = null,
             queryFeatures = decodedTile.toQueryFeatures(tileId)
         )
         loadedTiles[tileId] = runtimeTile
-        return runtimeTile
+        val nativeTileHandle = if (renderNow) {
+            renderLoadedTile(tileId, runtimeTile)
+        } else {
+            null
+        }
+        return runtimeTile.copy(nativeTileHandle = nativeTileHandle)
+    }
+
+    fun setRenderedTileIds(tileIds: Set<VectorraMvtTileId>) {
+        require(tileIds.all(loadedTiles::containsKey)) {
+            "MVT render set can only include loaded tiles."
+        }
+        (activeNativeTileHandles.keys - tileIds).forEach(::removeActiveNativeTile)
+        tileIds.forEach { tileId ->
+            if (tileId !in activeNativeTileHandles) {
+                renderLoadedTile(tileId, loadedTiles.getValue(tileId))
+            }
+        }
+    }
+
+    fun trimLoadedTiles(maxLoadedTiles: Int, retainTileIds: Set<VectorraMvtTileId> = emptySet()) {
+        require(maxLoadedTiles > 0) { "MVT decoded tile cache size must be greater than 0." }
+        while (loadedTiles.size > maxLoadedTiles) {
+            val tileId = loadedTiles.keys.firstOrNull {
+                it !in retainTileIds && it !in activeNativeTileHandles
+            } ?: return
+            removeTile(tileId)
+        }
     }
 
     fun removeTile(tileId: VectorraMvtTileId): VectorraMvtRuntimeTile? {
         val removed = loadedTiles.remove(tileId) ?: return null
-        nativeRenderer.removeTile(removed.nativeTileHandle)
+        removeActiveNativeTile(tileId)
         return removed
     }
 
     fun resubmitLoadedTiles() {
-        val tiles = loadedTiles.values.map { runtimeTile ->
-            runtimeTile.tileId to runtimeTile.decodedTile
-        }
-        loadedTiles.clear()
-        tiles.forEach { (tileId, decodedTile) ->
-            putDecodedTile(tileId, decodedTile)
+        val activeTileIds = activeNativeTileHandles.keys.toList()
+        activeNativeTileHandles.clear()
+        activeTileIds.forEach { tileId ->
+            loadedTiles[tileId]?.let { runtimeTile ->
+                renderLoadedTile(tileId, runtimeTile)
+            }
         }
     }
 
     fun clear() {
         loadedTiles.clear()
+        activeNativeTileHandles.clear()
         nativeRenderer.removeLayer(layer.id)
+    }
+
+    private fun renderLoadedTile(
+        tileId: VectorraMvtTileId,
+        runtimeTile: VectorraMvtRuntimeTile
+    ): String {
+        val nativeTileHandle = nativeRenderer.renderTile(runtimeTile.decodedTile.toRenderInput(tileId))
+        activeNativeTileHandles[tileId] = nativeTileHandle
+        return nativeTileHandle
+    }
+
+    private fun removeActiveNativeTile(tileId: VectorraMvtTileId) {
+        val nativeTileHandle = activeNativeTileHandles.remove(tileId) ?: return
+        nativeRenderer.removeTile(nativeTileHandle)
     }
 
     private fun VectorraMvtTile.toRenderInput(tileId: VectorraMvtTileId): VectorraMvtRenderTileInput {

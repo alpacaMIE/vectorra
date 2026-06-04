@@ -124,6 +124,103 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
+    fun setRenderedTileIdsKeepsInactiveDecodedTilesAvailableForFallbackSwitching() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+        val parentTile = VectorraMvtTileId(z = 0, x = 0, y = 0)
+        val childTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
+        store.putDecodedTile(parentTile, vectorTile(roadId = 100L, roadName = "Parent"))
+        store.putDecodedTile(childTile, vectorTile(roadId = 200L, roadName = "Child"))
+        renderer.events.clear()
+
+        store.setRenderedTileIds(setOf(parentTile))
+
+        assertEquals(setOf(parentTile, childTile), store.loadedTileIds())
+        assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
+        assertEquals(listOf("100"), store.queryFeatures().map { it.id })
+        assertEquals(listOf("remove:roads-line:1/1/0"), renderer.events)
+
+        renderer.events.clear()
+        store.setRenderedTileIds(setOf(childTile))
+
+        assertEquals(setOf(parentTile, childTile), store.loadedTileIds())
+        assertEquals(setOf("roads-line:1/1/0"), store.nativeTileHandles())
+        assertEquals(listOf("200"), store.queryFeatures().map { it.id })
+        assertEquals(
+            listOf(
+                "remove:roads-line:0/0/0",
+                "render:roads-line:1/1/0"
+            ),
+            renderer.events
+        )
+    }
+
+    @Test
+    fun putDecodedTileCanCacheWithoutRenderingUntilRenderSetSelectsTile() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+        val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
+
+        store.putDecodedTile(tileId, vectorTile(), renderNow = false)
+
+        assertEquals(setOf(tileId), store.loadedTileIds())
+        assertTrue(store.nativeTileHandles().isEmpty())
+        assertTrue(store.queryFeatures().isEmpty())
+        assertTrue(renderer.events.isEmpty())
+
+        store.setRenderedTileIds(setOf(tileId))
+
+        assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
+        assertEquals(listOf("1"), store.queryFeatures().map { it.id })
+        assertEquals(listOf("render:roads-line:0/0/0"), renderer.events)
+    }
+
+    @Test
+    fun trimLoadedTilesEvictsOnlyInactiveUnretainedDecodedTiles() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+        val firstTile = VectorraMvtTileId(z = 1, x = 0, y = 0)
+        val retainedTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
+        val activeTile = VectorraMvtTileId(z = 1, x = 1, y = 1)
+        store.putDecodedTile(firstTile, vectorTile(roadId = 10L, roadName = "First"))
+        store.putDecodedTile(retainedTile, vectorTile(roadId = 20L, roadName = "Retained"))
+        store.putDecodedTile(activeTile, vectorTile(roadId = 30L, roadName = "Active"))
+        store.setRenderedTileIds(setOf(activeTile))
+        renderer.events.clear()
+
+        store.trimLoadedTiles(maxLoadedTiles = 2, retainTileIds = setOf(retainedTile))
+
+        assertEquals(setOf(retainedTile, activeTile), store.loadedTileIds())
+        assertEquals(setOf("roads-line:1/1/1"), store.nativeTileHandles())
+        assertEquals(listOf("30"), store.queryFeatures().map { it.id })
+        assertTrue(renderer.events.isEmpty())
+    }
+
+    @Test
     fun renderInputContainsEveryLineStringPart() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(

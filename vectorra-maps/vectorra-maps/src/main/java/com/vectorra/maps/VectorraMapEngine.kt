@@ -25,6 +25,7 @@ import com.vectorra.maps.mvt.VectorraMvtTileCover
 import com.vectorra.maps.mvt.VectorraMvtTileCoverRequest
 import com.vectorra.maps.mvt.VectorraMvtTileId
 import com.vectorra.maps.mvt.VectorraMvtTileLoadResult
+import com.vectorra.maps.mvt.VectorraMvtTilePyramid
 import com.vectorra.maps.mvt.asMvtTileLoader
 import com.vectorra.maps.mvt.VectorraMvtRuntimeTileStore
 import com.vectorra.maps.network.TileCacheStoreStatus
@@ -92,6 +93,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
@@ -952,25 +954,35 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         val tasks = mutableListOf<VectorraVectorTileRuntimeTask>()
         synchronized(vectorTileRuntimeLock) {
             vectorTileLayers.values.forEach { runtimeLayer ->
-                val desiredTiles = runtimeLayer.visibleTileIds(
+                val idealTiles = runtimeLayer.visibleTileIds(
+                    camera = camera,
+                    viewportWidthPixels = viewportWidthPixels,
+                    viewportHeightPixels = viewportHeightPixels
+                )
+                val prefetchTiles = runtimeLayer.prefetchTileIds(
                     camera = camera,
                     viewportWidthPixels = viewportWidthPixels,
                     viewportHeightPixels = viewportHeightPixels
                 )
                 val loadedTiles = runtimeLayer.store.loadedTileIds()
-                val missingDesiredTiles = desiredTiles - loadedTiles
-                if (missingDesiredTiles.isEmpty()) {
-                    (loadedTiles - desiredTiles).forEach(runtimeLayer.store::removeTile)
-                }
+                val pyramidMinZoom = runtimeLayer.source.minZoom.coerceAtMost(30)
+                val renderTiles = VectorraMvtTilePyramid.renderTileIds(
+                    idealTileIds = idealTiles,
+                    loadedTileIds = loadedTiles,
+                    minZoom = pyramidMinZoom,
+                    maxZoom = runtimeLayer.source.maxZoom.coerceIn(pyramidMinZoom, 30)
+                )
+                runtimeLayer.store.setRenderedTileIds(renderTiles)
+                runtimeLayer.store.trimLoadedTiles(
+                    maxLoadedTiles = VECTOR_TILE_DECODED_CACHE_SIZE,
+                    retainTileIds = idealTiles + prefetchTiles + renderTiles + runtimeLayer.pendingTileIds.keys
+                )
                 val remainingLoadedTiles = runtimeLayer.store.loadedTileIds()
-                (desiredTiles - remainingLoadedTiles).forEach { tileId ->
-                    if (runtimeLayer.pendingTileIds.add(tileId)) {
-                        tasks += VectorraVectorTileRuntimeTask(
-                            layerId = runtimeLayer.layer.id,
-                            loadGeneration = runtimeLayer.loadGeneration,
-                            tileId = tileId
-                        )
-                    }
+                (idealTiles - remainingLoadedTiles).forEach { tileId ->
+                    enqueueVectorTileTask(runtimeLayer, tileId, VectorraVectorTileRuntimeTaskKind.IDEAL, tasks)
+                }
+                (prefetchTiles - remainingLoadedTiles - idealTiles).forEach { tileId ->
+                    enqueueVectorTileTask(runtimeLayer, tileId, VectorraVectorTileRuntimeTaskKind.PREFETCH, tasks)
                 }
             }
         }
@@ -987,6 +999,28 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private fun enqueueVectorTileTask(
+        runtimeLayer: VectorraVectorTileRuntimeLayer,
+        tileId: VectorraMvtTileId,
+        kind: VectorraVectorTileRuntimeTaskKind,
+        tasks: MutableList<VectorraVectorTileRuntimeTask>
+    ) {
+        val previousKind = runtimeLayer.pendingTileIds[tileId]
+        if (previousKind == null) {
+            runtimeLayer.pendingTileIds[tileId] = kind
+            tasks += VectorraVectorTileRuntimeTask(
+                layerId = runtimeLayer.layer.id,
+                loadGeneration = runtimeLayer.loadGeneration,
+                tileId = tileId,
+                kind = kind
+            )
+        } else if (previousKind == VectorraVectorTileRuntimeTaskKind.PREFETCH &&
+            kind == VectorraVectorTileRuntimeTaskKind.IDEAL
+        ) {
+            runtimeLayer.pendingTileIds[tileId] = VectorraVectorTileRuntimeTaskKind.IDEAL
+        }
+    }
+
     private fun loadVectorTileTask(task: VectorraVectorTileRuntimeTask) {
         val runtimeLayer = currentVectorTileRuntimeForTask(task) ?: return
         val result = runtimeLayer.tileLoader.loadTile(
@@ -998,15 +1032,20 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             is VectorraMvtTileLoadResult.Loaded -> {
                 synchronized(vectorTileRuntimeLock) {
                     val current = vectorTileLayers[task.layerId] ?: return
-                    current.pendingTileIds.remove(task.tileId)
+                    val completedKind = current.pendingTileIds.remove(task.tileId) ?: task.kind
                     if (current.loadGeneration == task.loadGeneration &&
-                        task.tileId in current.visibleTileIds(
+                        current.shouldRetainTileForTask(
+                            tileId = task.tileId,
                             camera = cameraState,
                             viewportWidthPixels = viewportWidthPixels,
                             viewportHeightPixels = viewportHeightPixels
                         )
                     ) {
-                        current.store.putDecodedTile(task.tileId, result.decodedTile)
+                        current.store.putDecodedTile(
+                            tileId = task.tileId,
+                            decodedTile = result.decodedTile,
+                            renderNow = completedKind == VectorraVectorTileRuntimeTaskKind.IDEAL
+                        )
                     }
                 }
                 scheduleVectorTileLoads()
@@ -1014,8 +1053,9 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             is VectorraMvtTileLoadResult.Failed -> {
                 val current = synchronized(vectorTileRuntimeLock) {
                     val runtimeLayer = vectorTileLayers[task.layerId] ?: return@synchronized null
-                    runtimeLayer.pendingTileIds.remove(task.tileId)
+                    val pendingKind = runtimeLayer.pendingTileIds.remove(task.tileId) ?: task.kind
                     runtimeLayer.takeIf {
+                        pendingKind == VectorraVectorTileRuntimeTaskKind.IDEAL &&
                         it.loadGeneration == task.loadGeneration &&
                             task.tileId in it.visibleTileIds(
                                 camera = cameraState,
@@ -1047,13 +1087,14 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     ): VectorraVectorTileRuntimeLayer? {
         return synchronized(vectorTileRuntimeLock) {
             val runtimeLayer = vectorTileLayers[task.layerId] ?: return@synchronized null
-            val stillVisible = runtimeLayer.loadGeneration == task.loadGeneration &&
-                task.tileId in runtimeLayer.visibleTileIds(
+            val stillRetained = runtimeLayer.loadGeneration == task.loadGeneration &&
+                runtimeLayer.shouldRetainTileForTask(
+                    tileId = task.tileId,
                     camera = cameraState,
                     viewportWidthPixels = viewportWidthPixels,
                     viewportHeightPixels = viewportHeightPixels
                 )
-            if (stillVisible) {
+            if (stillRetained) {
                 runtimeLayer
             } else {
                 runtimeLayer.pendingTileIds.remove(task.tileId)
@@ -2052,39 +2093,92 @@ private data class VectorraVectorTileRuntimeLayer(
     val loadGeneration: Long,
     val store: VectorraMvtRuntimeTileStore,
     val tileLoader: com.vectorra.maps.mvt.VectorraMvtTileLoader,
-    val pendingTileIds: MutableSet<VectorraMvtTileId> = linkedSetOf()
+    val pendingTileIds: MutableMap<VectorraMvtTileId, VectorraVectorTileRuntimeTaskKind> = linkedMapOf()
 ) {
     fun visibleTileIds(
         camera: CameraState,
         viewportWidthPixels: Int,
         viewportHeightPixels: Int
     ): Set<VectorraMvtTileId> {
-        return VectorraMvtTileCover.visibleTiles(
-            VectorraMvtTileCoverRequest(
-                longitude = camera.longitude,
-                latitude = camera.latitude,
-                zoom = camera.zoom,
-                bearing = camera.bearing,
-                viewportWidthPixels = viewportWidthPixels,
-                viewportHeightPixels = viewportHeightPixels,
-                tileSizePixels = MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS,
-                tilePadding = MVT_COVER_PREFETCH_PADDING_TILES,
-                visible = layer.visible,
-                visibleMinZoom = maxOf(source.minZoom, layer.minZoom),
-                visibleMaxZoom = layer.maxZoom,
-                tileMinZoom = source.minZoom,
-                tileMaxZoom = source.maxZoom
-            )
+        return VectorraMvtTileCover.visibleTiles(tileCoverRequest(camera, viewportWidthPixels, viewportHeightPixels))
+    }
+
+    fun prefetchTileIds(
+        camera: CameraState,
+        viewportWidthPixels: Int,
+        viewportHeightPixels: Int
+    ): Set<VectorraMvtTileId> {
+        val idealTileZoom = idealTileZoom(camera) ?: return emptySet()
+        val prefetchZoom = (idealTileZoom - MVT_PREFETCH_ZOOM_DELTA).coerceAtLeast(source.minZoom)
+        if (prefetchZoom >= idealTileZoom) {
+            return emptySet()
+        }
+        return VectorraMvtTileCover.visibleTilesAtZoom(
+            request = tileCoverRequest(camera, viewportWidthPixels, viewportHeightPixels),
+            tileZoom = prefetchZoom
         )
+    }
+
+    fun shouldRetainTileForTask(
+        tileId: VectorraMvtTileId,
+        camera: CameraState,
+        viewportWidthPixels: Int,
+        viewportHeightPixels: Int
+    ): Boolean {
+        return tileId in visibleTileIds(camera, viewportWidthPixels, viewportHeightPixels) ||
+            tileId in prefetchTileIds(camera, viewportWidthPixels, viewportHeightPixels)
+    }
+
+    private fun tileCoverRequest(
+        camera: CameraState,
+        viewportWidthPixels: Int,
+        viewportHeightPixels: Int
+    ): VectorraMvtTileCoverRequest {
+        return VectorraMvtTileCoverRequest(
+            longitude = camera.longitude,
+            latitude = camera.latitude,
+            zoom = camera.zoom,
+            bearing = camera.bearing,
+            viewportWidthPixels = viewportWidthPixels,
+            viewportHeightPixels = viewportHeightPixels,
+            tileSizePixels = MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS,
+            tilePadding = MVT_COVER_PREFETCH_PADDING_TILES,
+            visible = layer.visible,
+            visibleMinZoom = maxOf(source.minZoom, layer.minZoom),
+            visibleMaxZoom = layer.maxZoom,
+            tileMinZoom = source.minZoom,
+            tileMaxZoom = source.maxZoom
+        )
+    }
+
+    private fun idealTileZoom(camera: CameraState): Int? {
+        if (!layer.visible ||
+            camera.zoom < maxOf(source.minZoom, layer.minZoom) ||
+            camera.zoom > layer.maxZoom
+        ) {
+            return null
+        }
+        return floor(camera.zoom)
+            .toInt()
+            .coerceIn(source.minZoom, source.maxZoom)
+            .coerceIn(0, 30)
     }
 }
 
 private data class VectorraVectorTileRuntimeTask(
     val layerId: String,
     val loadGeneration: Long,
-    val tileId: VectorraMvtTileId
+    val tileId: VectorraMvtTileId,
+    val kind: VectorraVectorTileRuntimeTaskKind
 )
+
+private enum class VectorraVectorTileRuntimeTaskKind {
+    IDEAL,
+    PREFETCH
+}
 
 private const val MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS = 256
 private const val MVT_COVER_PREFETCH_PADDING_TILES = 1
+private const val MVT_PREFETCH_ZOOM_DELTA = 4
+private const val VECTOR_TILE_DECODED_CACHE_SIZE = 256
 private const val VECTOR_TILE_LOAD_WORKER_COUNT = 6

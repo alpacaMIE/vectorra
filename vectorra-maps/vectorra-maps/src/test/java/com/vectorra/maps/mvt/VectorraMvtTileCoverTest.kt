@@ -105,6 +105,21 @@ class VectorraMvtTileCoverTest {
     }
 
     @Test
+    fun coversCurrentCameraAtExplicitLowerTileZoom() {
+        val request = coverRequest(
+            longitude = -122.4194,
+            latitude = 37.7749,
+            zoom = 12.0,
+            viewportWidthPixels = 1,
+            viewportHeightPixels = 1
+        )
+
+        val tiles = VectorraMvtTileCover.visibleTilesAtZoom(request, tileZoom = 8)
+
+        assertEquals(setOf(VectorraMvtTileId(z = 8, x = 40, y = 98)), tiles)
+    }
+
+    @Test
     fun returnsEmptyWhenHiddenOrOutsideLayerZoomRange() {
         assertTrue(visibleTiles(visible = false).isEmpty())
         assertTrue(visibleTiles(zoom = 23.0, visibleMaxZoom = 22).isEmpty())
@@ -126,7 +141,7 @@ class VectorraMvtTileCoverTest {
         tileMaxZoom: Int = 14
     ): Set<VectorraMvtTileId> {
         return VectorraMvtTileCover.visibleTiles(
-            VectorraMvtTileCoverRequest(
+            coverRequest(
                 longitude = longitude,
                 latitude = latitude,
                 zoom = zoom,
@@ -141,6 +156,38 @@ class VectorraMvtTileCoverTest {
                 tileMinZoom = tileMinZoom,
                 tileMaxZoom = tileMaxZoom
             )
+        )
+    }
+
+    private fun coverRequest(
+        longitude: Double = 0.0,
+        latitude: Double = 0.0,
+        zoom: Double = 12.0,
+        bearing: Double = 0.0,
+        viewportWidthPixels: Int = 512,
+        viewportHeightPixels: Int = 512,
+        tileSizePixels: Int = 256,
+        tilePadding: Int = 0,
+        visible: Boolean = true,
+        visibleMinZoom: Int = 0,
+        visibleMaxZoom: Int = 22,
+        tileMinZoom: Int = 0,
+        tileMaxZoom: Int = 14
+    ): VectorraMvtTileCoverRequest {
+        return VectorraMvtTileCoverRequest(
+            longitude = longitude,
+            latitude = latitude,
+            zoom = zoom,
+            bearing = bearing,
+            viewportWidthPixels = viewportWidthPixels,
+            viewportHeightPixels = viewportHeightPixels,
+            tileSizePixels = tileSizePixels,
+            tilePadding = tilePadding,
+            visible = visible,
+            visibleMinZoom = visibleMinZoom,
+            visibleMaxZoom = visibleMaxZoom,
+            tileMinZoom = tileMinZoom,
+            tileMaxZoom = tileMaxZoom
         )
     }
 }

@@ -36,6 +36,14 @@ internal data class VectorraMvtTileCoverRequest(
 
 internal object VectorraMvtTileCover {
     fun visibleTiles(request: VectorraMvtTileCoverRequest): Set<VectorraMvtTileId> {
+        val tileZoom = floor(request.zoom)
+            .toInt()
+            .coerceIn(request.tileMinZoom, request.tileMaxZoom)
+            .coerceIn(0, MAX_MVT_COVER_ZOOM)
+        return visibleTilesAtZoom(request, tileZoom)
+    }
+
+    fun visibleTilesAtZoom(request: VectorraMvtTileCoverRequest, tileZoom: Int): Set<VectorraMvtTileId> {
         if (!request.visible ||
             request.visibleMinZoom > request.visibleMaxZoom ||
             request.zoom < request.visibleMinZoom ||
@@ -44,8 +52,7 @@ internal object VectorraMvtTileCover {
             return emptySet()
         }
 
-        val z = floor(request.zoom)
-            .toInt()
+        val z = tileZoom
             .coerceIn(request.tileMinZoom, request.tileMaxZoom)
             .coerceIn(0, MAX_MVT_COVER_ZOOM)
         val tileCount = 1 shl z

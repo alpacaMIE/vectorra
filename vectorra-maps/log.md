@@ -4206,3 +4206,45 @@ Results:
 Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
+
+## 2026-06-04
+
+### MVT Render Pyramid Backfill During Interaction
+
+Completed:
+
+- Rechecked the drag/zoom MVT missing-region bug against MapLibre Native `src/mbgl/algorithm/update_renderables.hpp` and `src/mbgl/renderer/tile_pyramid.cpp`.
+- Root cause: Vectorra treated the currently visible ideal tile set as both the load set and the render set. During pan/zoom, ideal z tiles could be missing while stale z tiles no longer covered the new viewport, so some regions had no renderable replacement.
+- Split MVT runtime state into decoded tile cache and active native render set.
+- Added a MapLibre-style render pyramid helper that renders ideal tiles when loaded, otherwise uses complete child coverage or the highest loaded parent tile.
+- Added low-zoom pan/prefetch tile cover so parent fallback can exist before ideal tiles finish loading.
+- Kept optional prefetch loads out of native rendering until the render set explicitly selects them.
+- Updated MVT tile cover, runtime store, and tile pyramid tests.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Manual emulator smoke was run on `emulator-5554`:
+
+```powershell
+adb install -r vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action pan-mvt
+adb logcat -d -s VectorraSample VectorraMapEngine vectorra_jni AndroidRuntime
+```
+
+Results:
+
+- MVT unit tests passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed, including CMake debug builds for `arm64-v8a` and `x86_64`.
+- `pan-mvt` smoke loaded the vector layer, panned the camera, rendered z8 parent fallback tiles first, then replaced them with z12 ideal tiles as they arrived.
+- `MVT pan center query` returned 26 features after pan; no `AndroidRuntime`, native renderer, or MVT load errors were observed.
+
+Known remaining work:
+
+- Visual verification was performed on emulator only; no physical-device MVT pan smoke was run in this pass.
