@@ -166,6 +166,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private var tiles3DTraversalScheduled = false
     private var viewportWidthPixels = DEFAULT_VECTOR_TILE_VIEWPORT_PIXELS
     private var viewportHeightPixels = DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS
+    private var renderViewportWidthPixels = DEFAULT_VECTOR_TILE_VIEWPORT_PIXELS
+    private var renderViewportHeightPixels = DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS
     private val vectorTileRuntimeLock = Any()
     private val vectorTileLayers = linkedMapOf<String, VectorraVectorTileRuntimeLayer>()
     private val vectorTileLoadGenerationByLayerId = linkedMapOf<String, Long>()
@@ -201,6 +203,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         hitTester.setViewport(width, height)
         viewportWidthPixels = width.coerceAtLeast(1)
         viewportHeightPixels = height.coerceAtLeast(1)
+        updateRenderViewport(width, height)
         loadState = VectorraMapLoadState.LOADING
         val failure = try {
             VectorraNative.setSurface(nativeHandle, surface, width, height)
@@ -246,6 +249,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         hitTester.setViewport(width, height)
         viewportWidthPixels = width.coerceAtLeast(1)
         viewportHeightPixels = height.coerceAtLeast(1)
+        updateRenderViewport(width, height)
         ifOpen {
             VectorraNative.resize(nativeHandle, width, height)
         }
@@ -970,13 +974,13 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             vectorTileLayers.values.forEach { runtimeLayer ->
                 val idealTiles = runtimeLayer.visibleTileIds(
                     camera = camera,
-                    viewportWidthPixels = viewportWidthPixels,
-                    viewportHeightPixels = viewportHeightPixels
+                    viewportWidthPixels = renderViewportWidthPixels,
+                    viewportHeightPixels = renderViewportHeightPixels
                 )
                 val prefetchTiles = runtimeLayer.prefetchTileIds(
                     camera = camera,
-                    viewportWidthPixels = viewportWidthPixels,
-                    viewportHeightPixels = viewportHeightPixels
+                    viewportWidthPixels = renderViewportWidthPixels,
+                    viewportHeightPixels = renderViewportHeightPixels
                 )
                 val loadedTiles = runtimeLayer.store.loadedTileIds()
                 val pyramidMinZoom = runtimeLayer.source.minZoom.coerceAtMost(30)
@@ -1072,20 +1076,25 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             is VectorraMvtTileLoadResult.Loaded -> {
                 synchronized(vectorTileRuntimeLock) {
                     val current = vectorTileLayers[task.layerId] ?: return
-                    val completedLoad = current.pendingLoadForTask(task) ?: return
+                    current.pendingLoadForTask(task) ?: return
                     current.pendingTileLoads.remove(task.tileId)
+                    val currentIdealTiles = current.visibleTileIds(
+                        camera = cameraState,
+                        viewportWidthPixels = renderViewportWidthPixels,
+                        viewportHeightPixels = renderViewportHeightPixels
+                    )
+                    val currentPrefetchTiles = current.prefetchTileIds(
+                        camera = cameraState,
+                        viewportWidthPixels = renderViewportWidthPixels,
+                        viewportHeightPixels = renderViewportHeightPixels
+                    )
                     if (current.loadGeneration == task.loadGeneration &&
-                        current.shouldRetainTileForTask(
-                            tileId = task.tileId,
-                            camera = cameraState,
-                            viewportWidthPixels = viewportWidthPixels,
-                            viewportHeightPixels = viewportHeightPixels
-                        )
+                        (task.tileId in currentIdealTiles || task.tileId in currentPrefetchTiles)
                     ) {
                         current.store.putDecodedTile(
                             tileId = task.tileId,
                             decodedTile = result.decodedTile,
-                            renderNow = completedLoad.kind == VectorraVectorTileRuntimeTaskKind.IDEAL
+                            renderNow = task.tileId in currentIdealTiles
                         )
                     }
                 }
@@ -1101,8 +1110,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                         it.loadGeneration == task.loadGeneration &&
                             task.tileId in it.visibleTileIds(
                                 camera = cameraState,
-                                viewportWidthPixels = viewportWidthPixels,
-                                viewportHeightPixels = viewportHeightPixels
+                                viewportWidthPixels = renderViewportWidthPixels,
+                                viewportHeightPixels = renderViewportHeightPixels
                             )
                     }
                 }
@@ -1134,8 +1143,8 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 runtimeLayer.shouldRetainTileForTask(
                     tileId = task.tileId,
                     camera = cameraState,
-                    viewportWidthPixels = viewportWidthPixels,
-                    viewportHeightPixels = viewportHeightPixels
+                    viewportWidthPixels = renderViewportWidthPixels,
+                    viewportHeightPixels = renderViewportHeightPixels
                 )
             if (stillRetained) {
                 runtimeLayer
@@ -1854,6 +1863,21 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    private fun updateRenderViewport(width: Int, height: Int) {
+        val surfaceWidth = width.coerceAtLeast(1)
+        val surfaceHeight = height.coerceAtLeast(1)
+        val maxExtent = maxOf(surfaceWidth, surfaceHeight)
+        if (maxExtent <= MAX_ANDROID_RENDER_EXTENT_PIXELS) {
+            renderViewportWidthPixels = surfaceWidth
+            renderViewportHeightPixels = surfaceHeight
+            return
+        }
+
+        val scale = MAX_ANDROID_RENDER_EXTENT_PIXELS.toDouble() / maxExtent.toDouble()
+        renderViewportWidthPixels = maxOf(1, (surfaceWidth * scale).toInt())
+        renderViewportHeightPixels = maxOf(1, (surfaceHeight * scale).toInt())
+    }
+
     private inner class EngineOfflineManager : VectorraOfflineManager {
         override fun cacheStatus(): VectorraCacheStatus {
             return VectorraCacheStatus(
@@ -2143,7 +2167,14 @@ private data class VectorraVectorTileRuntimeLayer(
         viewportWidthPixels: Int,
         viewportHeightPixels: Int
     ): Set<VectorraMvtTileId> {
-        return VectorraMvtTileCover.visibleTiles(tileCoverRequest(camera, viewportWidthPixels, viewportHeightPixels))
+        return VectorraMvtTileCover.visibleTiles(
+            tileCoverRequest(
+                camera = camera,
+                viewportWidthPixels = viewportWidthPixels,
+                viewportHeightPixels = viewportHeightPixels,
+                tilePadding = 0
+            )
+        )
     }
 
     fun prefetchTileIds(
@@ -2157,7 +2188,12 @@ private data class VectorraVectorTileRuntimeLayer(
             return emptySet()
         }
         return VectorraMvtTileCover.visibleTilesAtZoom(
-            request = tileCoverRequest(camera, viewportWidthPixels, viewportHeightPixels),
+            request = tileCoverRequest(
+                camera = camera,
+                viewportWidthPixels = viewportWidthPixels,
+                viewportHeightPixels = viewportHeightPixels,
+                tilePadding = MVT_COVER_PREFETCH_PADDING_TILES
+            ),
             tileZoom = prefetchZoom
         )
     }
@@ -2175,7 +2211,8 @@ private data class VectorraVectorTileRuntimeLayer(
     private fun tileCoverRequest(
         camera: CameraState,
         viewportWidthPixels: Int,
-        viewportHeightPixels: Int
+        viewportHeightPixels: Int,
+        tilePadding: Int
     ): VectorraMvtTileCoverRequest {
         return VectorraMvtTileCoverRequest(
             longitude = camera.longitude,
@@ -2185,7 +2222,7 @@ private data class VectorraVectorTileRuntimeLayer(
             viewportWidthPixels = viewportWidthPixels,
             viewportHeightPixels = viewportHeightPixels,
             tileSizePixels = MVT_COVER_WEB_MERCATOR_TILE_SIZE_PIXELS,
-            tilePadding = MVT_COVER_PREFETCH_PADDING_TILES,
+            tilePadding = tilePadding,
             visible = layer.visible,
             visibleMinZoom = maxOf(source.minZoom, layer.minZoom),
             visibleMaxZoom = layer.maxZoom,
@@ -2284,3 +2321,4 @@ private const val MVT_COVER_PREFETCH_PADDING_TILES = 1
 private const val MVT_PREFETCH_ZOOM_DELTA = 4
 private const val VECTOR_TILE_DECODED_CACHE_SIZE = 256
 private const val VECTOR_TILE_LOAD_WORKER_COUNT = 6
+private const val MAX_ANDROID_RENDER_EXTENT_PIXELS = 1280

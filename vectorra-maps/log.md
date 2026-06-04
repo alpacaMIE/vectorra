@@ -4336,3 +4336,47 @@ Known remaining work:
 
 - After removing the previous-render accumulation path, a final repeated emulator drag smoke was not rerun before commit.
 - Physical-device MVT drag smoke was not run in this pass.
+
+## 2026-06-04
+
+### MVT Visible Cover and Stale Ideal Render Fix
+
+Completed:
+
+- Reproduced `readd-mvt` on emulator and confirmed the render path was registering many more z12 tiles than the visible native render viewport required.
+- Root cause: ideal visible tile cover reused the prefetch padding value, so the active render set included offscreen tiles. Kotlin also computed MVT cover with the Android view size while native rendering caps the Vulkan surface to 1280px on the longest side, so cover did not match the renderer's effective viewport.
+- Changed MVT scheduling to use the same capped render viewport dimensions as native for vector tile cover.
+- Split ideal and prefetch tile cover: ideal visible tiles now use zero padding, while prefetch keeps its padding.
+- Fixed stale ideal tasks so a tile is rendered immediately only if it is still in the current ideal cover when loading completes; if it only remains in prefetch, it is cached but not submitted to native rendering.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+git diff --check
+```
+
+Manual emulator smoke was run on `emulator-5554`:
+
+```powershell
+adb install -r vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action readd-mvt
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt
+adb shell input swipe 850 900 250 900 420
+adb shell input swipe 250 900 850 900 420
+adb logcat -d -s VectorraSample VectorraMapEngine vectorra_jni AndroidRuntime DEBUG libc
+```
+
+Results:
+
+- MVT unit tests passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed.
+- `git diff --check` passed.
+- Emulator `readd-mvt` and repeated drag smoke completed without `AndroidRuntime`, `OutOfMemoryError`, MVT errors, or fatal native signals.
+
+Known remaining work:
+
+- Physical-device MVT drag smoke was not run in this pass.
