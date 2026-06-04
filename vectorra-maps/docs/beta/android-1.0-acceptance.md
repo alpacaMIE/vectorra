@@ -55,7 +55,7 @@ Validated outputs:
 
 ## Runtime Device Gate
 
-Current emulator result: passed. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence through `tools/run-emulator-smoke-gate.ps1` and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-065746.txt`.
+Current runtime gate result: accepted with user-approved emulator substitution. On 2026-06-04, `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the full sample smoke action sequence through `tools/run-emulator-smoke-gate.ps1` and passed `tools/check-device-smoke-result.ps1` against `build/device-smoke/device-smoke-20260604-090522.txt`.
 
 The emulator also passed the targeted Android instrumentation MBTiles vector source test:
 
@@ -63,11 +63,10 @@ The emulator also passed the targeted Android instrumentation MBTiles vector sou
 .\tools\run-mbtiles-vector-instrumentation.ps1 -DeviceSerial emulator-5554
 ```
 
-Latest emulator evidence includes:
+Latest accepted runtime evidence includes:
 
-- `3D Tiles zoom snapshot 1080x2219 nonblank=true`
-- final screenshot visible-pixel check: `8456` visible samples
-- close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-065746.png`
+- final screenshot `build/device-smoke/vectorra-smoke-20260604-090522.png`, `1080x2424`, visible-pixel check: `8588` visible samples
+- close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-090522.png`
 - close-zoom 3D Tiles screenshot visible-pixel check: `2573` visible samples
 - native application of high-LOD `dragon_high.b3dm.glb`
 - `MVT pan center query: Click: 9 feature(s)`
@@ -78,7 +77,7 @@ Latest emulator evidence includes:
 - GeoJSON, Draw, and Location interaction evidence
 - no native renderer startup failure during home/resume
 
-Current real-device result: not passed because the physical device is offline.
+Physical-device result: not passed because `4tqoz9bmfu8t8pr8` has unstable adb large-file transfer and repeatedly falls back to `offline` during APK install/push. Per user decision on 2026-06-04, the passing emulator smoke above is accepted as the current release runtime gate substitute.
 
 Runtime command:
 
@@ -90,14 +89,14 @@ The emulator smoke gate script requires an `emulator-*` adb serial, runs `run-de
 
 The runtime script automatically selects the matching split sample APK from the online device ABI list unless `-Apk` is provided. The ABI query must complete successfully before automatic APK selection continues.
 
-Latest adb state:
+Latest physical-device adb state:
 
 ```text
-4tqoz9bmfu8t8pr8 offline
+4tqoz9bmfu8t8pr8 offline / unstable during large-file transfer
 ```
 
-Do not declare Android 1.0 release readiness until a real Vulkan-capable Android device completes the [ABI and device matrix](abi-device-matrix.md).
+Do not describe the emulator as a physical device. The release decision is based on an explicit emulator substitution waiver plus the passing runtime evidence above.
 
 ## Release Risk
 
-The current source tree has passed local unit, build, AAR publication, published-AAR consumption, ABI packaging checks, and emulator runtime smoke. Release readiness remains blocked on the real-device runtime gate because `4tqoz9bmfu8t8pr8` is still offline.
+The current source tree has passed local unit, build, AAR publication, published-AAR consumption, ABI packaging checks, and the accepted emulator runtime smoke. Residual release risk remains: the physical device `4tqoz9bmfu8t8pr8` could not complete the gate because adb large-file transfer failed during APK install/push.

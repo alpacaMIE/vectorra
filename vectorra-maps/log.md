@@ -3884,6 +3884,23 @@ Known remaining work:
 
 - Emulator evidence is refreshed and passing. The real-device release gate remains separate and still depends on stable adb large-file transfer for `4tqoz9bmfu8t8pr8`.
 
+### Runtime Gate Substitution Decision
+
+Completed:
+
+- Recorded the user decision to accept the latest passing emulator smoke as the current release runtime gate substitute for the unstable physical device.
+- Updated Android 1.0 acceptance, ABI/device matrix, and release notes to point at `build/device-smoke/device-smoke-20260604-090522.txt`.
+- Kept the record factually explicit: the evidence is from `emulator-5554`, not a physical device.
+- Preserved physical device `4tqoz9bmfu8t8pr8` adb large-file transfer failure as residual release risk.
+
+Verification:
+
+- Documentation-only update; no Gradle or smoke commands were rerun.
+
+Known remaining work:
+
+- If physical-device confidence is required later, restore stable adb large-file transfer for `4tqoz9bmfu8t8pr8`, reinstall the sample, and rerun the full real-device smoke.
+
 ### Final Screenshot Visible-Pixel Smoke Gate
 
 Completed:

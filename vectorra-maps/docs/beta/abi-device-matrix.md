@@ -37,7 +37,7 @@ Expected SDK AAR native libraries:
 
 ## Device Smoke Matrix
 
-At least one real Vulkan-capable Android device must run the full smoke before release readiness is declared.
+The preferred release gate is at least one real Vulkan-capable Android device running the full smoke. For the current release decision, the user approved substituting the passing Android Emulator smoke because the available physical device repeatedly failed adb large-file transfer during APK install/push.
 
 Run from `vectorra-maps/` after `adb devices -l` shows exactly one `device` entry:
 
@@ -98,11 +98,11 @@ Smoke actions:
 - Pause/resume or rotation
 - Destroy/recreate
 
-If adb reports the device as `offline`, do not mark this gate passed. Record it as a release risk and keep the ABI packaging gate separate from runtime smoke.
+If adb reports the physical device as `offline`, do not mark a physical-device gate passed. Record it as a release risk and keep the ABI packaging gate separate from runtime smoke. A user-approved emulator substitution may be accepted only when explicitly recorded with the exact report path and evidence.
 
 ## Latest Emulator Evidence
 
-On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence through the emulator smoke gate and passed the stricter result checker.
+On 2026-06-04, Android Emulator `emulator-5554` (`sdk_gphone64_x86_64`, API 36, ABIs `x86_64,arm64-v8a`) completed the sample smoke action sequence through the emulator smoke gate and passed the stricter result checker. The user approved this emulator smoke as the current release runtime gate substitute for the unavailable physical-device gate.
 
 Verified command:
 
@@ -112,6 +112,6 @@ Verified command:
 
 The emulator gate wraps `run-device-smoke.ps1`, selects the latest generated `device-smoke-*.txt` report, and validates it with `check-device-smoke-result.ps1`.
 
-Evidence includes `3D Tiles zoom snapshot 1080x2219 nonblank=true`, final screenshot `8456` visible samples, close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-065746.png` with `2573` visible samples, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs. The latest checked report is `build/device-smoke/device-smoke-20260604-065746.txt`.
+Evidence includes final screenshot `build/device-smoke/vectorra-smoke-20260604-090522.png` at `1080x2424` with `8588` visible samples, close-zoom 3D Tiles screenshot artifact `build/device-smoke/vectorra-smoke-zoom-3dtiles-20260604-090522.png` with `2573` visible samples, native application of `dragon_high.b3dm.glb`, MVT pan query hit, MVT removed no-features query, MVT re-add query hit, MVT MBTiles native render, offline prefetch success/cancel cleanup, GeoJSON/Draw/Location interactions, and clean home/resume lifecycle logs. The latest checked report is `build/device-smoke/device-smoke-20260604-090522.txt`.
 
-The emulator runtime gate is accepted as development evidence. The physical real-device release gate remains open; the physical device `4tqoz9bmfu8t8pr8` still reported `offline`.
+The emulator runtime gate is accepted as the current release runtime substitute by user decision. The physical device `4tqoz9bmfu8t8pr8` remains a residual risk because adb large-file transfer failed during APK install/push and the device returned to `offline`.

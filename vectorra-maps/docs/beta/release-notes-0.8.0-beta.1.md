@@ -124,9 +124,9 @@ Targeted tests added or expanded include:
 
 ## Known Gaps Before Publishing
 
-- Emulator device smoke for `offline-prefetch` and `cancel-prefetch` passed on `emulator-5554`; physical-device smoke still has not run because adb reported `4tqoz9bmfu8t8pr8` as `offline`.
-- `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` passed on `emulator-5554`; rerun on a physical device remains part of the real-device release gate once adb returns to `device`.
-- Android 1.0 local acceptance gates have passed, but runtime release readiness is still blocked by the device gate recorded in [Android 1.0 acceptance record](android-1.0-acceptance.md).
+- Emulator device smoke for `offline-prefetch` and `cancel-prefetch` passed on `emulator-5554`.
+- `connectedDebugAndroidTest` for `VectorraMbTilesVectorSourceInstrumentedTest` passed on `emulator-5554`.
+- Android 1.0 local acceptance gates have passed. Per user decision on 2026-06-04, the passing emulator smoke report `build/device-smoke/device-smoke-20260604-090522.txt` is accepted as the current release runtime gate substitute; the physical device `4tqoz9bmfu8t8pr8` remains a residual risk because adb large-file transfer failed during APK install/push.
 - A published-AAR verification pass was run successfully against the current Gradle project version `0.5.0-beta.1`:
 
 ```powershell
