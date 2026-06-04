@@ -477,7 +477,7 @@ class MainActivity : Activity() {
                     sourceLayer = "transportation",
                     visible = visible,
                     minZoom = 4,
-                    maxZoom = 14,
+                    maxZoom = 22,
                     color = 0xffffd43b.toInt(),
                     opacity = 0.95,
                     widthPixels = 2.5

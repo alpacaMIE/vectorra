@@ -3734,6 +3734,38 @@ Known remaining work:
 
 - Physical-device release smoke remains open until `4tqoz9bmfu8t8pr8` reports `device`.
 
+### MVT Viewport Tile Stability Fix
+
+Date: 2026-06-04
+
+Completed:
+
+- Fixed MVT tile replacement so an already-loaded tile removes its previous native handle before rendering the replacement. This prevents duplicate async results for the same handle from deleting the newly rendered native tile.
+- Added `VectorraMvtTileCover` to compute the current viewport tile set, including x wraparound and source maxZoom overscaling while the layer remains visible.
+- Updated `VectorraMapEngine` MVT scheduling to load all current viewport tiles, track pending tile loads, ignore stale offscreen failures, and resubmit loaded decoded tiles after surface recreation.
+- Raised the online sample MVT layer maxZoom to 22 while keeping source requests capped by the source maxZoom.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+```
+
+Manual emulator smoke on `emulator-5554` installed `vectorra-sample-x86_64-debug.apk`, launched `mvt`, then launched `pan-mvt`.
+
+Results:
+
+- Focused MVT unit tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed, including native CMake builds for `arm64-v8a` and `x86_64`.
+- MVT emulator logcat showed multiple viewport tile registrations/applications for `sample-mvt-transportation`, pan loaded replacement x=657 tiles, and `MVT pan center query: Click: 9 feature(s) layer=sample-mvt-transportation source=sample-mvt source-layer=transportation`.
+
+Known remaining work:
+
+- Full all-action device smoke was not rerun for this focused fix.
+
 ### Current Progress Review
 
 Completed:

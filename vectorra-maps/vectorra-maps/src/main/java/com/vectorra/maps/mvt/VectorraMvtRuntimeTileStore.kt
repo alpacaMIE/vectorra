@@ -49,11 +49,11 @@ internal class VectorraMvtRuntimeTileStore(
     }
 
     fun putDecodedTile(tileId: VectorraMvtTileId, decodedTile: VectorraMvtTile): VectorraMvtRuntimeTile {
-        val renderInput = decodedTile.toRenderInput(tileId)
-        val nativeTileHandle = nativeRenderer.renderTile(renderInput)
         loadedTiles.remove(tileId)?.let { previous ->
             nativeRenderer.removeTile(previous.nativeTileHandle)
         }
+        val renderInput = decodedTile.toRenderInput(tileId)
+        val nativeTileHandle = nativeRenderer.renderTile(renderInput)
         val runtimeTile = VectorraMvtRuntimeTile(
             tileId = tileId,
             decodedTile = decodedTile,
@@ -68,6 +68,16 @@ internal class VectorraMvtRuntimeTileStore(
         val removed = loadedTiles.remove(tileId) ?: return null
         nativeRenderer.removeTile(removed.nativeTileHandle)
         return removed
+    }
+
+    fun resubmitLoadedTiles() {
+        val tiles = loadedTiles.values.map { runtimeTile ->
+            runtimeTile.tileId to runtimeTile.decodedTile
+        }
+        loadedTiles.clear()
+        tiles.forEach { (tileId, decodedTile) ->
+            putDecodedTile(tileId, decodedTile)
+        }
     }
 
     fun clear() {

@@ -58,6 +58,14 @@ class VectorraMvtRuntimeTileStoreTest {
 
         assertEquals(setOf(tileId), store.loadedTileIds())
         assertEquals(listOf("poi-circle:1/1/0"), renderer.removedTileHandles)
+        assertEquals(
+            listOf(
+                "render:poi-circle:1/1/0",
+                "remove:poi-circle:1/1/0",
+                "render:poi-circle:1/1/0"
+            ),
+            renderer.events
+        )
         assertEquals(listOf("8"), store.queryFeatures().map { it.id })
         assertEquals(2, renderer.renderedInputs.size)
     }
@@ -139,6 +147,29 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(listOf("place-labels"), renderer.removedLayers)
     }
 
+    @Test
+    fun resubmitLoadedTilesRendersExistingDecodedTilesAgain() {
+        val renderer = RecordingMvtRenderer()
+        val store = VectorraMvtRuntimeTileStore(
+            sourceId = "vector",
+            layer = VectorraVectorTileLayer.Line(
+                id = "roads-line",
+                sourceId = "vector",
+                sourceLayer = "roads"
+            ),
+            nativeRenderer = renderer
+        )
+        val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
+        store.putDecodedTile(tileId, vectorTile())
+        renderer.events.clear()
+
+        store.resubmitLoadedTiles()
+
+        assertEquals(setOf(tileId), store.loadedTileIds())
+        assertEquals(listOf("render:roads-line:0/0/0"), renderer.events)
+        assertEquals(listOf("1"), store.queryFeatures().map { it.id })
+    }
+
     private fun vectorTile(
         roadId: Long = 1L,
         roadName: String = "Main",
@@ -210,19 +241,23 @@ class VectorraMvtRuntimeTileStoreTest {
         val renderedHandles = mutableListOf<String>()
         val removedTileHandles = mutableListOf<String>()
         val removedLayers = mutableListOf<String>()
+        val events = mutableListOf<String>()
 
         override fun renderTile(input: VectorraMvtRenderTileInput): String {
             renderedInputs += input
             renderedHandles += input.nativeTileHandle
+            events += "render:${input.nativeTileHandle}"
             return input.nativeTileHandle
         }
 
         override fun removeTile(nativeTileHandle: String) {
             removedTileHandles += nativeTileHandle
+            events += "remove:$nativeTileHandle"
         }
 
         override fun removeLayer(layerId: String) {
             removedLayers += layerId
+            events += "remove-layer:$layerId"
         }
     }
 }
