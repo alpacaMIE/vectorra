@@ -3790,6 +3790,39 @@ Known remaining work:
 - Re-authorize or reconnect the physical device until `adb devices -l` reports `4tqoz9bmfu8t8pr8 device`, then rerun `.\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8` and validate the generated report with `.\tools\check-device-smoke-result.ps1`.
 - Do not mark the real-device release gate passed from the interrupted report.
 
+### Physical Device Smoke Retry - Install Transport Failure
+
+Completed:
+
+- Retried the physical-device smoke after `adb devices -l` again reported `4tqoz9bmfu8t8pr8` as `device`.
+- Force-stopped `com.vectorra.sample` before running the smoke.
+- Attempted the normal smoke runner install path, a clean uninstall plus install path, a push plus `pm install` path, and an `adb install --no-streaming` path.
+- Tested adb file transfer with a small text file to separate APK/package-manager failure from transport failure.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\tools\run-device-smoke.ps1 -DeviceSerial 4tqoz9bmfu8t8pr8
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 uninstall com.vectorra.sample
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 install D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 install --no-streaming D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+```
+
+Results:
+
+- The smoke runner failed immediately at `adb install -r` with no package-manager error text.
+- `adb uninstall com.vectorra.sample` succeeded, confirming shell commands could still run briefly.
+- A plain `adb install` after uninstall still failed with no package-manager error text.
+- `adb push` of the APK failed with `connect failed: closed`.
+- `adb install --no-streaming` failed during push install with `65544-byte write failed: No error`.
+- A small-file `adb push` failed with `failed to get feature set: device offline`.
+- These results confirm the retry is blocked by adb transport/file-transfer instability, not by the Vectorra APK, Gradle build, sample action, or smoke checker.
+
+Known remaining work:
+
+- Restore stable adb file transfer for `4tqoz9bmfu8t8pr8` before rerunning the real-device release gate. Replugging alone may not be sufficient; confirm that a small `adb push` to `/data/local/tmp` succeeds before starting the full smoke.
+- Reinstall the sample after transport recovery because the retry successfully uninstalled `com.vectorra.sample`.
+
 ### Final Screenshot Visible-Pixel Smoke Gate
 
 Completed:
