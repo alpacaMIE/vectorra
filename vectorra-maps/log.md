@@ -4265,3 +4265,44 @@ Verification:
 Known remaining work:
 
 - None.
+
+## 2026-06-04
+
+### MVT Drag Render Set Race Fix
+
+Completed:
+
+- Reproduced the sample MVT manual drag path on emulator with repeated `adb input swipe` gestures.
+- Root cause: MVT runtime/native rendering changed the active tile set with remove-before-render ordering, and native queued MVT apply/remove callbacks had no per-handle revision check. During high-frequency drag, an old remove could erase a tile that Kotlin had just selected again, while stale applies could recreate tiles after Kotlin had removed them.
+- Changed `VectorraMvtRuntimeTileStore` to render newly selected/replacement tiles before removing old active native handles.
+- Changed native MVT operations to stamp every tile handle mutation with a revision and skip stale queued apply/remove callbacks.
+- Updated runtime store tests to assert same-handle replacement does not issue an unnecessary remove and render-set switching renders the replacement before removing the old tile.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+```
+
+Manual emulator smoke was run on `emulator-5554`:
+
+```powershell
+adb install -r vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt
+adb shell input swipe 850 900 250 900 500
+adb shell input swipe 250 900 850 900 500
+adb logcat -d -s VectorraSample VectorraMapEngine vectorra_jni AndroidRuntime DEBUG libc
+```
+
+Results:
+
+- MVT unit tests passed.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed, including native CMake builds for `arm64-v8a` and `x86_64`.
+- Repeated emulator MVT drag smoke completed without `AndroidRuntime`, native renderer, or fatal crash log entries.
+
+Known remaining work:
+
+- Physical-device MVT drag smoke was not run in this pass.

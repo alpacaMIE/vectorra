@@ -57,7 +57,6 @@ internal class VectorraMvtRuntimeTileStore(
         decodedTile: VectorraMvtTile,
         renderNow: Boolean = true
     ): VectorraMvtRuntimeTile {
-        removeActiveNativeTile(tileId)
         loadedTiles.remove(tileId)
         val runtimeTile = VectorraMvtRuntimeTile(
             tileId = tileId,
@@ -78,12 +77,12 @@ internal class VectorraMvtRuntimeTileStore(
         require(tileIds.all(loadedTiles::containsKey)) {
             "MVT render set can only include loaded tiles."
         }
-        (activeNativeTileHandles.keys - tileIds).forEach(::removeActiveNativeTile)
         tileIds.forEach { tileId ->
             if (tileId !in activeNativeTileHandles) {
                 renderLoadedTile(tileId, loadedTiles.getValue(tileId))
             }
         }
+        (activeNativeTileHandles.keys - tileIds).forEach(::removeActiveNativeTile)
     }
 
     fun trimLoadedTiles(maxLoadedTiles: Int, retainTileIds: Set<VectorraMvtTileId> = emptySet()) {
@@ -122,8 +121,12 @@ internal class VectorraMvtRuntimeTileStore(
         tileId: VectorraMvtTileId,
         runtimeTile: VectorraMvtRuntimeTile
     ): String {
+        val previousNativeTileHandle = activeNativeTileHandles[tileId]
         val nativeTileHandle = nativeRenderer.renderTile(runtimeTile.decodedTile.toRenderInput(tileId))
         activeNativeTileHandles[tileId] = nativeTileHandle
+        if (previousNativeTileHandle != null && previousNativeTileHandle != nativeTileHandle) {
+            nativeRenderer.removeTile(previousNativeTileHandle)
+        }
         return nativeTileHandle
     }
 

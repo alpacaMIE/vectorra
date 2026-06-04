@@ -38,6 +38,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -479,6 +480,7 @@ namespace
         std::vector<double> coordinates;
         std::vector<int> ringOffsets;
         std::vector<int> ringEnds;
+        std::uint64_t revision = 0;
     };
 
     struct LabelAnnotationConfig
@@ -1240,16 +1242,19 @@ namespace
                 std::to_string(config.tileY);
 
             std::lock_guard<std::mutex> lock(mutex);
-            mvtTiles[handle] = config;
+            auto currentConfig = config;
+            currentConfig.revision = nextMvtTileRevisionLocked(handle);
+            mvtTiles[handle] = currentConfig;
             if (app)
             {
-                queueApplyMvtTileLocked(handle, config);
+                queueApplyMvtTileLocked(handle, currentConfig);
             }
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
-                "registered MVT render tile handle=%s source=%s style=%s features=%zu coordinates=%zu visible=%d",
+                "registered MVT render tile handle=%s revision=%llu source=%s style=%s features=%zu coordinates=%zu visible=%d",
                 handle.c_str(),
+                static_cast<unsigned long long>(currentConfig.revision),
                 config.sourceId.c_str(),
                 config.style.kind.c_str(),
                 featureCount,
@@ -1265,16 +1270,18 @@ namespace
                 return;
             }
             std::lock_guard<std::mutex> lock(mutex);
+            const auto revision = nextMvtTileRevisionLocked(handle);
             mvtTiles.erase(handle);
             if (app)
             {
-                queueRemoveMvtTileLocked(handle);
+                queueRemoveMvtTileLocked(handle, revision);
             }
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
-                "removed MVT render tile handle=%s",
-                handle.c_str());
+                "removed MVT render tile handle=%s revision=%llu",
+                handle.c_str(),
+                static_cast<unsigned long long>(revision));
         }
 
         void removeMvtLayer(const std::string& layerId)
@@ -1291,6 +1298,7 @@ namespace
                 if (itr->second.layerId == layerId)
                 {
                     removedHandles.push_back(itr->first);
+                    nextMvtTileRevisionLocked(itr->first);
                     itr = mvtTiles.erase(itr);
                     ++removed;
                 }
@@ -1303,7 +1311,7 @@ namespace
             {
                 for (const auto& handle : removedHandles)
                 {
-                    queueRemoveMvtTileLocked(handle);
+                    queueRemoveMvtTileLocked(handle, mvtTileRevisions[handle]);
                 }
             }
             __android_log_print(
@@ -1818,6 +1826,8 @@ namespace
             tiles3DRendererContent.clear();
             mvtTiles.clear();
             mvtEntities.clear();
+            mvtTileRevisions.clear();
+            mvtTileRevisionCounter = 0;
             locationEntities.clear();
             app.reset();
         }
@@ -2178,7 +2188,7 @@ namespace
             activeApp->onNextUpdate([this, activeApp, handle, config]()
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (app.get() != activeApp)
+                if (app.get() != activeApp || !isCurrentMvtTileRevisionLocked(handle, config.revision))
                 {
                     return;
                 }
@@ -2187,19 +2197,37 @@ namespace
             requestFrameLocked();
         }
 
-        void queueRemoveMvtTileLocked(const std::string& handle)
+        void queueRemoveMvtTileLocked(const std::string& handle, std::uint64_t revision)
         {
             auto* activeApp = app.get();
-            activeApp->onNextUpdate([this, activeApp, handle]()
+            activeApp->onNextUpdate([this, activeApp, handle, revision]()
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (app.get() != activeApp)
+                if (app.get() != activeApp || !isCurrentMvtTileRevisionLocked(handle, revision))
+                {
+                    return;
+                }
+                if (mvtTiles.find(handle) != mvtTiles.end())
                 {
                     return;
                 }
                 removeMvtTileEntitiesLocked(handle);
+                mvtTileRevisions.erase(handle);
             });
             requestFrameLocked();
+        }
+
+        std::uint64_t nextMvtTileRevisionLocked(const std::string& handle)
+        {
+            const auto revision = ++mvtTileRevisionCounter;
+            mvtTileRevisions[handle] = revision;
+            return revision;
+        }
+
+        bool isCurrentMvtTileRevisionLocked(const std::string& handle, std::uint64_t revision) const
+        {
+            const auto itr = mvtTileRevisions.find(handle);
+            return itr != mvtTileRevisions.end() && itr->second == revision;
         }
 
         void removeMvtTileEntitiesLocked(const std::string& handle)
@@ -3391,6 +3419,8 @@ namespace
         std::unordered_map<std::string, std::string> tiles3DLoggedErrors;
         std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
         std::unordered_map<std::string, std::vector<entt::entity>> mvtEntities;
+        std::unordered_map<std::string, std::uint64_t> mvtTileRevisions;
+        std::uint64_t mvtTileRevisionCounter = 0;
         std::unordered_map<std::string, std::pair<double, double>> pointAnnotations;
         std::unordered_map<std::string, LabelAnnotationConfig> labelAnnotations;
         std::unordered_map<std::string, entt::entity> labelEntities;

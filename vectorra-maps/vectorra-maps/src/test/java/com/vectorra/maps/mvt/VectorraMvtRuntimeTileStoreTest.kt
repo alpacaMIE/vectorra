@@ -40,7 +40,7 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
-    fun replacingTileRemovesPreviousNativeHandleAndQueryState() {
+    fun replacingTileRendersReplacementWithoutRemovingSameNativeHandle() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -57,11 +57,10 @@ class VectorraMvtRuntimeTileStoreTest {
         store.putDecodedTile(tileId, vectorTile(poiId = 8L))
 
         assertEquals(setOf(tileId), store.loadedTileIds())
-        assertEquals(listOf("poi-circle:1/1/0"), renderer.removedTileHandles)
+        assertTrue(renderer.removedTileHandles.isEmpty())
         assertEquals(
             listOf(
                 "render:poi-circle:1/1/0",
-                "remove:poi-circle:1/1/0",
                 "render:poi-circle:1/1/0"
             ),
             renderer.events
@@ -156,8 +155,8 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(listOf("200"), store.queryFeatures().map { it.id })
         assertEquals(
             listOf(
-                "remove:roads-line:0/0/0",
-                "render:roads-line:1/1/0"
+                "render:roads-line:1/1/0",
+                "remove:roads-line:0/0/0"
             ),
             renderer.events
         )
