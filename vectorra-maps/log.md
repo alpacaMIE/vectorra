@@ -3823,6 +3823,35 @@ Known remaining work:
 - Restore stable adb file transfer for `4tqoz9bmfu8t8pr8` before rerunning the real-device release gate. Replugging alone may not be sufficient; confirm that a small `adb push` to `/data/local/tmp` succeeds before starting the full smoke.
 - Reinstall the sample after transport recovery because the retry successfully uninstalled `com.vectorra.sample`.
 
+### Physical Device Smoke Retry - Large Transfer Still Fails
+
+Completed:
+
+- Retried after `adb devices -l` reported `4tqoz9bmfu8t8pr8` as `device`.
+- Verified a small file transfer before attempting installation.
+- Attempted APK installation with both push-install and streamed-install paths.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 push D:\workspace\code\vectorra\vectorra-maps\build\device-smoke\adb-small-test.txt /data/local/tmp/vectorra-adb-small-test.txt
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 install --no-streaming D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s 4tqoz9bmfu8t8pr8 install D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+```
+
+Results:
+
+- Small `adb push` to `/data/local/tmp` succeeded and `cat` confirmed the file contents.
+- `adb install --no-streaming` failed during push install with `65544-byte write failed: No error`.
+- Plain streamed `adb install` failed with `adb.exe: device offline`.
+- Final `adb devices -l` reported `4tqoz9bmfu8t8pr8 offline`.
+- The physical-device release gate remains blocked by adb transport instability. The current failure is specifically large file transfer / APK install, not SDK build or smoke validation logic.
+
+Known remaining work:
+
+- Restore stable large-file adb transfer for `4tqoz9bmfu8t8pr8`; a small-file push is no longer sufficient as the readiness check.
+- After recovery, reinstall `com.vectorra.sample` and rerun the complete real-device smoke.
+
 ### Final Screenshot Visible-Pixel Smoke Gate
 
 Completed:
