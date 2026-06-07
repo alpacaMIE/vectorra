@@ -1,0 +1,27 @@
+{
+  "repos": [
+    { "url": "https://github.com/CesiumGS/3d-tiles.git", "ref": "main" },
+    { "url": "https://github.com/NASA-AMMOS/3DTilesRendererJS.git", "ref": "master" },
+    { "url": "https://github.com/google/angle.git", "ref": "main" },
+    { "url": "https://github.com/CesiumGS/cesium.git", "ref": "main" },
+    { "url": "https://github.com/CesiumGS/cesium-native.git", "ref": "v0.61.0" },
+    { "url": "https://github.com/visgl/deck.gl.git", "ref": "master" },
+    { "url": "https://github.com/KhronosGroup/glTF.git", "ref": "main" },
+    { "url": "https://github.com/iTowns/itowns.git", "ref": "master" },
+    { "url": "https://github.com/visgl/loaders.gl.git", "ref": "master" },
+    { "url": "https://github.com/mapbox/mapbox-maps-android.git", "ref": "main" },
+    { "url": "https://github.com/maplibre/maplibre-native.git", "ref": "main" },
+    {
+      "url": "https://github.com/maplibre/maplibre-native.git",
+      "ref": "feature/terrain-3d",
+      "dir": "maplibre-native-feature-terrain-3d"
+    },
+    { "url": "https://github.com/mapbox/mbtiles-spec.git", "ref": "master" },
+    { "url": "https://github.com/gwaldron/osgearth.git", "ref": "osgearth-3.8" },
+    { "url": "https://github.com/osmdroid/osmdroid.git", "ref": "master" },
+    { "url": "https://github.com/pelicanmapping/rocky.git", "ref": "v1.1.0" },
+    { "url": "https://github.com/tangrams/tangram-es.git", "ref": "main" },
+    { "url": "https://github.com/mapbox/vector-tile-spec.git", "ref": "master" },
+    { "url": "https://github.com/KhronosGroup/Vulkan-Samples.git", "ref": "main" }
+  ]
+}

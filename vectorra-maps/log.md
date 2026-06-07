@@ -1,5 +1,27 @@
 # Vectorra Development Log
 
+## 2026-06-07
+
+### vectorra-references 重拉
+
+- 删除原 `vectorra-references/`（21 个目录，含重复与非默认命名）。
+- 新增 [`tools/vectorra-references.manifest.json`](../tools/vectorra-references.manifest.json) 与 [`tools/bootstrap-vectorra-references.ps1`](../tools/bootstrap-vectorra-references.ps1)。
+- 按 manifest 重新拉取 **19** 个参考仓库；目录名默认与 `git clone` 一致，仅 `maplibre-native-feature-terrain-3d` 通过 `dir` 覆盖（`feature/terrain-3d`）。
+- 去重：`osgearth-docs`/`osgearth-master` → `osgearth` @ `osgearth-3.8`；`rocky-main`/`rocky-upstream` → `rocky` @ `v1.1.0`。
+- pinned：`cesium-native` @ `v0.61.0`。
+
+验证（仓库根目录）：
+
+```powershell
+.\tools\bootstrap-vectorra-references.ps1
+```
+
+结果：
+
+- 19 个目录均含 `.git`；旧目录名不存在。
+- `osgearth/src` 存在；`maplibre-native-feature-terrain-3d` 无双层嵌套。
+- bootstrap 脚本验证表输出 19 行，pinned ref 与 manifest 一致。
+
 ## 2026-06-03
 
 ### Context

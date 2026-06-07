@@ -4,14 +4,14 @@
 
 Vectorra 当前包含两个主要目录：
 
-- `vectorra-maps/`：正在开发的地图 SDK，是本仓库的主要开发目标。目标是在功能上对标 Mapbox Maps，并扩展支持 3D Tiles 加载与渲染。
+- `vectorra-maps/`：正在开发的地图 SDK，是本仓库的主要开发目标。目标是在功能上对标 OSGEarth和Mapbox Maps
 - `vectorra-references/`：参考用开源项目与规范集合，只读。可以阅读、对比、提炼实现思路，但不要在该目录内新增、删除或修改文件。
 
 ## 目录边界
 
 所有产品代码、文档、测试和构建调整都应优先发生在 `vectorra-maps/` 内。
 
-`vectorra-references/` 内包含 Mapbox/MapLibre、Cesium Native、3D Tiles、glTF、osmdroid、Tangram ES、rocky upstream、Vulkan/ANGLE 等参考资料。使用这些内容时，将它们视为外部参考源，不要直接改动，也不要把大段代码机械复制进产品目录。
+`vectorra-references/` 内包含 Mapbox/MapLibre、Cesium Native、3D Tiles、glTF、osmdroid、Tangram ES、rocky upstream、Vulkan/ANGLE 等参考资料。使用这些内容时，将它们视为外部参考源。
 
 `vectorra-maps/third_party/rocky/` 是 SDK 当前接入的 native 渲染依赖。除非任务明确要求修改 vendored rocky，否则优先在 `vectorra-maps/vectorra-maps/src/main/cpp/` 的 JNI/桥接层或 Kotlin API 层完成适配。
 
@@ -86,6 +86,8 @@ Vectorra Maps 的长期目标是提供现代地图 SDK 能力：
 开始任务前先确认工作目录。仓库根目录不是 Gradle 工程根；Gradle 命令需要在 `vectorra-maps/` 下执行。
 
 如果需要理解参考实现，可以读取 `vectorra-references/`，但所有可交付修改应写入 `vectorra-maps/` 或根目录文档。若任务看起来需要修改参考项目，先重新判断是否应在产品工程中实现等价适配。
+
+重建参考语料库：在仓库根目录执行 `.\tools\bootstrap-vectorra-references.ps1`（清单见 `tools/vectorra-references.manifest.json`）。
 
 后续开发记录统一写入 `vectorra-maps/log.md`。每次完成开发、验证或发现阻断项后，在该文件追加日期、完成内容、验证命令与结果、已知问题和下一步事项，避免只把过程信息留在对话中。
 
