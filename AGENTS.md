@@ -11,13 +11,23 @@ Vectorra 当前包含两个主要目录：
 
 所有产品代码、文档、测试和构建调整都应优先发生在 `vectorra-maps/` 内。
 
-`vectorra-references/` 内包含 Mapbox/MapLibre、Cesium Native、3D Tiles、glTF、osmdroid、Tangram ES、rocky upstream、Vulkan/ANGLE 等参考资料。使用这些内容时，将它们视为外部参考源。
+`vectorra-references/` 是本地只读参考语料库（19 个开源仓库/规范，被 `.gitignore` 忽略、不进产品提交）。目录名默认与 `git clone` 的仓库名一致；清单与 pinned ref 见 `tools/vectorra-references.manifest.json`，重建命令：`.\tools\bootstrap-vectorra-references.ps1`。
+
+按主题归类的主要路径：
+
+- **地图引擎（Native/Android）**：`maplibre-native/`（main）、`maplibre-native-feature-terrain-3d/`（`feature/terrain-3d`，同 remote 的第二份克隆）、`mapbox-maps-android/`、`tangram-es/`、`osmdroid/`
+- **3D 地理与渲染**：`cesium-native/`（v0.61.0）、`cesium/`、`3DTilesRendererJS/`、`itowns/`、`osgearth/`（osgearth-3.8）、`rocky/`（v1.1.0，对应 vendored rocky）
+- **规范**：`3d-tiles/`、`glTF/`、`mbtiles-spec/`、`vector-tile-spec/`
+- **Web/数据加载参考**：`deck.gl/`、`loaders.gl/`
+- **图形与 Native 底层**：`angle/`、`Vulkan-Samples/`
+
+使用这些内容时，将它们视为外部参考源。
 
 `vectorra-maps/third_party/rocky/` 是 SDK 当前接入的 native 渲染依赖。除非任务明确要求修改 vendored rocky，否则优先在 `vectorra-maps/vectorra-maps/src/main/cpp/` 的 JNI/桥接层或 Kotlin API 层完成适配。
 
 ## 参考实现使用
 
-实现新功能或 debug 前，优先在 `vectorra-references/` 中检查 Mapbox/MapLibre、Cesium Native、3D Tiles、glTF、osmdroid、Tangram ES、rocky upstream、Vulkan/ANGLE 等开源项目或规范是否已有可复用实现。
+实现新功能或 debug 前，优先在 `vectorra-references/` 中按主题查找可复用实现，例如：矢量瓦片与地图引擎看 `maplibre-native/`、`mapbox-maps-android/`；3D Tiles 看 `3d-tiles/`、`cesium-native/`、`glTF/`；地形/地球场景看 `osgearth/`、`rocky/`、`maplibre-native-feature-terrain-3d/`；Android 离线底图看 `osmdroid/`；Vulkan/ANGLE 底层看 `Vulkan-Samples/`、`angle/`。
 
 如果存在与当前需求直接匹配的实现，优先复用该实现：在许可证允许、边界清晰、依赖可控的前提下，可以把当前需求所需的最小代码复制或改写到 `vectorra-maps/` 中，并保留必要的许可证头、来源说明或归属记录。不要复制许可证不兼容的代码，不要搬运与当前需求无关的大段实现，也不要修改 `vectorra-references/`。
 
@@ -79,15 +89,13 @@ Vectorra Maps 的长期目标是提供现代地图 SDK 能力：
 - 相机、坐标、屏幕像素、Web Mercator、瓦片 URL 模板等逻辑应有单元测试覆盖。
 - 对网络、缓存、离线、瓦片请求和坐标转换的改动，要优先补充或更新测试。
 - native 层改动要注意 Android surface 生命周期、线程安全、Vulkan 设备兼容性和资源释放。
-- 3D Tiles 相关实现应以规范为准，可参考 `vectorra-references/3d-tiles/`、`vectorra-references/cesium-native/` 和 `vectorra-references/glTF/`，但实现落在 `vectorra-maps/`。
+- 3D Tiles 相关实现应以规范为准，可参考 `vectorra-references/3d-tiles/`、`vectorra-references/cesium-native/`、`vectorra-references/glTF/`；native 渲染与地形可参考 `vectorra-references/rocky/`、`vectorra-references/osgearth/`，但实现落在 `vectorra-maps/`。
 
 ## 给后续 Agent 的提示
 
 开始任务前先确认工作目录。仓库根目录不是 Gradle 工程根；Gradle 命令需要在 `vectorra-maps/` 下执行。
 
-如果需要理解参考实现，可以读取 `vectorra-references/`，但所有可交付修改应写入 `vectorra-maps/` 或根目录文档。若任务看起来需要修改参考项目，先重新判断是否应在产品工程中实现等价适配。
-
-重建参考语料库：在仓库根目录执行 `.\tools\bootstrap-vectorra-references.ps1`（清单见 `tools/vectorra-references.manifest.json`）。
+如果需要理解参考实现，可以读取 `vectorra-references/`，但所有可交付修改应写入 `vectorra-maps/` 或根目录文档。若任务看起来需要修改参考项目，先重新判断是否应在产品工程中实现等价适配。本地缺少参考目录时，在仓库根目录执行 `.\tools\bootstrap-vectorra-references.ps1` 按 manifest 重新拉取。
 
 后续开发记录统一写入 `vectorra-maps/log.md`。每次完成开发、验证或发现阻断项后，在该文件追加日期、完成内容、验证命令与结果、已知问题和下一步事项，避免只把过程信息留在对话中。
 
