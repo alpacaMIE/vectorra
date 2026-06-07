@@ -95,6 +95,20 @@ internal object VectorraNative {
         visible: Boolean
     )
     external fun remove3DTilesRendererContent(handle: Long, id: String)
+
+    // Native 3D Tiles layer (C++ pipeline)
+    external fun addTileset3DLayer(
+        handle: Long,
+        layerId: String,
+        tilesetUri: String,
+        headerKeys: Array<String>,
+        headerValues: Array<String>,
+        maxSSE: Float,
+        maxTiles: Int
+    )
+    external fun removeTileset3DLayer(handle: Long, layerId: String)
+    external fun setTileset3DLayerViewportHeight(handle: Long, height: Float)
+
     external fun renderMvtTile(
         handle: Long,
         sourceId: String,

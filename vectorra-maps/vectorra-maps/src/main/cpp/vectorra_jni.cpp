@@ -29,6 +29,7 @@
 #include <rocky/vsg/ecs/ModelSystem.h>
 #include <rocky/vsg/MapManipulator.h>
 #include <rocky/vsg/terrain/SurfaceNode.h>
+#include <rocky/vsg/Tiles3DLayer.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -738,6 +739,8 @@ namespace
             surfaceWidth = width > 0 ? width : 1;
             surfaceHeight = height > 0 ? height : 1;
             __android_log_print(ANDROID_LOG_INFO, TAG, "resize %dx%d", surfaceWidth, surfaceHeight);
+            for (auto& [id, layer] : tiles3DLayerMap)
+                layer->setViewportHeight(static_cast<float>(surfaceHeight));
         }
 
         void setCamera(
@@ -1187,6 +1190,94 @@ namespace
                 TAG,
                 "removed 3D Tiles renderer content id=%s",
                 id.c_str());
+        }
+
+        // --- Native 3D Tiles layer (C++ pipeline) ---
+
+        void addTileset3DLayer(
+            const std::string& layerId,
+            const std::string& tilesetUri,
+            const std::vector<std::pair<std::string, std::string>>& headers,
+            float maxSSE,
+            int maxTiles)
+        {
+            if (layerId.empty() || tilesetUri.empty())
+                return;
+
+            std::lock_guard<std::mutex> lock(mutex);
+            removeTileset3DLayerByIdLocked(layerId);
+
+            if (!app || !app->vsgcontext || !app->mapNode || !app->mapNode->map)
+            {
+                __android_log_print(ANDROID_LOG_WARN, TAG,
+                    "addTileset3DLayer: app not ready id=%s", layerId.c_str());
+                return;
+            }
+
+            rocky::URI::Context ctx;
+            ctx.referrer = tilesetUri;
+            for (const auto& h : headers)
+                ctx.headers.emplace_back(h.first, h.second);
+
+            auto layer = rocky::Tiles3DLayer::create();
+            layer->name = layerId;
+            layer->tilesetURI = rocky::URI(tilesetUri, ctx);
+            layer->maximumScreenSpaceError = maxSSE;
+            layer->maximumLoadedTiles = static_cast<unsigned>(std::max(1, maxTiles));
+            layer->vsgctx = app->vsgcontext;
+            layer->setViewportHeight(static_cast<float>(surfaceHeight));
+
+            auto openResult = layer->open(app->vsgcontext->io);
+            if (openResult.failed())
+            {
+                const auto msg = openResult.error().string();
+                __android_log_print(ANDROID_LOG_ERROR, TAG,
+                    "addTileset3DLayer open failed id=%s error=%s",
+                    layerId.c_str(), msg.c_str());
+                emitResourceStatusLocked("TILES3D", layerId, "FAILED", "NATIVE_RENDERER", msg);
+                return;
+            }
+
+            app->mapNode->map->add(layer);
+            tiles3DLayerMap[layerId] = layer;
+
+            if (app->vsgcontext)
+                app->vsgcontext->requestFrame();
+
+            emitResourceStatusLocked("TILES3D", layerId, "LOADED");
+            __android_log_print(ANDROID_LOG_INFO, TAG,
+                "addTileset3DLayer opened id=%s uri=%s maxSSE=%.1f maxTiles=%d",
+                layerId.c_str(), tilesetUri.c_str(), maxSSE, maxTiles);
+        }
+
+        void removeTileset3DLayerByIdLocked(const std::string& layerId)
+        {
+            auto it = tiles3DLayerMap.find(layerId);
+            if (it == tiles3DLayerMap.end())
+                return;
+
+            if (app && app->mapNode && app->mapNode->map)
+                removeLayerFromMapLocked(layerId, false);
+
+            tiles3DLayerMap.erase(it);
+            __android_log_print(ANDROID_LOG_INFO, TAG,
+                "removeTileset3DLayerByIdLocked id=%s", layerId.c_str());
+        }
+
+        void removeTileset3DLayer(const std::string& layerId)
+        {
+            if (layerId.empty()) return;
+            std::lock_guard<std::mutex> lock(mutex);
+            removeTileset3DLayerByIdLocked(layerId);
+            if (app && app->vsgcontext)
+                app->vsgcontext->requestFrame();
+        }
+
+        void setTileset3DLayerViewportHeight(float height)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            for (auto& [id, layer] : tiles3DLayerMap)
+                layer->setViewportHeight(height);
         }
 
         std::string renderMvtTile(const MvtRenderTileConfig& config)
@@ -1824,6 +1915,7 @@ namespace
             tiles3DLoggedRadii.clear();
             tiles3DLoggedErrors.clear();
             tiles3DRendererContent.clear();
+            tiles3DLayerMap.clear();
             mvtTiles.clear();
             mvtEntities.clear();
             mvtTileRevisions.clear();
@@ -3417,6 +3509,8 @@ namespace
         std::unordered_map<std::string, entt::entity> tiles3DEntities;
         std::unordered_map<std::string, float> tiles3DLoggedRadii;
         std::unordered_map<std::string, std::string> tiles3DLoggedErrors;
+        // Layer-level 3D Tiles (new C++ pipeline)
+        std::unordered_map<std::string, std::shared_ptr<rocky::Tiles3DLayer>> tiles3DLayerMap;
         std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
         std::unordered_map<std::string, std::vector<entt::entity>> mvtEntities;
         std::unordered_map<std::string, std::uint64_t> mvtTileRevisions;
@@ -3891,6 +3985,65 @@ Java_com_vectorra_maps_internal_VectorraNative_remove3DTilesRendererContent(
     {
         engine->remove3DTilesRendererContent(jstringToString(env, id));
     }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_addTileset3DLayer(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring layerId,
+    jstring tilesetUri,
+    jobjectArray headerKeys,
+    jobjectArray headerValues,
+    jfloat maxSSE,
+    jint maxTiles)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        std::vector<std::pair<std::string, std::string>> headers;
+        if (headerKeys && headerValues)
+        {
+            const jsize n = env->GetArrayLength(headerKeys);
+            for (jsize i = 0; i < n; ++i)
+            {
+                auto k = static_cast<jstring>(env->GetObjectArrayElement(headerKeys, i));
+                auto v = static_cast<jstring>(env->GetObjectArrayElement(headerValues, i));
+                if (k && v)
+                    headers.emplace_back(jstringToString(env, k), jstringToString(env, v));
+                env->DeleteLocalRef(k);
+                env->DeleteLocalRef(v);
+            }
+        }
+        engine->addTileset3DLayer(
+            jstringToString(env, layerId),
+            jstringToString(env, tilesetUri),
+            headers,
+            static_cast<float>(maxSSE),
+            static_cast<int>(maxTiles));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_removeTileset3DLayer(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring layerId)
+{
+    if (auto* engine = fromHandle(handle))
+        engine->removeTileset3DLayer(jstringToString(env, layerId));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setTileset3DLayerViewportHeight(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jfloat height)
+{
+    if (auto* engine = fromHandle(handle))
+        engine->setTileset3DLayerViewportHeight(static_cast<float>(height));
 }
 
 extern "C" JNIEXPORT jstring JNICALL

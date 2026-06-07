@@ -1277,9 +1277,9 @@ class MainActivity : Activity() {
         const val SAMPLE_MODEL_LATITUDE = 1.0
         const val SAMPLE_3D_TILES_SOURCE_ID = "sample-3d-tiles"
         const val SAMPLE_3D_TILES_LAYER_ID = "sample-3d-tiles-layer"
-        const val SAMPLE_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithDiscreteLOD/tileset.json"
-        const val SAMPLE_3D_TILES_LONGITUDE = -75.61209430782448
-        const val SAMPLE_3D_TILES_LATITUDE = 40.04253061142592
+        const val SAMPLE_3D_TILES_URI = "https://3dtiles.nlsc.gov.tw/building/tiles3d/3/tileset.json"
+        const val SAMPLE_3D_TILES_LONGITUDE = 120.3456  // Taichung (matches NLSC tileset 3 coverage)
+        const val SAMPLE_3D_TILES_LATITUDE = 23.0112
         const val SAMPLE_3D_TILES_ZOOM_CLOSE = 18.0
         const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 20.0
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"

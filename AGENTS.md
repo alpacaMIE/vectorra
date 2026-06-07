@@ -29,7 +29,7 @@ Vectorra 当前包含两个主要目录：
 
 实现新功能或 debug 前，优先在 `vectorra-references/` 中按主题查找可复用实现，例如：矢量瓦片与地图引擎看 `maplibre-native/`、`mapbox-maps-android/`；3D Tiles 看 `3d-tiles/`、`cesium-native/`、`glTF/`；地形/地球场景看 `osgearth/`、`rocky/`、`maplibre-native-feature-terrain-3d/`；Android 离线底图看 `osmdroid/`；Vulkan/ANGLE 底层看 `Vulkan-Samples/`、`angle/`。
 
-如果存在与当前需求直接匹配的实现，优先复用该实现：在许可证允许、边界清晰、依赖可控的前提下，可以把当前需求所需的最小代码复制或改写到 `vectorra-maps/` 中，并保留必要的许可证头、来源说明或归属记录。不要复制许可证不兼容的代码，不要搬运与当前需求无关的大段实现，也不要修改 `vectorra-references/`。
+如果存在与当前需求直接匹配的实现，优先复用该实现：在许可证允许、边界清晰、依赖可控的前提下，可以把当前需求所需的最小代码复制或改写到 `vectorra-maps/` 中，并保留必要的来源说明或归属记录。不要搬运与当前需求无关的大段实现，也不要修改 `vectorra-references/`。
 
 ## 当前工程结构
 
