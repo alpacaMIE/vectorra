@@ -108,6 +108,15 @@ void Tiles3DNode::expireTiles(uint64_t frameNumber, double referenceTime) const
 
 void Tiles3DNode::traverse(vsg::RecordTraversal& rv) const
 {
+    // Capture the ECEF-space view frustum BEFORE any tile-local transforms are applied.
+    // At this point modelviewMatrixStack.top() = view-only matrix (no model transforms),
+    // giving us the correct world-space (ECEF) frustum for bounding-sphere tests.
+    if (auto* state = rv.getState())
+    {
+        vsg::Frustum projFrustum(vsg::Frustum{}, state->projectionMatrixStack.top());
+        _ecefFrustum.set(projFrustum, state->modelviewMatrixStack.top());
+    }
+
     // Expire old tiles once per frame (analogous to OSGEarth's UPDATE_VISITOR pass)
     if (rv.getFrameStamp())
     {
@@ -193,7 +202,8 @@ void Tile3DNode::requestContent() const
     };
 
     auto& j = io.services().jobs;
-    jobs::context ctx{ uri, j.get_pool("rocky::Tiles3DNode", 4) };
+    // 16 threads: GLB loading is network-I/O bound, more threads drain the queue faster
+    jobs::context ctx{ uri, j.get_pool("rocky::Tiles3DNode", 16) };
     _loadFuture = j.dispatch(load, ctx);
     TILES3D_LOG_I("Tile3DNode: requestContent dispatched uri=%s", uri.c_str());
 }
@@ -210,23 +220,46 @@ void Tile3DNode::resolveContent() const
         return;
     }
 
-    _content = _loadFuture->value();
+    auto node = _loadFuture->value();
     _loadFuture = {};
 
-    TILES3D_LOG_I("Tile3DNode: content resolved node=%p", (void*)_content.get());
+    if (!node)
+        return;
 
-    if (_content && _tilesetNode->vsgContext())
-        _tilesetNode->vsgContext()->compile(_content);
+    auto* vsgCtx = _tilesetNode->vsgContext();
+    if (vsgCtx)
+    {
+        // Compile during the update pass (between frames) — not during record traversal.
+        // Calling compile() inline in traverse() races with in-progress command recording,
+        // causing texture descriptors to be incomplete when the first draw executes.
+        // Use ref_ptr so the tile stays alive until the lambda fires.
+        _compilePending.store(true);
+        vsg::ref_ptr<Tile3DNode> self(const_cast<Tile3DNode*>(this));
+        vsgCtx->onNextUpdate([self, node](VSGContext ctx) {
+            if (!self->_compilePending.load())
+                return; // was evicted before compile ran
+            ctx->compile(node);
+            self->_content = node;
+            self->_compilePending.store(false);
+            TILES3D_LOG_I("Tile3DNode: content compiled node=%p", (void*)node.get());
+        });
+    }
+    else
+    {
+        _content = node;
+    }
 }
 
 bool Tile3DNode::unloadContent()
 {
-    if (!_content && !_loadFuture.available())
+    // Nothing to unload if content isn't loaded and no load is in flight
+    if (!_content && !_loadFuture.available() && !_compilePending.load())
         return false;
 
     _content = nullptr;
     _loadFuture = {};
     _contentRequested = false;
+    _compilePending.store(false); // cancel pending onNextUpdate compile
     return true;
 }
 
@@ -260,13 +293,14 @@ bool Tile3DNode::allChildrenReady() const
 
 bool Tile3DNode::intersectsFrustum(const vsg::RecordTraversal& rv) const
 {
-    // TODO: implement proper frustum culling once SSE-based loading is confirmed.
-    // The bounding volume coordinate space depends on the tile's bv type (region→ECEF
-    // vs box/sphere→tile-local) and whether VSG has already applied the tile transform
-    // to the frustum planes. For now, accept all tiles and rely on SSE to skip
-    // tiles that are too far or too small to matter.
     (void)rv;
-    return true;
+    if (_boundingSphere.radius <= 0.0)
+        return true;
+
+    // Test against the ECEF frustum captured in Tiles3DNode::traverse() before any
+    // tile transforms were pushed. All bounding volumes in the NLSC dataset are
+    // region-type (geographic→ECEF), so this is always the correct space to test.
+    return _tilesetNode->_ecefFrustum.intersect(_boundingSphere);
 }
 
 double Tile3DNode::computeScreenSpaceError(const vsg::RecordTraversal& rv) const
@@ -335,11 +369,14 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
 
         _childGroup->accept(rv);
 
-        // Pre-request content for children that don't have it yet
+        // Pre-request content for visible children only — requesting off-screen
+        // children wastes compile budget and bypasses the frustum culling in their
+        // own traverse(), since requestContent() is called without entering traverse().
         for (const auto& c : _childGroup->children)
         {
             if (auto* ct = c->cast<Tile3DNode>())
-                ct->requestContent();
+                if (ct->intersectsFrustum(rv))
+                    ct->requestContent();
         }
     }
     else
@@ -362,16 +399,19 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
             requestContent();
 
         // Pre-fetch children while waiting (so they're ready when SSE grows).
-        // Also resolve any completed futures — children don't get traverse() called
-        // until they're ready, so we must poll their futures here to break the cycle.
+        // Guard with frustum check — off-screen children must not be loaded,
+        // as they bypass the per-tile frustum test since traverse() is never called.
         if (needsRefinement && _childGroup)
         {
             for (const auto& c : _childGroup->children)
             {
                 if (auto* ct = c->cast<Tile3DNode>())
                 {
-                    ct->requestContent();
-                    ct->resolveContent();
+                    if (ct->intersectsFrustum(rv))
+                    {
+                        ct->requestContent();
+                        ct->resolveContent();
+                    }
                 }
             }
         }

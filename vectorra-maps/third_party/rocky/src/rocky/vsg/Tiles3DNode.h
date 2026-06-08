@@ -75,6 +75,10 @@ namespace ROCKY_NAMESPACE
         float _maxTileAge = 5.0f;    // seconds before an idle tile is evicted
         mutable uint64_t _lastExpireFrame = 0u;
 
+        // ECEF-space view frustum, updated once per frame in traverse() before any
+        // tile-local transforms are applied. Tile3DNode reads this for frustum culling.
+        mutable vsg::Frustum _ecefFrustum;
+
         void expireTiles(uint64_t frameNumber, double referenceTime) const;
 
         friend class Tile3DNode;
@@ -103,6 +107,9 @@ namespace ROCKY_NAMESPACE
         void resolveContent() const;
         bool unloadContent();
 
+        // Public so parent tiles can skip off-screen children in pre-fetch loops.
+        bool intersectsFrustum(const vsg::RecordTraversal& rv) const;
+
         // LRU tracker linkage (managed by Tiles3DNode)
         mutable std::list<Tile3DNode*>::iterator _trackerItr;
         mutable bool _trackerItrValid = false;
@@ -120,6 +127,8 @@ namespace ROCKY_NAMESPACE
         mutable vsg::ref_ptr<vsg::Node> _content;
         mutable Future<NodeResult> _loadFuture;
         mutable bool _contentRequested = false;
+        // true while an onNextUpdate compile is queued (prevents false-negative eviction)
+        mutable std::atomic<bool> _compilePending{ false };
 
         // child tile nodes (created lazily from _tile.children)
         mutable vsg::ref_ptr<vsg::Group> _childGroup;
@@ -128,9 +137,8 @@ namespace ROCKY_NAMESPACE
         void createChildren() const;
         bool allChildrenReady() const;
 
-        // SSE and frustum helpers
+        // SSE helper
         double computeScreenSpaceError(const vsg::RecordTraversal& rv) const;
-        bool intersectsFrustum(const vsg::RecordTraversal& rv) const;
 
         vsg::ref_ptr<vsg::Node> loadContentSync() const; // runs in thread pool
     };

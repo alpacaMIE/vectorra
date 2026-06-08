@@ -11,6 +11,8 @@
 #include <rocky/vsg/Tiles3DNode.h>
 #include <rocky/URI.h>
 #include <rocky/Tiles3D.h>
+#include <rocky/Threading.h>
+#include <atomic>
 
 namespace ROCKY_NAMESPACE
 {
@@ -52,6 +54,11 @@ namespace ROCKY_NAMESPACE
     private:
         vsg::ref_ptr<Tiles3DNode> _tilesNode;
         VSGContext _vsgctx = nullptr;
+        std::atomic<float> _viewportHeight{ 1080.0f };
+        // Background open state — token is set to true on close to prevent
+        // the async callback from touching a destroyed layer
+        mutable Future<int> _openFuture;
+        std::shared_ptr<std::atomic<bool>> _openCanceled;
     };
 
 } // namespace ROCKY_NAMESPACE
