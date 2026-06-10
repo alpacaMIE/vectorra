@@ -1,0 +1,83 @@
+diff --git a/include/vsgXchange/gltf.h b/include/vsgXchange/gltf.h
+index 23101e5..60bd070 100644
+--- a/include/vsgXchange/gltf.h
++++ b/include/vsgXchange/gltf.h
+@@ -265,6 +265,17 @@ namespace vsgXchange
+             void read_number(vsg::JSONParser& parser, const std::string_view& property, std::istream& input) override;
+         };
+ 
++        // https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Vendor/EXT_texture_webp
++        struct VSGXCHANGE_DECLSPEC EXT_texture_webp : public vsg::Inherit<vsg::JSONParser::Schema, EXT_texture_webp>
++        {
++            glTFid source;
++
++            // extention prototype will be cloned when it's used.
++            vsg::ref_ptr<vsg::Object> clone(const vsg::CopyOp&) const override { return EXT_texture_webp::create(*this); }
++
++            void read_number(vsg::JSONParser& parser, const std::string_view& property, std::istream& input) override;
++        };
++
+         struct VSGXCHANGE_DECLSPEC PbrMetallicRoughness : public vsg::Inherit<ExtensionsExtras, PbrMetallicRoughness>
+         {
+             vsg::ValuesSchema<float> baseColorFactor; // default { 1.0, 1.0, 1.0, 1.0 }
+diff --git a/src/gltf/SceneGraphBuilder.cpp b/src/gltf/SceneGraphBuilder.cpp
+index c4d974d..32a4ff5 100644
+--- a/src/gltf/SceneGraphBuilder.cpp
++++ b/src/gltf/SceneGraphBuilder.cpp
+@@ -464,9 +464,20 @@ gltf::SceneGraphBuilder::SamplerImage gltf::SceneGraphBuilder::createTexture(vsg
+         samplerImage.sampler = vsg_samplers[gltf_texture->sampler.value];
+     }
+ 
+-    if (gltf_texture->source)
++    auto source = gltf_texture->source;
++
++    // EXT_texture_webp stores the image index in the extension instead of texture.source
++    if (!source)
++    {
++        if (auto texture_webp = gltf_texture->extension<EXT_texture_webp>("EXT_texture_webp"))
++        {
++            source = texture_webp->source;
++        }
++    }
++
++    if (source)
+     {
+-        samplerImage.image = vsg_images[gltf_texture->source.value];
++        samplerImage.image = vsg_images[source.value];
+     }
+ 
+     return samplerImage;
+diff --git a/src/gltf/gltf.cpp b/src/gltf/gltf.cpp
+index f61e9a3..c174567 100644
+--- a/src/gltf/gltf.cpp
++++ b/src/gltf/gltf.cpp
+@@ -556,6 +556,14 @@ void gltf::KHR_texture_transform::read_number(vsg::JSONParser& parser, const std
+         parser.warning();
+ }
+ 
++void gltf::EXT_texture_webp::read_number(vsg::JSONParser& parser, const std::string_view& property, std::istream& input)
++{
++    if (property == "source")
++        input >> source;
++    else
++        parser.warning();
++}
++
+ void gltf::Material::report(vsg::LogOutput& output)
+ {
+     output.enter("Material {");
+@@ -1910,6 +1918,8 @@ vsg::Path gltf::mimeTypeToExtension(const std::string_view& mimeType)
+         return ".gif";
+     else if (mimeType == "image/ktx")
+         return ".ktx";
++    else if (mimeType == "image/webp")
++        return ".webp";
+     return "";
+ }
+ 
+@@ -1925,4 +1935,5 @@ void gltf::assignExtensions(vsg::JSONParser& parser) const
+     parser.setObject("KHR_lights_punctual", KHR_lights_punctual::create());
+     parser.setObject("KHR_materials_pbrSpecularGlossiness", KHR_materials_pbrSpecularGlossiness::create());
+     parser.setObject("KHR_materials_emissive_strength", KHR_materials_emissive_strength::create());
++    parser.setObject("EXT_texture_webp", EXT_texture_webp::create());
+ }

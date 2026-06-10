@@ -88,6 +88,13 @@ namespace ROCKY_NAMESPACE
         // tile-local transforms are applied. Tile3DNode reads this for frustum culling.
         mutable vsg::Frustum _ecefFrustum;
 
+        // ECEF camera eye position and SSE projection denominator (2/|proj[1][1]|),
+        // captured alongside _ecefFrustum. Tile3DNode computes screen-space error in
+        // world space from these so the result is valid regardless of which matrices
+        // happen to be on the record-traversal stack at call time.
+        mutable vsg::dvec3 _eyeECEF;
+        mutable double _sseDenominator = 1.0;
+
         // Loads in flight (shared with worker lambdas so it stays valid even if
         // this node is destroyed while a download is still running).
         std::shared_ptr<std::atomic<int>> _inFlightLoads;
@@ -125,9 +132,13 @@ namespace ROCKY_NAMESPACE
     class ROCKY_EXPORT Tile3DNode : public vsg::Inherit<vsg::MatrixTransform, Tile3DNode>
     {
     public:
+        //! @param parentWorld  Accumulated world (ECEF) matrix of the parent tile;
+        //!                     composed with this tile's own transform, it places
+        //!                     local-space bounding volumes in ECEF for culling/SSE.
         Tile3DNode(
             Tiles3DNode* tilesetNode,
             const Tiles3DTile& tile,
+            const vsg::dmat4& parentWorld = vsg::dmat4(),
             bool immediateLoad = false);
 
         void traverse(vsg::RecordTraversal&) const override;
@@ -148,12 +159,26 @@ namespace ROCKY_NAMESPACE
         mutable bool _trackerItrValid = false;
         mutable uint64_t _lastCulledFrame = 0u;
         mutable double _lastCulledTime = 0.0;
-        bool autoUnload = true;
+        // mutable: cleared from resolveContent() (const) when this tile's
+        // content turns out to be a grafted external tileset subtree.
+        mutable bool autoUnload = true;
 
     private:
         Tiles3DNode* _tilesetNode;
         Tiles3DTile _tile;
-        vsg::dsphere _boundingSphere;
+
+        // Accumulated world matrix: parent's world matrix times this tile's
+        // transform. Identity for transform-less tilesets (e.g. NLSC).
+        vsg::dmat4 _worldMatrix;
+
+        // Bounding sphere in world (ECEF) space. Region volumes are already
+        // ECEF per spec (unaffected by tile transforms); box/sphere volumes
+        // are local and get mapped through _worldMatrix.
+        vsg::dsphere _worldBoundingSphere;
+
+        // Geometric error scaled by the accumulated transform's largest axis
+        // scale (3D Tiles spec: transforms scale geometric error too).
+        double _worldGeometricError = 0.0;
 
         // content load state
         using NodeResult = Result<vsg::ref_ptr<vsg::Node>>;

@@ -9,6 +9,7 @@
 #include <rocky/URI.h>
 #include <rocky/GeoExtent.h>
 #include <vsg/app/CompileTraversal.h>
+#include <vsg/io/mem_stream.h>
 #include <zlib.h>
 #include <cstring>
 #include <cstdlib>
@@ -20,6 +21,9 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #include <atomic>
+#ifdef ROCKY_ANDROID_WEBP
+#include <webp/decode.h>
+#endif
 #ifdef ROCKY_ANDROID_TURBOJPEG
 #include <turbojpeg.h>
 #endif
@@ -386,6 +390,16 @@ namespace
             return true;
         }
 
+        //! Memory-pointer overload: used by loaders that read embedded data
+        //! (e.g. vsgXchange::gltf decoding textures from a glTF bufferView).
+        //! Without it the base class returns null and embedded webp/png data
+        //! would silently skip GDAL.
+        vsg::ref_ptr<vsg::Object> read(const uint8_t* ptr, size_t size, vsg::ref_ptr<const vsg::Options> options = {}) const override
+        {
+            vsg::mem_stream in(ptr, size);
+            return read(in, options);
+        }
+
         vsg::ref_ptr<vsg::Object> read(std::istream& in, vsg::ref_ptr<const vsg::Options> options = {}) const override
         {
             if (!options || _features.extensionFeatureMap.count(options->extensionHint) == 0)
@@ -405,9 +419,88 @@ namespace
             auto result = GDAL_detail::readImage((unsigned char*)data.c_str(), data.length(), gdal_driver);
 
             if (result.ok())
-                return moveImageToVSG(result.value());
+            {
+                auto image = result.value();
+
+                // Expand 24-bit RGB to RGBA: VK_FORMAT_R8G8B8_* is not a
+                // sampleable texture format on most GPUs, so a 3-channel
+                // image would fail VkImage creation downstream (seen with
+                // WebP textures embedded in glTF tile content).
+                if (image && (image->pixelFormat() == Image::R8G8B8_UNORM ||
+                              image->pixelFormat() == Image::R8G8B8_SRGB))
+                {
+                    auto rgba = std::make_shared<Image>(
+                        image->pixelFormat() == Image::R8G8B8_SRGB
+                            ? Image::R8G8B8A8_SRGB : Image::R8G8B8A8_UNORM,
+                        image->width(), image->height(), image->depth());
+                    for (unsigned r = 0; r < image->depth(); ++r)
+                        for (unsigned t = 0; t < image->height(); ++t)
+                            for (unsigned s = 0; s < image->width(); ++s)
+                                rgba->write(image->read(s, t, r), s, t, r);
+                    image = rgba;
+                }
+
+                return moveImageToVSG(image);
+            }
             else
                 return { };
+        }
+    };
+#endif
+
+#if defined(__ANDROID__) && defined(ROCKY_ANDROID_WEBP)
+    /**
+    * VSG reader-writer that decodes WebP images with libwebp. The Android
+    * build carries no GDAL, and neither vsgXchange nor stb decodes WebP —
+    * without this, WebP textures embedded in glTF/b3dm tile content would
+    * fall back to raw bytes and fail VkImage creation.
+    */
+    class WebP_VSG_ReaderWriter : public vsg::Inherit<vsg::ReaderWriter, WebP_VSG_ReaderWriter>
+    {
+    public:
+        Features _features;
+
+        WebP_VSG_ReaderWriter()
+        {
+            _features.extensionFeatureMap[vsg::Path(".webp")] = READ_ISTREAM;
+        }
+
+        bool getFeatures(Features& out) const override
+        {
+            out = _features;
+            return true;
+        }
+
+        //! Memory-pointer overload: used by loaders reading embedded data
+        //! (e.g. vsgXchange::gltf decoding textures from a glTF bufferView).
+        vsg::ref_ptr<vsg::Object> read(const uint8_t* ptr, size_t size, vsg::ref_ptr<const vsg::Options> options = {}) const override
+        {
+            if (!options || options->extensionHint != vsg::Path(".webp"))
+                return {};
+
+            int width = 0, height = 0;
+            if (!WebPGetInfo(ptr, size, &width, &height) || width <= 0 || height <= 0)
+                return {};
+
+            // RGBA output: 24-bit RGB is not a sampleable texture format on
+            // most GPUs, so always expand to 4 channels.
+            auto image = Image::create(
+                Image::R8G8B8A8_UNORM,
+                static_cast<unsigned>(width), static_cast<unsigned>(height));
+
+            const size_t outBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+            if (!WebPDecodeRGBAInto(ptr, size, image->data<uint8_t>(), outBytes, width * 4))
+                return {};
+
+            return moveImageToVSG(image);
+        }
+
+        vsg::ref_ptr<vsg::Object> read(std::istream& in, vsg::ref_ptr<const vsg::Options> options = {}) const override
+        {
+            std::stringstream buf;
+            buf << in.rdbuf() << std::flush;
+            const std::string data = buf.str();
+            return read(reinterpret_cast<const uint8_t*>(data.data()), data.size(), options);
         }
     };
 #endif
@@ -656,6 +749,10 @@ VSGContextImpl::ctor(int& argc, char** argv)
 
 #ifdef ROCKY_HAS_GDAL
     readerWriterOptions->add(GDAL_VSG_ReaderWriter::create());
+#endif
+
+#if defined(__ANDROID__) && defined(ROCKY_ANDROID_WEBP)
+    readerWriterOptions->add(WebP_VSG_ReaderWriter::create());
 #endif
 
 #ifdef ROCKY_HAS_VSGXCHANGE

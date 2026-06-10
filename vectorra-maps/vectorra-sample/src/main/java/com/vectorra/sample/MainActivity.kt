@@ -233,6 +233,9 @@ class MainActivity : Activity() {
                 sampleButton("3D Zoom") {
                     zoomSample3DTiles()
                 },
+                sampleButton("3D HK") {
+                    loadHongKong3DTiles()
+                },
                 sampleButton("MVT") {
                     loadSampleMvt()
                 },
@@ -449,6 +452,38 @@ class MainActivity : Activity() {
             statusText.text = "3D Tiles requested"
         }.onFailure { error ->
             statusText.text = "3D Tiles error: ${error.message}"
+        }
+    }
+
+    private fun loadHongKong3DTiles() {
+        runCatching {
+            val source = Vectorra3DTilesSource(
+                id = SAMPLE_HK_3D_TILES_SOURCE_ID,
+                tilesetUri = SAMPLE_HK_3D_TILES_URI
+            )
+            mapView.map.add3DTilesLayer(
+                source = source,
+                layer = Vectorra3DTilesLayer(
+                    id = SAMPLE_HK_3D_TILES_LAYER_ID,
+                    sourceId = source.id
+                ),
+                options = Vectorra3DTilesOptions(
+                    maximumScreenSpaceError = 16.0,
+                    maximumLoadedTiles = 512
+                )
+            )
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = SAMPLE_HK_3D_TILES_LONGITUDE,
+                    latitude = SAMPLE_HK_3D_TILES_LATITUDE,
+                    zoom = 14.0,
+                    pitch = 45.0,
+                    bearing = 0.0
+                )
+            )
+            statusText.text = "HK 3D Tiles requested"
+        }.onFailure { error ->
+            statusText.text = "HK 3D Tiles error: ${error.message}"
         }
     }
 
@@ -1031,6 +1066,7 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
                 SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
                 SAMPLE_ACTION_ZOOM_3D_TILES -> zoomSample3DTiles()
+                SAMPLE_ACTION_HK_3D_TILES -> loadHongKong3DTiles()
                 SAMPLE_ACTION_OFFLINE_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = false)
                 SAMPLE_ACTION_CANCEL_PREFETCH -> runOfflinePrefetchSmoke(cancelAfterFirst = true)
                 SAMPLE_ACTION_SNAPSHOT -> runSnapshotSmoke()
@@ -1283,6 +1319,14 @@ class MainActivity : Activity() {
         const val SAMPLE_3D_TILES_ZOOM_CLOSE = 18.0
         const val SAMPLE_3D_TILES_ZOOM_CLOSEST = 20.0
         const val SAMPLE_BROKEN_3D_TILES_URI = "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/missing-vectorra-smoke/tileset.json"
+        // ContextCapture-style oblique photography: external tileset chain + b3dm
+        // (Draco + WebP) + local-space boxes under a root ECEF transform.
+        const val SAMPLE_HK_3D_TILES_SOURCE_ID = "sample-hk-3d-tiles"
+        const val SAMPLE_HK_3D_TILES_LAYER_ID = "sample-hk-3d-tiles-layer"
+        const val SAMPLE_HK_3D_TILES_URI =
+            "http://syseng.kingtopinfo.com:6400/KingMapMetaEarthData/3dtiles/%E5%80%BE%E6%96%9C%E6%91%84%E5%BD%B1/%E9%A6%99%E6%B8%AF/%E9%A6%99%E6%B8%AF%E4%B9%9D%E9%BE%99/tileset.json"
+        const val SAMPLE_HK_3D_TILES_LONGITUDE = 114.19  // Kowloon, Hong Kong
+        const val SAMPLE_HK_3D_TILES_LATITUDE = 22.32
         const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
         const val SAMPLE_MVT_TEMPLATE_URL = "https://tiles.openfreemap.org/planet/20260520_001001_pt/{z}/{x}/{y}.pbf"
@@ -1328,6 +1372,7 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
         const val SAMPLE_ACTION_ZOOM_3D_TILES = "zoom-3dtiles"
+        const val SAMPLE_ACTION_HK_3D_TILES = "hk-3dtiles"
         const val SAMPLE_ACTION_OFFLINE_PREFETCH = "offline-prefetch"
         const val SAMPLE_ACTION_CANCEL_PREFETCH = "cancel-prefetch"
         const val SAMPLE_ACTION_SNAPSHOT = "snapshot"

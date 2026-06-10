@@ -30,6 +30,7 @@ $packages = @(
     "nlohmann-json",
     "entt",
     "curl",
+    "libwebp",
     "vsg[windowing]",
     "vsgxchange[assimp,freetype,draco]",
     "imgui[vulkan-binding]"

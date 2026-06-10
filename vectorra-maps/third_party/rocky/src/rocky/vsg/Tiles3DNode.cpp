@@ -9,6 +9,8 @@
 
 #include <vsg/all.h>
 
+#include <algorithm>
+
 #ifdef __ANDROID__
 #include <android/log.h>
 #define TILES3D_LOG_I(fmt, ...) __android_log_print(ANDROID_LOG_INFO,  "rocky_tiles3d", fmt, ##__VA_ARGS__)
@@ -42,7 +44,7 @@ Tiles3DNode::Tiles3DNode(
 
     if (tileset.root)
     {
-        auto rootTile = Tile3DNode::create(this, *tileset.root, /*immediateLoad=*/true);
+        auto rootTile = Tile3DNode::create(this, *tileset.root, vsg::dmat4(), /*immediateLoad=*/true);
         _root->addChild(rootTile);
     }
 
@@ -211,6 +213,17 @@ void Tiles3DNode::traverse(vsg::RecordTraversal& rv) const
     {
         vsg::Frustum projFrustum(vsg::Frustum{}, state->projectionMatrixStack.top());
         _ecefFrustum.set(projFrustum, state->modelviewMatrixStack.top());
+
+        // Camera eye in ECEF = translation of the inverted view matrix.
+        const auto invView = vsg::inverse(state->modelviewMatrixStack.top());
+        _eyeECEF = vsg::dvec3(invView[3][0], invView[3][1], invView[3][2]);
+
+        // For perspective: proj[1][1] = cot(fovY/2) → sseDenom = 2/proj[1][1]
+        // (Vulkan: proj[1][1] < 0)
+        const vsg::dmat4& proj = state->projectionMatrixStack.top();
+        _sseDenominator = (std::abs(proj[1][1]) > 1e-10)
+            ? 2.0 / std::abs(proj[1][1])
+            : 1.0;
     }
 
     // Expire old tiles once per frame (analogous to OSGEarth's UPDATE_VISITOR pass)
@@ -234,15 +247,44 @@ void Tiles3DNode::traverse(vsg::ConstVisitor& v) const { Inherit::traverse(v); }
 Tile3DNode::Tile3DNode(
     Tiles3DNode* tilesetNode,
     const Tiles3DTile& tile,
+    const vsg::dmat4& parentWorld,
     bool immediateLoad)
     : _tilesetNode(tilesetNode)
     , _tile(tile)
 {
+    _worldGeometricError = _tile.geometricError;
+
     // Apply tile's local transform (column-major matrix from tileset.json)
     if (_tile.transform.has_value())
         this->matrix = *_tile.transform;
 
-    _boundingSphere = _tile.boundingVolume.asBoundingSphere();
+    _worldMatrix = _tile.transform.has_value()
+        ? parentWorld * (*_tile.transform)
+        : parentWorld;
+
+    const auto localSphere = _tile.boundingVolume.asBoundingSphere();
+    if (_tile.boundingVolume.region.has_value())
+    {
+        // Region volumes are defined in ECEF and are unaffected by tile
+        // transforms (3D Tiles spec).
+        _worldBoundingSphere = localSphere;
+    }
+    else
+    {
+        // Box/sphere volumes are in the tile's local frame; place them in
+        // ECEF. Radius (and geometric error, below) scale with the largest
+        // axis scale of the accumulated transform.
+        const double maxScale = std::max({
+            vsg::length(vsg::dvec3(_worldMatrix[0][0], _worldMatrix[0][1], _worldMatrix[0][2])),
+            vsg::length(vsg::dvec3(_worldMatrix[1][0], _worldMatrix[1][1], _worldMatrix[1][2])),
+            vsg::length(vsg::dvec3(_worldMatrix[2][0], _worldMatrix[2][1], _worldMatrix[2][2])) });
+
+        _worldBoundingSphere = vsg::dsphere(
+            _worldMatrix * localSphere.center,
+            localSphere.radius * maxScale);
+
+        _worldGeometricError = _tile.geometricError * maxScale;
+    }
 
     if (immediateLoad && _tile.content.has_value())
     {
@@ -258,7 +300,29 @@ bool Tile3DNode::hasContent() const
 
 bool Tile3DNode::isContentReady() const
 {
-    return _content != nullptr;
+    if (!_content)
+        return false;
+
+    // External tileset graft: only count as ready once the grafted root's own
+    // content is — otherwise REPLACE refinement switches the parent off while
+    // this tile is still an empty stub, flashing a hole for one network
+    // round-trip per level. Driving the graft's load from here is what breaks
+    // the deadlock: the graft isn't traversed until the switch happens, so
+    // nobody else would request its content during the gating phase.
+    if (auto* graft = _content->cast<Tile3DNode>())
+    {
+        if (graft->hasContent() && !graft->isContentReady())
+        {
+            // inherit the pointing tile's SSE so the load queue prioritizes
+            // the graft like the tile it stands in for
+            graft->_screenSpaceError.store(_screenSpaceError.load());
+            graft->requestContent();
+            graft->resolveContent();
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void Tile3DNode::requestContent() const
@@ -289,9 +353,14 @@ void Tile3DNode::requestContent() const
     const auto uriContext = _tilesetNode->uriContext();
     auto completed = _tilesetNode->_loadsCompleted;
 
+    // For grafting external tilesets: keeps the tileset node alive for the
+    // duration of the job and provides the transform chain to compose under.
+    vsg::ref_ptr<Tiles3DNode> tilesetNode(_tilesetNode);
+    const auto worldMatrix = _worldMatrix;
+
     inFlight->fetch_add(1);
 
-    auto load = [uri, uriContext, io, opts, inFlight, completed](Cancelable& c) -> NodeResult
+    auto load = [uri, uriContext, io, opts, inFlight, completed, tilesetNode, worldMatrix](Cancelable& c) -> NodeResult
     {
         // On exit (success, failure, or cancel): release the in-flight slot
         // and signal completion so the update pass requests a frame, which
@@ -321,6 +390,27 @@ void Tile3DNode::requestContent() const
             return Failure_OperationCanceled;
 
         std::filesystem::path path(uri);
+
+        // External tileset: content that is itself a tileset.json. Parse it
+        // with rocky's own parser — relative URIs resolve against the external
+        // tileset's own location — and graft its root as this tile's content
+        // node so it runs through the same traversal/SSE/LRU machinery. This
+        // must be intercepted before vsg::read_cast: vsgXchange also claims
+        // .json but has no network access and would bypass rocky's paging.
+        if (path.extension() == ".json" ||
+            rr.value().content.type.find("json") != std::string::npos)
+        {
+            auto tileset = Tiles3DTileset::fromJSON(rr.value().content.data, uri);
+            if (!tileset)
+                return tileset.error();
+            if (!tileset.value().root)
+                return Failure("Tiles3D: external tileset has no root tile: " + uri);
+
+            // The external root composes under this tile's accumulated transform.
+            return vsg::ref_ptr<vsg::Node>(Tile3DNode::create(
+                tilesetNode.get(), *tileset.value().root, worldMatrix));
+        }
+
         auto localOpts = opts ? vsg::clone(opts) : vsg::Options::create();
         localOpts->extensionHint = path.extension();
         if (localOpts->extensionHint.empty())
@@ -382,6 +472,18 @@ void Tile3DNode::resolveContent() const
 
     _failCount = 0;
 
+    // Grafted external tileset: a Tile3DNode subtree with no GPU resources of
+    // its own — nothing to compile. Pin this tile in the LRU (autoUnload=false)
+    // so the grafted structure is never disposed while its descendants hold
+    // raw-pointer entries in the tracker; the descendants still evict their
+    // own content individually, so GPU memory stays bounded.
+    if (node->cast<Tile3DNode>())
+    {
+        autoUnload = false;
+        _content = node;
+        return;
+    }
+
     if (_tilesetNode && _tilesetNode->vsgContext())
     {
         // Queue for the batched compile pass that runs between frames.
@@ -427,7 +529,7 @@ void Tile3DNode::createChildren() const
 
     _childGroup = vsg::Group::create();
     for (const auto& childData : _tile.children)
-        _childGroup->addChild(Tile3DNode::create(_tilesetNode, *childData));
+        _childGroup->addChild(Tile3DNode::create(_tilesetNode, *childData, _worldMatrix));
 }
 
 bool Tile3DNode::allChildrenReady(const vsg::RecordTraversal& rv) const
@@ -451,47 +553,32 @@ bool Tile3DNode::allChildrenReady(const vsg::RecordTraversal& rv) const
 bool Tile3DNode::intersectsFrustum(const vsg::RecordTraversal& rv) const
 {
     (void)rv;
-    if (_boundingSphere.radius <= 0.0)
+    if (_worldBoundingSphere.radius <= 0.0)
         return true;
 
-    // Test against the ECEF frustum captured in Tiles3DNode::traverse() before
-    // any tile transforms were pushed. Note: this is only correct for bounding
-    // volumes expressed in ECEF (region volumes, or sphere/box volumes in a
-    // tileset with no transforms, like the NLSC data). Datasets that combine
-    // sphere/box volumes with tile transforms need the transform chain applied
-    // here first (tracked as a known limitation).
-    return _tilesetNode->_ecefFrustum.intersect(_boundingSphere);
+    // Test the world-space (ECEF) bounding sphere against the ECEF frustum
+    // captured in Tiles3DNode::traverse() before any tile transforms were
+    // pushed. Local box/sphere volumes were already mapped into ECEF through
+    // the accumulated tile transform chain at construction time.
+    return _tilesetNode->_ecefFrustum.intersect(_worldBoundingSphere);
 }
 
 double Tile3DNode::computeScreenSpaceError(const vsg::RecordTraversal& rv) const
 {
-    if (_tile.geometricError <= 0.0)
+    (void)rv;
+    if (_worldGeometricError <= 0.0)
         return 0.0;
 
-    auto* state = const_cast<vsg::RecordTraversal&>(rv).getState();
-    if (!state)
-        return 0.0;
-
-    // --- Distance in eye space ---
-    // MV matrix = view * any-parent-transforms (MatrixTransform already applied by VSG)
-    const vsg::dmat4& mv = state->modelviewMatrixStack.top();
-
-    vsg::dvec4 eyeCenter4 = mv * vsg::dvec4(_boundingSphere.center, 1.0);
-    vsg::dvec3 eyeCenter(eyeCenter4.x, eyeCenter4.y, eyeCenter4.z);
-    double dist = vsg::length(eyeCenter) - _boundingSphere.radius;
+    // World-space distance against the camera eye captured per frame in
+    // Tiles3DNode::traverse(). Unlike the modelview-stack approach this is
+    // valid from any caller — including the parent's pre-fetch loops, where
+    // this tile's own matrix is not on the traversal stack.
+    double dist = vsg::length(_tilesetNode->_eyeECEF - _worldBoundingSphere.center)
+        - _worldBoundingSphere.radius;
     dist = std::max(dist, 0.0000001);
 
-    // --- SSE denominator from projection matrix ---
-    // For perspective: proj[1][1] = cot(fovY/2) → sseDenom = 2/proj[1][1]
-    double sseDenom = 1.0;
-    {
-        const vsg::dmat4& proj = state->projectionMatrixStack.top();
-        if (std::abs(proj[1][1]) > 1e-10)
-            sseDenom = 2.0 / std::abs(proj[1][1]);  // Vulkan: proj[1][1] < 0
-    }
-
     const double vh = static_cast<double>(_tilesetNode->viewportHeight.load());
-    return (_tile.geometricError * vh) / (dist * sseDenom);
+    return (_worldGeometricError * vh) / (dist * _tilesetNode->_sseDenominator);
 }
 
 void Tile3DNode::traverse(vsg::RecordTraversal& rv) const

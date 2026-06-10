@@ -50,6 +50,32 @@ if(TURBOJPEG_LIBRARY)
     target_link_libraries(rocky PRIVATE "${TURBOJPEG_LIBRARY}")
 endif()
 
+# libwebp: decodes WebP textures embedded in 3D Tiles glTF content
+# (no GDAL on Android, and neither vsgXchange nor stb handles WebP).
+find_library(WEBP_LIBRARY
+    NAMES webpdecoder webp
+    PATHS
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib"
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+    NO_DEFAULT_PATH
+)
+find_library(SHARPYUV_LIBRARY
+    NAMES sharpyuv
+    PATHS
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib"
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+    NO_DEFAULT_PATH
+)
+
+if(WEBP_LIBRARY)
+    target_compile_definitions(rocky PRIVATE ROCKY_ANDROID_WEBP=1)
+    target_include_directories(rocky PRIVATE "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+    target_link_libraries(rocky PRIVATE "${WEBP_LIBRARY}")
+    if(SHARPYUV_LIBRARY)
+        target_link_libraries(rocky PRIVATE "${SHARPYUV_LIBRARY}")
+    endif()
+endif()
+
 add_library(vectorra_jni SHARED vectorra_jni.cpp)
 
 if(VECTORRA_ANDROID_PAGE_SIZE_LINK_OPTIONS)
