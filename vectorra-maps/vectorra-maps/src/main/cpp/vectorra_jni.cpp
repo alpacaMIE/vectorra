@@ -34,6 +34,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <vsg/core/Exception.h>
+#include <vsg/lighting/AmbientLight.h>
+#include <vsg/lighting/Light.h>
 
 #include <algorithm>
 #include <array>
@@ -1635,6 +1637,18 @@ namespace
                     {
                         app->systemsNode->add(rocky::ModelSystemNode::create(app->registry));
                         __android_log_print(ANDROID_LOG_INFO, TAG, "enabled rocky ModelSystemNode");
+                    }
+                    if (app->scene)
+                    {
+                        // Models loaded through vsgXchange (GLB/glTF, 3D Tiles
+                        // content) use VSG's PBR shading, which renders black
+                        // without at least one vsg::Light in the scene. The
+                        // rocky terrain has its own shaders and is unaffected.
+                        app->scene->addChild(vsg::createHeadlight());
+                        auto ambient = vsg::AmbientLight::create();
+                        ambient->color = { 0.25f, 0.25f, 0.25f };
+                        app->scene->addChild(ambient);
+                        __android_log_print(ANDROID_LOG_INFO, TAG, "added scene headlight + ambient light");
                     }
                     __android_log_print(
                         ANDROID_LOG_INFO,

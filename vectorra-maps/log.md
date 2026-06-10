@@ -4433,3 +4433,47 @@ Results:
 Known remaining work:
 
 - Physical-device MVT drag smoke was not run in this pass.
+
+## 2026-06-10
+
+### 3D Tiles Performance, Loading, and Black-Building Fixes
+
+Completed:
+
+- Wrote the full root-cause analysis to `docs/tiles3d-root-cause-analysis.md`, based on measuring the live NLSC tileset (49.7MB monolithic tileset.json, 262,267 tiles, depth 14, all-glb sphere-ECEF bounding volumes, REPLACE refine, no textures at any level — color is COLOR_0 vertex data).
+- Root cause (black buildings): the scene had no `vsg::Light`, so vsgXchange/assimp-loaded glTF content rendered black through VSG's PBR shading; the NLSC data additionally has no embedded textures (vertex colors are the data's ceiling).
+- Root causes (loading/perf/crash): REPLACE refinement deadlock in `allChildrenReady()` (required off-frustum children that are never requested), per-tile blocking `compile()` flooding the update pass, request storm with no priority/cancel/budget, LRU force-eviction of the currently visible set at maxTiles=128, immediate GPU resource release without deferred GC, no retry after failed loads, and (latent, on-demand hosts only) no frame request when a download completes.
+- `Tiles3DNode`: frustum-aware `allChildrenReady(rv)`; batched compile queue (max 4 tiles per update pass, single `compile()` call per batch, self-rescheduling with `requestFrame()` while backlogged); SSE-driven `jobs::context.priority`; post-download cancel check; thread pool 16→6; `maxConcurrentLoads=32` in-flight budget; failure retry with exponential backoff (2s→30s); pass-2 eviction now skips tiles culled within the last frame; parent tiles stay LRU-touched while children render; `unloadContent()` defers GPU release via `vsgcontext->dispose()`; load completion signals an `onUpdate` subscription that requests a frame (no raw `VSGContext` use on worker threads); removed per-request dispatch logging; corrected the stale region-bounding-volume comment.
+- `Tiles3DLayer`: default `maximumLoadedTiles` 256→1024.
+- `vectorra_jni.cpp`: added `vsg::createHeadlight()` plus a 0.25 ambient light to `app->scene` at Application creation.
+- Sample: `maximumLoadedTiles` 128→512.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+git diff --check
+```
+
+Manual emulator smoke was run on `Rocky_Vulkan_API36_1` (x86_64, host GPU):
+
+```powershell
+adb install -r vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+adb shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action 3dtiles
+# double-tap zoom to mid altitude, then 12 alternating swipes
+adb logcat -d -s rocky_tiles3d rocky_jni vectorra_jni AndroidRuntime DEBUG libc
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed including native CMake builds for `arm64-v8a` and `x86_64`; no new warnings from the changed files.
+- `git diff --check` passed (CRLF warnings only).
+- Logcat showed `added scene headlight + ambient light`, tileset fetch (49,709,637 bytes) and open, and steady incremental `VSGContext::update mergeCompile` batches instead of a single stall.
+- Screenshots: `build/device-3dtiles-fix-overview-2026-06-10.png` (zoom 16, dense building coverage), `build/device-3dtiles-fix-midzoom-2026-06-10.png` (lit, vertex-colored buildings — no longer black silhouettes), `build/device-3dtiles-fix-postdrag-2026-06-10.png` (tiles reloaded in the new viewport after the drag storm).
+- After 12 swipes: no `AndroidRuntime` crash, no fatal native signal, same PID, no `rocky_tiles3d` load failures.
+
+Known remaining work:
+
+- P1: traverse/record decoupling; persistent glb disk cache.
+- P2: memory diet for the 262k-tile parse tree (emulator TOTAL PSS was ~935MB with the layer active — the 49.7MB tileset.json DOM + per-tile copies dominate); cesium-native-style selection with hysteresis; transform-chain-aware culling/SSE for spec compliance; byte-budget eviction.
+- Physical-device smoke (arm64) was not run in this pass.

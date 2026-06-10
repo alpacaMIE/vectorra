@@ -14,10 +14,15 @@
 #include <rocky/URI.h>
 #include <rocky/Threading.h>
 #include <rocky/Result.h>
+#include <rocky/Callbacks.h>
 
-#include <list>
-#include <mutex>
 #include <atomic>
+#include <chrono>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 namespace ROCKY_NAMESPACE
 {
@@ -42,7 +47,7 @@ namespace ROCKY_NAMESPACE
             const URI::Context& uriContext,
             VSGContext vsgctx,
             float maxSSE = 16.0f,
-            unsigned maxTiles = 256u);
+            unsigned maxTiles = 1024u);
 
         void traverse(vsg::RecordTraversal&) const override;
         void traverse(vsg::Visitor&) override;
@@ -50,7 +55,11 @@ namespace ROCKY_NAMESPACE
 
         //! Configuration
         float maximumScreenSpaceError = 16.0f;
-        unsigned maximumLoadedTiles   = 256u;
+        unsigned maximumLoadedTiles   = 1024u;
+
+        //! Maximum number of tile content loads in flight at once. Requests
+        //! over budget are simply skipped and retried on a later traversal.
+        unsigned maxConcurrentLoads = 32u;
 
         //! Viewport height in pixels; set from the JNI after surface creation/resize.
         std::atomic<float> viewportHeight{ 1080.0f };
@@ -79,7 +88,31 @@ namespace ROCKY_NAMESPACE
         // tile-local transforms are applied. Tile3DNode reads this for frustum culling.
         mutable vsg::Frustum _ecefFrustum;
 
+        // Loads in flight (shared with worker lambdas so it stays valid even if
+        // this node is destroyed while a download is still running).
+        std::shared_ptr<std::atomic<int>> _inFlightLoads;
+
+        // Loads that completed since the last update pass. Workers bump this;
+        // the onUpdate subscription below converts it into a frame request so
+        // newly downloaded content gets resolved/compiled even when the app is
+        // in on-demand rendering mode and the user is not interacting.
+        std::shared_ptr<std::atomic<int>> _loadsCompleted;
+        CallbackSub _updateSub;
+
+        // Tiles whose content finished loading and awaits GPU compilation.
+        // Drained a few tiles per update pass so the (blocking) compile never
+        // stalls the frame loop for an entire backlog.
+        mutable std::mutex _readyQueueMutex;
+        mutable std::vector<std::pair<vsg::ref_ptr<Tile3DNode>, vsg::ref_ptr<vsg::Node>>> _readyQueue;
+        mutable bool _compileScheduled = false;
+
         void expireTiles(uint64_t frameNumber, double referenceTime) const;
+
+        //! Queue a loaded tile for the batched compile pass (called by Tile3DNode).
+        void enqueueCompile(vsg::ref_ptr<Tile3DNode> tile, vsg::ref_ptr<vsg::Node> node) const;
+
+        //! Compile a bounded batch of queued tiles; reschedules itself while backlogged.
+        void processCompileQueue(VSGContext ctx) const;
 
         friend class Tile3DNode;
     };
@@ -127,20 +160,32 @@ namespace ROCKY_NAMESPACE
         mutable vsg::ref_ptr<vsg::Node> _content;
         mutable Future<NodeResult> _loadFuture;
         mutable bool _contentRequested = false;
-        // true while an onNextUpdate compile is queued (prevents false-negative eviction)
+        // true while a queued batch compile is pending (prevents false-negative eviction)
         mutable std::atomic<bool> _compilePending{ false };
+
+        // last computed screen-space error; drives the load queue priority
+        mutable std::atomic<float> _screenSpaceError{ 0.0f };
+
+        // failure backoff so a bad/unreachable URI doesn't become a permanent
+        // hole (no retry) or a hammering loop (instant retry)
+        mutable int _failCount = 0;
+        mutable std::chrono::steady_clock::time_point _retryNotBefore{};
 
         // child tile nodes (created lazily from _tile.children)
         mutable vsg::ref_ptr<vsg::Group> _childGroup;
         mutable bool _childrenCreated = false;
 
         void createChildren() const;
-        bool allChildrenReady() const;
+
+        //! Whether every content-bearing child that is inside the view frustum
+        //! has its content ready. Off-screen children are excluded: they are
+        //! never requested, so requiring them would block refinement forever.
+        bool allChildrenReady(const vsg::RecordTraversal& rv) const;
 
         // SSE helper
         double computeScreenSpaceError(const vsg::RecordTraversal& rv) const;
 
-        vsg::ref_ptr<vsg::Node> loadContentSync() const; // runs in thread pool
+        friend class Tiles3DNode;
     };
 
 } // namespace ROCKY_NAMESPACE

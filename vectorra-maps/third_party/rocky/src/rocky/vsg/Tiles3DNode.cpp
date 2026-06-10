@@ -30,10 +30,12 @@ Tiles3DNode::Tiles3DNode(
     VSGContext vsgctx,
     float maxSSE,
     unsigned maxTiles)
-    : _uriContext(uriContext)
-    , _vsgctx(vsgctx)
-    , maximumScreenSpaceError(maxSSE)
+    : maximumScreenSpaceError(maxSSE)
     , maximumLoadedTiles(maxTiles)
+    , _uriContext(uriContext)
+    , _vsgctx(vsgctx)
+    , _inFlightLoads(std::make_shared<std::atomic<int>>(0))
+    , _loadsCompleted(std::make_shared<std::atomic<int>>(0))
 {
     _root = vsg::Group::create();
     addChild(_root);
@@ -46,6 +48,20 @@ Tiles3DNode::Tiles3DNode(
 
     // Sentinel at end of tracker for LRU expiry boundary
     _tracker.push_back(nullptr);
+
+    // The app renders on demand. When a content download completes on a worker
+    // thread, request a frame so the next record traversal can resolve it —
+    // otherwise tiles that finish loading after the user stops interacting
+    // would never appear.
+    if (_vsgctx)
+    {
+        auto completed = _loadsCompleted;
+        _updateSub = _vsgctx->onUpdate([completed](VSGContext ctx)
+            {
+                if (completed->exchange(0) > 0)
+                    ctx->requestFrame();
+            });
+    }
 }
 
 void Tiles3DNode::touchTile(Tile3DNode* tile)
@@ -89,12 +105,17 @@ void Tiles3DNode::expireTiles(uint64_t frameNumber, double referenceTime) const
         ++itr;
     }
 
-    // Pass 2: if still over limit, force-evict the oldest tiles regardless of age
+    // Pass 2: if still over limit, force-evict the oldest tiles regardless of
+    // age — but never tiles that were rendered this frame or the last one.
+    // Evicting the live visible set just forces an immediate reload and turns
+    // into a permanent download/compile/evict churn loop.
     itr = _tracker.begin();
     while (_tracker.size() > static_cast<size_t>(maximumLoadedTiles) + 1u && itr != sentinelItr)
     {
         Tile3DNode* tile = *itr;
-        if (tile && tile->autoUnload && tile->unloadContent())
+        if (tile && tile->autoUnload &&
+            frameNumber > tile->_lastCulledFrame + 1u &&
+            tile->unloadContent())
         {
             tile->_trackerItrValid = false;
             itr = _tracker.erase(itr);
@@ -104,6 +125,81 @@ void Tiles3DNode::expireTiles(uint64_t frameNumber, double referenceTime) const
             ++itr;
         }
     }
+}
+
+void Tiles3DNode::enqueueCompile(vsg::ref_ptr<Tile3DNode> tile, vsg::ref_ptr<vsg::Node> node) const
+{
+    bool schedule = false;
+    {
+        std::lock_guard<std::mutex> lock(_readyQueueMutex);
+        _readyQueue.emplace_back(std::move(tile), std::move(node));
+        if (!_compileScheduled)
+        {
+            _compileScheduled = true;
+            schedule = true;
+        }
+    }
+
+    if (schedule && _vsgctx)
+    {
+        vsg::ref_ptr<const Tiles3DNode> self(this);
+        _vsgctx->onNextUpdate([self](VSGContext ctx) { self->processCompileQueue(ctx); });
+    }
+}
+
+void Tiles3DNode::processCompileQueue(VSGContext ctx) const
+{
+    // Compile at most a few tiles per update pass. compile() blocks on a
+    // fence, so draining an unbounded backlog here would stall the frame
+    // loop for hundreds of milliseconds while the user is dragging.
+    constexpr size_t maxCompilesPerPass = 4;
+
+    std::vector<std::pair<vsg::ref_ptr<Tile3DNode>, vsg::ref_ptr<vsg::Node>>> batch;
+    {
+        std::lock_guard<std::mutex> lock(_readyQueueMutex);
+        const size_t n = std::min(maxCompilesPerPass, _readyQueue.size());
+        batch.assign(_readyQueue.begin(), _readyQueue.begin() + n);
+        _readyQueue.erase(_readyQueue.begin(), _readyQueue.begin() + n);
+    }
+
+    // Group the batch into a single compile call (one fence wait for all).
+    auto group = vsg::Group::create();
+    for (auto& [tile, node] : batch)
+    {
+        if (tile->_compilePending.load()) // skip tiles evicted while queued
+            group->addChild(node);
+    }
+
+    if (!group->children.empty())
+        ctx->compile(group);
+
+    for (auto& [tile, node] : batch)
+    {
+        if (tile->_compilePending.load())
+        {
+            tile->_content = node;
+            tile->_compilePending.store(false);
+        }
+    }
+
+    bool more = false;
+    {
+        std::lock_guard<std::mutex> lock(_readyQueueMutex);
+        if (_readyQueue.empty())
+            _compileScheduled = false;
+        else
+            more = true;
+    }
+
+    if (more)
+    {
+        // keep draining on subsequent update passes
+        vsg::ref_ptr<const Tiles3DNode> self(this);
+        ctx->onNextUpdate([self](VSGContext c) { self->processCompileQueue(c); });
+    }
+
+    // render the newly compiled content (and keep frames coming while backlogged)
+    ctx->requestFrame();
 }
 
 void Tiles3DNode::traverse(vsg::RecordTraversal& rv) const
@@ -170,15 +266,47 @@ void Tile3DNode::requestContent() const
     if (_contentRequested || !_tile.content.has_value())
         return;
 
+    // failure backoff: don't hammer a URI that just failed
+    if (_failCount > 0 && std::chrono::steady_clock::now() < _retryNotBefore)
+        return;
+
+    auto* vsgctx = _tilesetNode->vsgContext();
+    if (!vsgctx)
+        return;
+
+    // In-flight budget: when saturated, skip — the next traversal of this
+    // (still visible) tile will retry, naturally prioritized by SSE.
+    auto inFlight = _tilesetNode->_inFlightLoads;
+    if (inFlight->load(std::memory_order_relaxed) >=
+        static_cast<int>(_tilesetNode->maxConcurrentLoads))
+        return;
+
     _contentRequested = true;
 
-    auto& io = _tilesetNode->vsgContext()->io;
-    auto opts = _tilesetNode->vsgContext()->readerWriterOptions;
+    auto& io = vsgctx->io;
+    auto opts = vsgctx->readerWriterOptions;
     const auto uri = _tile.content->resolved;
     const auto uriContext = _tilesetNode->uriContext();
+    auto completed = _tilesetNode->_loadsCompleted;
 
-    auto load = [uri, uriContext, io, opts](Cancelable& c) -> NodeResult
+    inFlight->fetch_add(1);
+
+    auto load = [uri, uriContext, io, opts, inFlight, completed](Cancelable& c) -> NodeResult
     {
+        // On exit (success, failure, or cancel): release the in-flight slot
+        // and signal completion so the update pass requests a frame, which
+        // lets resolveContent() pick up the result in on-demand render mode.
+        struct Completion
+        {
+            std::shared_ptr<std::atomic<int>> inFlight;
+            std::shared_ptr<std::atomic<int>> completed;
+            ~Completion()
+            {
+                inFlight->fetch_sub(1);
+                completed->fetch_add(1);
+            }
+        } completion{ inFlight, completed };
+
         if (c.canceled())
             return Failure_OperationCanceled;
 
@@ -186,6 +314,11 @@ void Tile3DNode::requestContent() const
         auto rr = u.read(io);
         if (!rr)
             return rr.error();
+
+        // The tile may have been evicted or scrolled out of view while the
+        // download ran; don't pay for parsing in that case.
+        if (c.canceled())
+            return Failure_OperationCanceled;
 
         std::filesystem::path path(uri);
         auto localOpts = opts ? vsg::clone(opts) : vsg::Options::create();
@@ -202,10 +335,16 @@ void Tile3DNode::requestContent() const
     };
 
     auto& j = io.services().jobs;
-    // 16 threads: GLB loading is network-I/O bound, more threads drain the queue faster
-    jobs::context ctx{ uri, j.get_pool("rocky::Tiles3DNode", 16) };
-    _loadFuture = j.dispatch(load, ctx);
-    TILES3D_LOG_I("Tile3DNode: requestContent dispatched uri=%s", uri.c_str());
+    // Loading is network-bound; a few threads keep the pipe full without
+    // starving the CPU (decode runs on the same job).
+    jobs::context jobctx{ uri, j.get_pool("rocky::Tiles3DNode", 6) };
+
+    // Order the queue by screen-space error so the tiles the camera needs
+    // most load first; tiles that scroll away decay in priority naturally.
+    vsg::ref_ptr<const Tile3DNode> holdSelf(this);
+    jobctx.priority = [holdSelf]() { return holdSelf->_screenSpaceError.load(); };
+
+    _loadFuture = j.dispatch(load, jobctx);
 }
 
 void Tile3DNode::resolveContent() const
@@ -213,10 +352,22 @@ void Tile3DNode::resolveContent() const
     if (!_loadFuture.available())
         return;
 
+    // Failure path: back off, then allow a retry. Leaving _contentRequested
+    // set would turn any transient network error into a permanent hole.
+    auto failWithBackoff = [this](const std::string& msg)
+    {
+        ++_failCount;
+        const auto secs = std::min<int64_t>(30, int64_t(2) << std::min(_failCount - 1, 5));
+        _retryNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(secs);
+        _loadFuture = {};
+        _contentRequested = false;
+        TILES3D_LOG_E("Tile3DNode load failed (attempt %d, retry in %llds): %s",
+            _failCount, static_cast<long long>(secs), msg.c_str());
+    };
+
     if (_loadFuture->failed())
     {
-        TILES3D_LOG_E("Tile3DNode load failed: %s", _loadFuture->error().string().c_str());
-        _loadFuture = {};
+        failWithBackoff(_loadFuture->error().string());
         return;
     }
 
@@ -224,25 +375,21 @@ void Tile3DNode::resolveContent() const
     _loadFuture = {};
 
     if (!node)
-        return;
-
-    auto* vsgCtx = _tilesetNode->vsgContext();
-    if (vsgCtx)
     {
-        // Compile during the update pass (between frames) — not during record traversal.
-        // Calling compile() inline in traverse() races with in-progress command recording,
-        // causing texture descriptors to be incomplete when the first draw executes.
-        // Use ref_ptr so the tile stays alive until the lambda fires.
+        failWithBackoff("loader returned empty node");
+        return;
+    }
+
+    _failCount = 0;
+
+    if (_tilesetNode && _tilesetNode->vsgContext())
+    {
+        // Queue for the batched compile pass that runs between frames.
+        // Compiling inline in traverse() races with command recording, and
+        // compiling per-tile without a budget stalls the frame loop.
         _compilePending.store(true);
         vsg::ref_ptr<Tile3DNode> self(const_cast<Tile3DNode*>(this));
-        vsgCtx->onNextUpdate([self, node](VSGContext ctx) {
-            if (!self->_compilePending.load())
-                return; // was evicted before compile ran
-            ctx->compile(node);
-            self->_content = node;
-            self->_compilePending.store(false);
-            TILES3D_LOG_I("Tile3DNode: content compiled node=%p", (void*)node.get());
-        });
+        _tilesetNode->enqueueCompile(self, node);
     }
     else
     {
@@ -256,10 +403,16 @@ bool Tile3DNode::unloadContent()
     if (!_content && !_loadFuture.available() && !_compilePending.load())
         return false;
 
+    // Defer GPU resource destruction: an in-flight frame may still reference
+    // this content's Vulkan objects. dispose() parks the ref for several
+    // frames before releasing it (same pattern as the rest of rocky).
+    if (_content && _tilesetNode && _tilesetNode->vsgContext())
+        _tilesetNode->vsgContext()->dispose(_content);
+
     _content = nullptr;
     _loadFuture = {};
     _contentRequested = false;
-    _compilePending.store(false); // cancel pending onNextUpdate compile
+    _compilePending.store(false); // cancel any queued batch compile
     return true;
 }
 
@@ -277,7 +430,7 @@ void Tile3DNode::createChildren() const
         _childGroup->addChild(Tile3DNode::create(_tilesetNode, *childData));
 }
 
-bool Tile3DNode::allChildrenReady() const
+bool Tile3DNode::allChildrenReady(const vsg::RecordTraversal& rv) const
 {
     if (!_childGroup)
         return false;
@@ -285,7 +438,11 @@ bool Tile3DNode::allChildrenReady() const
     for (const auto& child : _childGroup->children)
     {
         auto* ct = child->cast<Tile3DNode>();
-        if (ct && ct->hasContent() && !ct->isContentReady())
+        // Only children that will actually be drawn (inside the frustum) gate
+        // the refinement switch. Off-screen children are never requested, so
+        // requiring them here would block refinement forever near the
+        // viewport edges.
+        if (ct && ct->hasContent() && !ct->isContentReady() && ct->intersectsFrustum(rv))
             return false;
     }
     return true;
@@ -297,9 +454,12 @@ bool Tile3DNode::intersectsFrustum(const vsg::RecordTraversal& rv) const
     if (_boundingSphere.radius <= 0.0)
         return true;
 
-    // Test against the ECEF frustum captured in Tiles3DNode::traverse() before any
-    // tile transforms were pushed. All bounding volumes in the NLSC dataset are
-    // region-type (geographic→ECEF), so this is always the correct space to test.
+    // Test against the ECEF frustum captured in Tiles3DNode::traverse() before
+    // any tile transforms were pushed. Note: this is only correct for bounding
+    // volumes expressed in ECEF (region volumes, or sphere/box volumes in a
+    // tileset with no transforms, like the NLSC data). Datasets that combine
+    // sphere/box volumes with tile transforms need the transform chain applied
+    // here first (tracked as a known limitation).
     return _tilesetNode->_ecefFrustum.intersect(_boundingSphere);
 }
 
@@ -346,17 +506,22 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
     if (!_childrenCreated && !_tile.children.empty())
         createChildren();
 
-    // Check children readiness
-    const bool childrenReady = allChildrenReady();
     const double sse = computeScreenSpaceError(rv);
+    _screenSpaceError.store(static_cast<float>(sse)); // drives load priority
+
+    // Check children readiness (only the visible ones gate refinement)
+    const bool childrenReady = allChildrenReady(rv);
+
     // Per 3D Tiles spec: tiles with no content are spatial hierarchy nodes and
     // must always recurse to children to show anything at all.
     const bool needsRefinement = !hasContent() || sse > _tilesetNode->maximumScreenSpaceError;
 
     if (needsRefinement && childrenReady && _childGroup)
     {
-        // ADD: render parent content too (parent stays in LRU when ADD mode)
-        if (_content && _tile.refine == Tiles3DRefine::ADD)
+        // Keep this tile in the LRU even while its children render — it is
+        // the fallback when a child gets evicted or a new child scrolls into
+        // view before its content is loaded.
+        if (hasContent())
         {
             _tilesetNode->touchTile(const_cast<Tile3DNode*>(this));
             if (rv.getFrameStamp())
@@ -364,19 +529,28 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
                 _lastCulledFrame = rv.getFrameStamp()->frameCount;
                 _lastCulledTime  = rv.getFrameStamp()->simulationTime;
             }
-            _content->accept(rv);
         }
+
+        // ADD: render parent content too
+        if (_content && _tile.refine == Tiles3DRefine::ADD)
+            _content->accept(rv);
 
         _childGroup->accept(rv);
 
         // Pre-request content for visible children only — requesting off-screen
-        // children wastes compile budget and bypasses the frustum culling in their
+        // children wastes load budget and bypasses the frustum culling in their
         // own traverse(), since requestContent() is called without entering traverse().
         for (const auto& c : _childGroup->children)
         {
             if (auto* ct = c->cast<Tile3DNode>())
+            {
                 if (ct->intersectsFrustum(rv))
+                {
+                    ct->_screenSpaceError.store(
+                        static_cast<float>(ct->computeScreenSpaceError(rv)));
                     ct->requestContent();
+                }
+            }
         }
     }
     else
@@ -409,6 +583,8 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
                 {
                     if (ct->intersectsFrustum(rv))
                     {
+                        ct->_screenSpaceError.store(
+                            static_cast<float>(ct->computeScreenSpaceError(rv)));
                         ct->requestContent();
                         ct->resolveContent();
                     }

@@ -23,7 +23,7 @@ namespace ROCKY_NAMESPACE
      *   auto layer = Tiles3DLayer::create();
      *   layer->tilesetURI = URI("https://example.com/tileset.json", ctx);
      *   layer->maximumScreenSpaceError = 16.0f;
-     *   layer->maximumLoadedTiles = 256;
+     *   layer->maximumLoadedTiles = 1024;
      *   layer->open(io);
      *   map->add(layer);
      */
@@ -37,7 +37,7 @@ namespace ROCKY_NAMESPACE
         float maximumScreenSpaceError = 16.0f;
 
         //! Maximum number of tile content nodes resident in memory.
-        unsigned maximumLoadedTiles = 256u;
+        unsigned maximumLoadedTiles = 1024u;
 
         //! VSG context — must be set before calling open().
         //! Typically: layer->vsgctx = app->vsgcontext;

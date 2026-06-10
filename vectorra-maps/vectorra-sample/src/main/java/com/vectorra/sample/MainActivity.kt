@@ -434,7 +434,7 @@ class MainActivity : Activity() {
                 ),
                 options = Vectorra3DTilesOptions(
                     maximumScreenSpaceError = 16.0,
-                    maximumLoadedTiles = 128
+                    maximumLoadedTiles = 512
                 )
             )
             mapView.map.setCamera(
