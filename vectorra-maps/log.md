@@ -1,5 +1,34 @@
 # Vectorra Development Log
 
+## 2026-06-11
+
+### Sample Menu Collapse Toggle
+
+Completed:
+
+- Changed the sample app bottom controls into a collapsible menu.
+- Added a persistent `Hide menu` / `Show menu` toggle button; collapsing hides only the button rows and keeps the toggle available.
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; adb devices -l
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; adb reconnect offline
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; adb -s 4tqoz9bmfu8t8pr8 get-state
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; adb -s 4tqoz9bmfu8t8pr8 install -r vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed.
+- Physical device `4tqoz9bmfu8t8pr8` initially reported `offline`, then disappeared after `adb reconnect offline`.
+- After the device reconnected as `device` (`model:2312DRAABC`), installing `vectorra-sample-arm64-v8a-debug.apk` succeeded.
+
+Known remaining work:
+
+- Manual visual check on the physical device is still recommended for the new collapse/expand interaction.
+
 ## 2026-06-07
 
 ### vectorra-references 重拉

@@ -170,7 +170,30 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
             background = roundedBackground(0xDD101418.toInt(), dp(8).toFloat())
 
-            addView(controlRow(
+            val contentView = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            lateinit var toggleButton: Button
+            toggleButton = sampleButton("Hide menu") {
+                val collapsed = contentView.visibility == View.VISIBLE
+                contentView.visibility = if (collapsed) View.GONE else View.VISIBLE
+                toggleButton.text = if (collapsed) "Show menu" else "Hide menu"
+                statusText.text = if (collapsed) "Sample menu collapsed" else "Sample menu expanded"
+            }
+            addView(toggleButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(40)
+            ).apply {
+                marginStart = dp(4)
+                marginEnd = dp(4)
+                bottomMargin = dp(4)
+            })
+            addView(contentView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+
+            contentView.addView(controlRow(
                 sampleButton("Globe") {
                     mapView.map.setCamera(CameraOptions(longitude = 0.0, latitude = 20.0, zoom = 2.0))
                     statusText.text = "Camera: globe"
@@ -185,7 +208,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("Imagery") {
                     mapView.map.addRasterLayer(
                         id = "sample-readymap",
@@ -210,7 +233,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("Terrain -") {
                     terrainExaggeration = (terrainExaggeration - 0.5).coerceAtLeast(0.0)
                     mapView.map.setTerrainExaggeration(terrainExaggeration)
@@ -223,7 +246,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("MBTiles") {
                     loadSampleMbTiles()
                 },
@@ -244,7 +267,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("MVT Pan") {
                     panSampleMvt()
                 },
@@ -256,7 +279,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("Offline PF") {
                     runOfflinePrefetchSmoke(cancelAfterFirst = false)
                 },
@@ -268,7 +291,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("GeoJSON") {
                     loadSampleGeoJson()
                 },
@@ -280,7 +303,7 @@ class MainActivity : Activity() {
                 }
             ))
 
-            addView(controlRow(
+            contentView.addView(controlRow(
                 sampleButton("Location") {
                     showSampleLocation()
                 },
@@ -293,7 +316,7 @@ class MainActivity : Activity() {
             ))
 
             if (ENABLE_MODEL_SMOKE) {
-                addView(controlRow(
+                contentView.addView(controlRow(
                     sampleButton("Model") {
                         loadSampleModel()
                     },
