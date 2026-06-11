@@ -47,11 +47,16 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <cmath>
 #include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -532,10 +537,12 @@ namespace
     {
         std::string sourceId;
         std::string layerId;
+        std::string sourceLayer;
         int tileZ = 0;
         int tileX = 0;
         int tileY = 0;
         MvtRenderStyleConfig style;
+        bool rendered = true;
         std::vector<std::string> featureIds;
         std::vector<std::string> sourceLayers;
         std::vector<int> geometryTypes;
@@ -545,6 +552,810 @@ namespace
         std::vector<int> ringEnds;
         std::uint64_t revision = 0;
     };
+
+    struct MvtQuerySnapshot
+    {
+        std::vector<std::string> featureIds;
+        std::vector<std::string> sourceLayers;
+        std::vector<int> geometryTypes;
+        std::vector<int> coordinateOffsets = {0};
+        std::vector<double> coordinates;
+        std::vector<int> ringOffsets = {0};
+        std::vector<int> ringEnds;
+        std::vector<int> propertyOffsets = {0};
+        std::vector<std::string> propertyKeys;
+        std::vector<std::string> propertyValues;
+    };
+
+    struct MvtSubmitResult
+    {
+        std::string nativeTileHandle;
+        std::string errorMessage;
+        MvtQuerySnapshot query;
+    };
+
+    struct MvtByteView
+    {
+        const std::uint8_t* data = nullptr;
+        std::size_t size = 0;
+    };
+
+    struct MvtPbfField
+    {
+        int number = 0;
+        int wireType = 0;
+    };
+
+    class MvtPbfReader
+    {
+    public:
+        MvtPbfReader(const std::uint8_t* data, std::size_t size)
+            : data_(data), size_(size)
+        {
+        }
+
+        explicit MvtPbfReader(const MvtByteView& view)
+            : MvtPbfReader(view.data, view.size)
+        {
+        }
+
+        bool isAtEnd() const
+        {
+            return position_ >= size_;
+        }
+
+        std::optional<MvtPbfField> readFieldOrNull()
+        {
+            if (isAtEnd())
+            {
+                return std::nullopt;
+            }
+            const auto tag = readVarint();
+            if (tag == 0)
+            {
+                return std::nullopt;
+            }
+            return MvtPbfField{
+                static_cast<int>(tag >> 3u),
+                static_cast<int>(tag & 0x7u)};
+        }
+
+        std::uint64_t readVarint()
+        {
+            int shift = 0;
+            std::uint64_t result = 0;
+            while (shift < 64)
+            {
+                const auto byte = readByte();
+                result |= (static_cast<std::uint64_t>(byte & 0x7fu) << shift);
+                if ((byte & 0x80u) == 0)
+                {
+                    return result;
+                }
+                shift += 7;
+            }
+            throw std::runtime_error("Malformed protobuf varint.");
+        }
+
+        std::int64_t readSignedVarint()
+        {
+            const auto value = readVarint();
+            return static_cast<std::int64_t>((value >> 1u) ^ (~(value & 1u) + 1u));
+        }
+
+        std::vector<int> readPackedVarintsAsInt()
+        {
+            MvtPbfReader packed(readBytesView());
+            std::vector<int> values;
+            while (!packed.isAtEnd())
+            {
+                const auto value = packed.readVarint();
+                if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+                {
+                    throw std::runtime_error("MVT packed varint is outside int range.");
+                }
+                values.push_back(static_cast<int>(value));
+            }
+            return values;
+        }
+
+        std::string readString()
+        {
+            const auto view = readBytesView();
+            return std::string(reinterpret_cast<const char*>(view.data), view.size);
+        }
+
+        MvtByteView readBytesView()
+        {
+            const auto size = readVarint();
+            if (size > static_cast<std::uint64_t>(size_ - position_))
+            {
+                throw std::runtime_error("Invalid protobuf length-delimited field size.");
+            }
+            MvtByteView view{data_ + position_, static_cast<std::size_t>(size)};
+            position_ += static_cast<std::size_t>(size);
+            return view;
+        }
+
+        float readFixed32Float()
+        {
+            const auto bits = readFixed32();
+            float result = 0.0f;
+            std::memcpy(&result, &bits, sizeof(result));
+            return result;
+        }
+
+        double readFixed64Double()
+        {
+            const auto bits = readFixed64();
+            double result = 0.0;
+            std::memcpy(&result, &bits, sizeof(result));
+            return result;
+        }
+
+        void skip(int wireType)
+        {
+            switch (wireType)
+            {
+                case 0:
+                    readVarint();
+                    return;
+                case 1:
+                    readFixed64();
+                    return;
+                case 2:
+                    readBytesView();
+                    return;
+                case 5:
+                    readFixed32();
+                    return;
+                default:
+                    throw std::runtime_error("Unsupported protobuf wire type.");
+            }
+        }
+
+    private:
+        std::uint8_t readByte()
+        {
+            if (position_ >= size_)
+            {
+                throw std::runtime_error("Unexpected end of protobuf data.");
+            }
+            return data_[position_++];
+        }
+
+        std::uint32_t readFixed32()
+        {
+            if (size_ - position_ < 4)
+            {
+                throw std::runtime_error("Invalid protobuf fixed32 field size.");
+            }
+            const auto* p = data_ + position_;
+            position_ += 4;
+            return static_cast<std::uint32_t>(p[0]) |
+                (static_cast<std::uint32_t>(p[1]) << 8u) |
+                (static_cast<std::uint32_t>(p[2]) << 16u) |
+                (static_cast<std::uint32_t>(p[3]) << 24u);
+        }
+
+        std::uint64_t readFixed64()
+        {
+            if (size_ - position_ < 8)
+            {
+                throw std::runtime_error("Invalid protobuf fixed64 field size.");
+            }
+            std::uint64_t result = 0;
+            for (int i = 0; i < 8; ++i)
+            {
+                result |= static_cast<std::uint64_t>(data_[position_ + static_cast<std::size_t>(i)]) << (8u * i);
+            }
+            position_ += 8;
+            return result;
+        }
+
+        const std::uint8_t* data_ = nullptr;
+        std::size_t size_ = 0;
+        std::size_t position_ = 0;
+    };
+
+    struct MvtLocalPoint
+    {
+        int x = 0;
+        int y = 0;
+    };
+
+    struct MvtDecodedFeature
+    {
+        std::optional<std::uint64_t> id;
+        int geometryType = 0;
+        std::vector<std::vector<MvtLocalPoint>> parts;
+        std::vector<std::pair<std::string, std::string>> properties;
+    };
+
+    struct MvtDecodedLayer
+    {
+        std::string name;
+        int version = 1;
+        int extent = 4096;
+        std::vector<std::string> keys;
+        std::vector<std::string> values;
+        std::vector<MvtByteView> featureViews;
+    };
+
+    int zigZagDecodeInt(int value)
+    {
+        return (static_cast<unsigned int>(value) >> 1u) ^ -(value & 1);
+    }
+
+    std::string numberToString(float value)
+    {
+        std::ostringstream out;
+        out << std::setprecision(std::numeric_limits<float>::digits10 + 1) << value;
+        return out.str();
+    }
+
+    std::string numberToString(double value)
+    {
+        std::ostringstream out;
+        out << std::setprecision(std::numeric_limits<double>::digits10 + 1) << value;
+        return out.str();
+    }
+
+    std::string decodeMvtValue(const MvtByteView& view)
+    {
+        MvtPbfReader reader(view);
+        std::string value;
+        while (!reader.isAtEnd())
+        {
+            const auto field = reader.readFieldOrNull();
+            if (!field)
+            {
+                break;
+            }
+            switch (field->number)
+            {
+                case 1:
+                    value = reader.readString();
+                    break;
+                case 2:
+                    value = numberToString(reader.readFixed32Float());
+                    break;
+                case 3:
+                    value = numberToString(reader.readFixed64Double());
+                    break;
+                case 4:
+                case 5:
+                    value = std::to_string(reader.readVarint());
+                    break;
+                case 6:
+                    value = std::to_string(reader.readSignedVarint());
+                    break;
+                case 7:
+                    value = reader.readVarint() != 0 ? "true" : "false";
+                    break;
+                default:
+                    reader.skip(field->wireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    std::vector<std::vector<MvtLocalPoint>> decodeMvtGeometry(int geometryType, const std::vector<int>& commands)
+    {
+        if (geometryType <= 0 || commands.empty())
+        {
+            return {};
+        }
+
+        std::vector<std::vector<MvtLocalPoint>> parts;
+        std::vector<MvtLocalPoint>* current = nullptr;
+        int cursorX = 0;
+        int cursorY = 0;
+        std::size_t index = 0;
+        while (index < commands.size())
+        {
+            const int commandInteger = commands[index++];
+            const int command = commandInteger & 0x7;
+            const int count = commandInteger >> 3;
+            switch (command)
+            {
+                case 1:
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (index + 1 >= commands.size())
+                        {
+                            throw std::runtime_error("MVT MoveTo command is truncated.");
+                        }
+                        cursorX += zigZagDecodeInt(commands[index++]);
+                        cursorY += zigZagDecodeInt(commands[index++]);
+                        parts.push_back({MvtLocalPoint{cursorX, cursorY}});
+                        current = &parts.back();
+                    }
+                    break;
+                case 2:
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (index + 1 >= commands.size())
+                        {
+                            throw std::runtime_error("MVT LineTo command is truncated.");
+                        }
+                        cursorX += zigZagDecodeInt(commands[index++]);
+                        cursorY += zigZagDecodeInt(commands[index++]);
+                        if (current)
+                        {
+                            current->push_back(MvtLocalPoint{cursorX, cursorY});
+                        }
+                    }
+                    break;
+                case 7:
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (current && !current->empty())
+                        {
+                            const auto& first = current->front();
+                            const auto& last = current->back();
+                            if (first.x != last.x || first.y != last.y)
+                            {
+                                current->push_back(first);
+                            }
+                        }
+                    }
+                    break;
+                default:
+                    throw std::runtime_error("Unsupported MVT geometry command.");
+            }
+        }
+        return parts;
+    }
+
+    void setMvtProperty(
+        std::vector<std::pair<std::string, std::string>>& properties,
+        const std::string& key,
+        const std::string& value)
+    {
+        for (auto& property : properties)
+        {
+            if (property.first == key)
+            {
+                property.second = value;
+                return;
+            }
+        }
+        properties.emplace_back(key, value);
+    }
+
+    MvtDecodedFeature decodeMvtFeature(const MvtByteView& view, const MvtDecodedLayer& layer)
+    {
+        MvtPbfReader reader(view);
+        MvtDecodedFeature feature;
+        std::vector<int> tagIndexes;
+        std::vector<int> geometryCommands;
+
+        while (!reader.isAtEnd())
+        {
+            const auto field = reader.readFieldOrNull();
+            if (!field)
+            {
+                break;
+            }
+            switch (field->number)
+            {
+                case 1:
+                    feature.id = reader.readVarint();
+                    break;
+                case 2:
+                    tagIndexes = reader.readPackedVarintsAsInt();
+                    break;
+                case 3:
+                    feature.geometryType = static_cast<int>(reader.readVarint());
+                    break;
+                case 4:
+                    geometryCommands = reader.readPackedVarintsAsInt();
+                    break;
+                default:
+                    reader.skip(field->wireType);
+                    break;
+            }
+        }
+
+        for (std::size_t i = 0; i + 1 < tagIndexes.size(); i += 2)
+        {
+            const int keyIndex = tagIndexes[i];
+            const int valueIndex = tagIndexes[i + 1];
+            if (keyIndex >= 0 &&
+                valueIndex >= 0 &&
+                keyIndex < static_cast<int>(layer.keys.size()) &&
+                valueIndex < static_cast<int>(layer.values.size()))
+            {
+                setMvtProperty(feature.properties, layer.keys[keyIndex], layer.values[valueIndex]);
+            }
+        }
+
+        feature.parts = decodeMvtGeometry(feature.geometryType, geometryCommands);
+        return feature;
+    }
+
+    MvtDecodedLayer decodeMvtLayer(const MvtByteView& view)
+    {
+        MvtPbfReader reader(view);
+        MvtDecodedLayer layer;
+        while (!reader.isAtEnd())
+        {
+            const auto field = reader.readFieldOrNull();
+            if (!field)
+            {
+                break;
+            }
+            switch (field->number)
+            {
+                case 1:
+                    layer.name = reader.readString();
+                    break;
+                case 2:
+                    layer.featureViews.push_back(reader.readBytesView());
+                    break;
+                case 3:
+                    layer.keys.push_back(reader.readString());
+                    break;
+                case 4:
+                    layer.values.push_back(decodeMvtValue(reader.readBytesView()));
+                    break;
+                case 5:
+                    layer.extent = static_cast<int>(reader.readVarint());
+                    if (layer.extent <= 0)
+                    {
+                        layer.extent = 4096;
+                    }
+                    break;
+                case 15:
+                    layer.version = static_cast<int>(reader.readVarint());
+                    break;
+                default:
+                    reader.skip(field->wireType);
+                    break;
+            }
+        }
+        return layer;
+    }
+
+    glm::dvec3 mvtLocalPointToLonLat(const MvtLocalPoint& point, int tileZ, int tileX, int tileY, int extent)
+    {
+        const double worldTiles = std::pow(2.0, static_cast<double>(tileZ));
+        const double worldSize = static_cast<double>(extent) * worldTiles;
+        const double globalX = static_cast<double>(tileX) * static_cast<double>(extent) + static_cast<double>(point.x);
+        const double globalY = static_cast<double>(tileY) * static_cast<double>(extent) + static_cast<double>(point.y);
+        const double longitude = globalX / worldSize * 360.0 - 180.0;
+        const double mercatorY = PI * (1.0 - 2.0 * globalY / worldSize);
+        const double latitude = std::atan(std::sinh(mercatorY)) * 180.0 / PI;
+        return {longitude, latitude, 0.0};
+    }
+
+    std::uint32_t javaDoubleHash(double value)
+    {
+        std::uint64_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<std::uint32_t>(bits ^ (bits >> 32u));
+    }
+
+    std::uint32_t coordinateHash(const glm::dvec3& coordinate)
+    {
+        return 31u * javaDoubleHash(coordinate.x) + javaDoubleHash(coordinate.y);
+    }
+
+    std::uint32_t listHash(const std::vector<std::uint32_t>& values)
+    {
+        std::uint32_t result = 1u;
+        for (auto value : values)
+        {
+            result = 31u * result + value;
+        }
+        return result;
+    }
+
+    std::uint32_t coordinateListHash(const std::vector<glm::dvec3>& coordinates)
+    {
+        std::vector<std::uint32_t> hashes;
+        hashes.reserve(coordinates.size());
+        for (const auto& coordinate : coordinates)
+        {
+            hashes.push_back(coordinateHash(coordinate));
+        }
+        return listHash(hashes);
+    }
+
+    std::uint32_t ringListHash(const std::vector<std::vector<glm::dvec3>>& rings)
+    {
+        std::vector<std::uint32_t> hashes;
+        hashes.reserve(rings.size());
+        for (const auto& ring : rings)
+        {
+            hashes.push_back(coordinateListHash(ring));
+        }
+        return listHash(hashes);
+    }
+
+    std::string signedHashString(std::uint32_t hash)
+    {
+        const auto signedHash = hash <= 0x7fffffffu
+            ? static_cast<std::int64_t>(hash)
+            : static_cast<std::int64_t>(hash) - 0x100000000LL;
+        return std::to_string(signedHash);
+    }
+
+    std::string decodedMvtFeatureId(
+        const std::optional<std::uint64_t>& rawId,
+        const std::string& layerName,
+        std::uint32_t geometryHash,
+        int geometryIndex,
+        int geometryCount)
+    {
+        const std::string baseId = rawId
+            ? std::to_string(*rawId)
+            : layerName + ":" + signedHashString(geometryHash);
+        return geometryCount == 1
+            ? baseId
+            : baseId + ":" + std::to_string(geometryIndex);
+    }
+
+    int expectedMvtRenderGeometryType(const std::string& styleKind)
+    {
+        if (styleKind == "LINE")
+        {
+            return 2;
+        }
+        if (styleKind == "FILL")
+        {
+            return 3;
+        }
+        if (styleKind == "CIRCLE" || styleKind == "SYMBOL")
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    int renderGeometryOrdinalForMvtType(int geometryType)
+    {
+        switch (geometryType)
+        {
+            case 1:
+                return 0;
+            case 2:
+                return 1;
+            case 3:
+                return 2;
+            default:
+                return -1;
+        }
+    }
+
+    void appendMvtRenderFeature(
+        MvtRenderTileConfig& config,
+        const std::string& featureId,
+        const std::string& sourceLayer,
+        int geometryOrdinal,
+        const std::vector<glm::dvec3>& coordinates,
+        const std::vector<int>& ringEnds)
+    {
+        if (coordinates.empty())
+        {
+            return;
+        }
+        config.featureIds.push_back(featureId);
+        config.sourceLayers.push_back(sourceLayer);
+        config.geometryTypes.push_back(geometryOrdinal);
+        for (const auto& coordinate : coordinates)
+        {
+            config.coordinates.push_back(coordinate.x);
+            config.coordinates.push_back(coordinate.y);
+        }
+        config.coordinateOffsets.push_back(static_cast<int>(config.coordinates.size()));
+        config.ringEnds.insert(config.ringEnds.end(), ringEnds.begin(), ringEnds.end());
+        config.ringOffsets.push_back(static_cast<int>(config.ringEnds.size()));
+    }
+
+    void appendMvtQueryFeature(
+        MvtQuerySnapshot& query,
+        const std::string& featureId,
+        const std::string& sourceLayer,
+        int geometryOrdinal,
+        const std::vector<glm::dvec3>& coordinates,
+        const std::vector<int>& ringEnds,
+        const std::vector<std::pair<std::string, std::string>>& properties)
+    {
+        if (coordinates.empty())
+        {
+            return;
+        }
+        query.featureIds.push_back(featureId);
+        query.sourceLayers.push_back(sourceLayer);
+        query.geometryTypes.push_back(geometryOrdinal);
+        for (const auto& coordinate : coordinates)
+        {
+            query.coordinates.push_back(coordinate.x);
+            query.coordinates.push_back(coordinate.y);
+        }
+        query.coordinateOffsets.push_back(static_cast<int>(query.coordinates.size()));
+        query.ringEnds.insert(query.ringEnds.end(), ringEnds.begin(), ringEnds.end());
+        query.ringOffsets.push_back(static_cast<int>(query.ringEnds.size()));
+        for (const auto& property : properties)
+        {
+            query.propertyKeys.push_back(property.first);
+            query.propertyValues.push_back(property.second);
+        }
+        query.propertyOffsets.push_back(static_cast<int>(query.propertyKeys.size()));
+    }
+
+    void appendMvtFeatureOutputs(
+        const MvtDecodedFeature& feature,
+        const std::string& sourceLayer,
+        const MvtRenderStyleConfig& style,
+        int tileZ,
+        int tileX,
+        int tileY,
+        int extent,
+        MvtRenderTileConfig& renderConfig,
+        MvtQuerySnapshot& query)
+    {
+        const int renderExpectedType = expectedMvtRenderGeometryType(style.kind);
+        const int geometryOrdinal = renderGeometryOrdinalForMvtType(feature.geometryType);
+        if (geometryOrdinal < 0)
+        {
+            return;
+        }
+
+        if (feature.geometryType == 1)
+        {
+            std::vector<glm::dvec3> points;
+            for (const auto& part : feature.parts)
+            {
+                for (const auto& point : part)
+                {
+                    points.push_back(mvtLocalPointToLonLat(point, tileZ, tileX, tileY, extent));
+                }
+            }
+            const int geometryCount = static_cast<int>(points.size());
+            for (int index = 0; index < geometryCount; ++index)
+            {
+                const std::vector<glm::dvec3> coordinates = {points[static_cast<std::size_t>(index)]};
+                const auto featureId = decodedMvtFeatureId(
+                    feature.id,
+                    sourceLayer,
+                    coordinateHash(coordinates.front()),
+                    index,
+                    geometryCount);
+                appendMvtQueryFeature(query, featureId, sourceLayer, geometryOrdinal, coordinates, {}, feature.properties);
+                if (renderExpectedType == feature.geometryType)
+                {
+                    appendMvtRenderFeature(renderConfig, featureId, sourceLayer, geometryOrdinal, coordinates, {});
+                }
+            }
+        }
+        else if (feature.geometryType == 2)
+        {
+            std::vector<std::vector<glm::dvec3>> lines;
+            for (const auto& part : feature.parts)
+            {
+                if (part.size() < 2)
+                {
+                    continue;
+                }
+                std::vector<glm::dvec3> line;
+                line.reserve(part.size());
+                for (const auto& point : part)
+                {
+                    line.push_back(mvtLocalPointToLonLat(point, tileZ, tileX, tileY, extent));
+                }
+                lines.push_back(std::move(line));
+            }
+            const int geometryCount = static_cast<int>(lines.size());
+            for (int index = 0; index < geometryCount; ++index)
+            {
+                const auto& coordinates = lines[static_cast<std::size_t>(index)];
+                const auto featureId = decodedMvtFeatureId(
+                    feature.id,
+                    sourceLayer,
+                    coordinateListHash(coordinates),
+                    index,
+                    geometryCount);
+                appendMvtQueryFeature(query, featureId, sourceLayer, geometryOrdinal, coordinates, {}, feature.properties);
+                if (renderExpectedType == feature.geometryType)
+                {
+                    appendMvtRenderFeature(renderConfig, featureId, sourceLayer, geometryOrdinal, coordinates, {});
+                }
+            }
+        }
+        else if (feature.geometryType == 3)
+        {
+            std::vector<std::vector<glm::dvec3>> rings;
+            for (const auto& part : feature.parts)
+            {
+                if (part.size() < 4)
+                {
+                    continue;
+                }
+                std::vector<glm::dvec3> ring;
+                ring.reserve(part.size());
+                for (const auto& point : part)
+                {
+                    ring.push_back(mvtLocalPointToLonLat(point, tileZ, tileX, tileY, extent));
+                }
+                rings.push_back(std::move(ring));
+            }
+            if (rings.empty())
+            {
+                return;
+            }
+            std::vector<glm::dvec3> coordinates;
+            std::vector<int> ringEnds;
+            for (const auto& ring : rings)
+            {
+                coordinates.insert(coordinates.end(), ring.begin(), ring.end());
+                ringEnds.push_back(static_cast<int>(coordinates.size()));
+            }
+            const auto featureId = decodedMvtFeatureId(
+                feature.id,
+                sourceLayer,
+                ringListHash(rings),
+                0,
+                1);
+            appendMvtQueryFeature(query, featureId, sourceLayer, geometryOrdinal, coordinates, ringEnds, feature.properties);
+            if (renderExpectedType == feature.geometryType)
+            {
+                appendMvtRenderFeature(renderConfig, featureId, sourceLayer, geometryOrdinal, coordinates, ringEnds);
+            }
+        }
+    }
+
+    MvtQuerySnapshot decodeMvtTileBytesIntoConfig(const std::vector<std::uint8_t>& bytes, MvtRenderTileConfig& config)
+    {
+        config.featureIds.clear();
+        config.sourceLayers.clear();
+        config.geometryTypes.clear();
+        config.coordinateOffsets = {0};
+        config.coordinates.clear();
+        config.ringOffsets = {0};
+        config.ringEnds.clear();
+
+        MvtQuerySnapshot query;
+        MvtPbfReader reader(bytes.data(), bytes.size());
+        while (!reader.isAtEnd())
+        {
+            const auto field = reader.readFieldOrNull();
+            if (!field)
+            {
+                break;
+            }
+            if (field->number == 3 && field->wireType == 2)
+            {
+                auto layer = decodeMvtLayer(reader.readBytesView());
+                if (layer.name != config.sourceLayer)
+                {
+                    continue;
+                }
+                for (const auto& featureView : layer.featureViews)
+                {
+                    auto feature = decodeMvtFeature(featureView, layer);
+                    appendMvtFeatureOutputs(
+                        feature,
+                        layer.name,
+                        config.style,
+                        config.tileZ,
+                        config.tileX,
+                        config.tileY,
+                        layer.extent,
+                        config,
+                        query);
+                }
+            }
+            else
+            {
+                reader.skip(field->wireType);
+            }
+        }
+        return query;
+    }
 
     struct LabelAnnotationConfig
     {
@@ -1736,6 +2547,116 @@ namespace
                 config.coordinates.size() / 2,
                 config.style.visible ? 1 : 0);
             return handle;
+        }
+
+        MvtSubmitResult submitMvtTileBytes(
+            const MvtRenderTileConfig& baseConfig,
+            const std::vector<std::uint8_t>& tileBytes)
+        {
+            MvtSubmitResult result;
+            if (baseConfig.sourceId.empty() || baseConfig.layerId.empty() || baseConfig.sourceLayer.empty())
+            {
+                result.errorMessage = "MVT tile sourceId, layerId, and sourceLayer must not be blank.";
+                return result;
+            }
+            if (baseConfig.tileZ < 0 || baseConfig.tileX < 0 || baseConfig.tileY < 0)
+            {
+                result.errorMessage = "MVT tile coordinates must be non-negative.";
+                return result;
+            }
+            if (tileBytes.empty())
+            {
+                result.errorMessage = "MVT tile bytes must not be empty.";
+                return result;
+            }
+            if (!std::isfinite(baseConfig.style.opacity) ||
+                !std::isfinite(baseConfig.style.widthPixels) ||
+                !std::isfinite(baseConfig.style.radiusPixels) ||
+                !std::isfinite(baseConfig.style.textSizeSp))
+            {
+                result.errorMessage = "MVT render style contains non-finite values.";
+                return result;
+            }
+
+            MvtRenderTileConfig config = baseConfig;
+            try
+            {
+                result.query = decodeMvtTileBytesIntoConfig(tileBytes, config);
+            }
+            catch (const std::exception& error)
+            {
+                result.errorMessage = error.what();
+                return result;
+            }
+
+            if (!std::all_of(config.coordinates.begin(), config.coordinates.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }) ||
+                !std::all_of(result.query.coordinates.begin(), result.query.coordinates.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }))
+            {
+                result.errorMessage = "MVT tile decoded to non-finite coordinates.";
+                return result;
+            }
+
+            const std::string handle =
+                config.layerId + ":" +
+                std::to_string(config.tileZ) + "/" +
+                std::to_string(config.tileX) + "/" +
+                std::to_string(config.tileY);
+
+            std::lock_guard<std::mutex> lock(mutex);
+            config.revision = nextMvtTileRevisionLocked(handle);
+            mvtTiles[handle] = config;
+            if (app)
+            {
+                queueApplyMvtTileLocked(handle, config);
+            }
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "registered MVT byte tile handle=%s revision=%llu source=%s sourceLayer=%s style=%s renderFeatures=%zu queryFeatures=%zu coordinates=%zu rendered=%d",
+                handle.c_str(),
+                static_cast<unsigned long long>(config.revision),
+                config.sourceId.c_str(),
+                config.sourceLayer.c_str(),
+                config.style.kind.c_str(),
+                config.featureIds.size(),
+                result.query.featureIds.size(),
+                config.coordinates.size() / 2,
+                config.rendered ? 1 : 0);
+            result.nativeTileHandle = handle;
+            return result;
+        }
+
+        void setMvtTileRendered(const std::string& handle, bool rendered)
+        {
+            if (handle.empty())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            auto itr = mvtTiles.find(handle);
+            if (itr == mvtTiles.end())
+            {
+                return;
+            }
+            itr->second.rendered = rendered;
+            itr->second.revision = nextMvtTileRevisionLocked(handle);
+            if (app)
+            {
+                queueApplyMvtTileLocked(handle, itr->second);
+            }
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "set MVT render tile handle=%s revision=%llu rendered=%d",
+                handle.c_str(),
+                static_cast<unsigned long long>(itr->second.revision),
+                rendered ? 1 : 0);
         }
 
         void removeMvtTile(const std::string& handle)
@@ -3256,7 +4177,7 @@ namespace
                 return;
             }
             removeMvtTileEntitiesLocked(handle);
-            if (!config.style.visible)
+            if (!config.rendered || !config.style.visible)
             {
                 return;
             }
@@ -4499,6 +5420,131 @@ namespace
         return result;
     }
 
+    std::vector<std::uint8_t> bytesFromJArray(JNIEnv* env, jbyteArray array)
+    {
+        std::vector<std::uint8_t> result;
+        if (!array)
+        {
+            return result;
+        }
+        const auto count = env->GetArrayLength(array);
+        result.resize(static_cast<std::size_t>(count));
+        env->GetByteArrayRegion(
+            array,
+            0,
+            count,
+            reinterpret_cast<jbyte*>(result.data()));
+        return result;
+    }
+
+    jobjectArray stringArrayFromVector(JNIEnv* env, const std::vector<std::string>& values)
+    {
+        jclass stringClass = env->FindClass("java/lang/String");
+        auto result = env->NewObjectArray(
+            static_cast<jsize>(values.size()),
+            stringClass,
+            nullptr);
+        for (jsize i = 0; i < static_cast<jsize>(values.size()); ++i)
+        {
+            jstring value = env->NewStringUTF(values[static_cast<std::size_t>(i)].c_str());
+            env->SetObjectArrayElement(result, i, value);
+            env->DeleteLocalRef(value);
+        }
+        env->DeleteLocalRef(stringClass);
+        return result;
+    }
+
+    jintArray intArrayFromVector(JNIEnv* env, const std::vector<int>& values)
+    {
+        auto result = env->NewIntArray(static_cast<jsize>(values.size()));
+        if (!values.empty())
+        {
+            std::vector<jint> jValues;
+            jValues.reserve(values.size());
+            for (int value : values)
+            {
+                jValues.push_back(static_cast<jint>(value));
+            }
+            env->SetIntArrayRegion(result, 0, static_cast<jsize>(jValues.size()), jValues.data());
+        }
+        return result;
+    }
+
+    jdoubleArray doubleArrayFromVector(JNIEnv* env, const std::vector<double>& values)
+    {
+        auto result = env->NewDoubleArray(static_cast<jsize>(values.size()));
+        if (!values.empty())
+        {
+            env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(values.size()), values.data());
+        }
+        return result;
+    }
+
+    jobject mvtSubmitResultToJObject(JNIEnv* env, const MvtSubmitResult& result)
+    {
+        jclass resultClass = env->FindClass("com/vectorra/maps/internal/VectorraNative$MvtTileResult");
+        if (!resultClass)
+        {
+            return nullptr;
+        }
+        jmethodID constructor = env->GetMethodID(
+            resultClass,
+            "<init>",
+            "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;[I[I[D[I[I[I[Ljava/lang/String;[Ljava/lang/String;)V");
+        if (!constructor)
+        {
+            env->DeleteLocalRef(resultClass);
+            return nullptr;
+        }
+
+        jstring jHandle = env->NewStringUTF(result.nativeTileHandle.c_str());
+        jstring jError = result.errorMessage.empty() ? nullptr : env->NewStringUTF(result.errorMessage.c_str());
+        jobjectArray jFeatureIds = stringArrayFromVector(env, result.query.featureIds);
+        jobjectArray jSourceLayers = stringArrayFromVector(env, result.query.sourceLayers);
+        jintArray jGeometryTypes = intArrayFromVector(env, result.query.geometryTypes);
+        jintArray jCoordinateOffsets = intArrayFromVector(env, result.query.coordinateOffsets);
+        jdoubleArray jCoordinates = doubleArrayFromVector(env, result.query.coordinates);
+        jintArray jRingOffsets = intArrayFromVector(env, result.query.ringOffsets);
+        jintArray jRingEnds = intArrayFromVector(env, result.query.ringEnds);
+        jintArray jPropertyOffsets = intArrayFromVector(env, result.query.propertyOffsets);
+        jobjectArray jPropertyKeys = stringArrayFromVector(env, result.query.propertyKeys);
+        jobjectArray jPropertyValues = stringArrayFromVector(env, result.query.propertyValues);
+
+        jobject object = env->NewObject(
+            resultClass,
+            constructor,
+            jHandle,
+            jError,
+            jFeatureIds,
+            jSourceLayers,
+            jGeometryTypes,
+            jCoordinateOffsets,
+            jCoordinates,
+            jRingOffsets,
+            jRingEnds,
+            jPropertyOffsets,
+            jPropertyKeys,
+            jPropertyValues);
+
+        env->DeleteLocalRef(jHandle);
+        if (jError)
+        {
+            env->DeleteLocalRef(jError);
+        }
+        env->DeleteLocalRef(jFeatureIds);
+        env->DeleteLocalRef(jSourceLayers);
+        env->DeleteLocalRef(jGeometryTypes);
+        env->DeleteLocalRef(jCoordinateOffsets);
+        env->DeleteLocalRef(jCoordinates);
+        env->DeleteLocalRef(jRingOffsets);
+        env->DeleteLocalRef(jRingEnds);
+        env->DeleteLocalRef(jPropertyOffsets);
+        env->DeleteLocalRef(jPropertyKeys);
+        env->DeleteLocalRef(jPropertyValues);
+        env->DeleteLocalRef(resultClass);
+        return object;
+    }
+
     std::optional<std::array<double, 16>> matrixFromJDoubleArray(JNIEnv* env, jdoubleArray array)
     {
         if (!array)
@@ -5069,6 +6115,69 @@ Java_com_vectorra_maps_internal_VectorraNative_setTileset3DLayerViewportHeight(
 {
     if (auto* engine = fromHandle(handle))
         engine->setTileset3DLayerViewportHeight(static_cast<float>(height));
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_submitMvtTileBytes(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring sourceId,
+    jstring layerId,
+    jstring sourceLayer,
+    jint tileZ,
+    jint tileX,
+    jint tileY,
+    jstring styleKind,
+    jboolean visible,
+    jint color,
+    jfloat opacity,
+    jfloat widthPixels,
+    jfloat radiusPixels,
+    jfloat textSizeSp,
+    jbyteArray tileBytes,
+    jboolean renderNow)
+{
+    MvtSubmitResult result;
+    if (auto* engine = fromHandle(handle))
+    {
+        MvtRenderTileConfig config;
+        config.sourceId = jstringToString(env, sourceId);
+        config.layerId = jstringToString(env, layerId);
+        config.sourceLayer = jstringToString(env, sourceLayer);
+        config.tileZ = static_cast<int>(tileZ);
+        config.tileX = static_cast<int>(tileX);
+        config.tileY = static_cast<int>(tileY);
+        config.style = MvtRenderStyleConfig{
+            jstringToString(env, styleKind),
+            visible == JNI_TRUE,
+            static_cast<int>(color),
+            opacity,
+            widthPixels,
+            radiusPixels,
+            textSizeSp};
+        config.rendered = renderNow == JNI_TRUE;
+        result = engine->submitMvtTileBytes(config, bytesFromJArray(env, tileBytes));
+    }
+    else
+    {
+        result.errorMessage = "MVT native renderer handle is invalid.";
+    }
+    return mvtSubmitResultToJObject(env, result);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setMvtTileRendered(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring nativeTileHandle,
+    jboolean rendered)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->setMvtTileRendered(jstringToString(env, nativeTileHandle), rendered == JNI_TRUE);
+    }
 }
 
 extern "C" JNIEXPORT jstring JNICALL

@@ -5,9 +5,9 @@ import com.vectorra.maps.vector.VectorraVectorTileLayer
 
 internal data class VectorraMvtRuntimeTile(
     val tileId: VectorraMvtTileId,
-    val decodedTile: VectorraMvtTile,
-    val nativeTileHandle: String?,
-    val queryFeatures: List<VectorraMvtDecodedFeature>
+    val nativeTileHandle: String,
+    val queryFeatures: List<VectorraMvtDecodedFeature>,
+    val rendered: Boolean
 )
 
 internal class VectorraMvtRuntimeTileStore(
@@ -52,25 +52,40 @@ internal class VectorraMvtRuntimeTileStore(
         }
     }
 
-    fun putDecodedTile(
+    fun putTile(
         tileId: VectorraMvtTileId,
-        decodedTile: VectorraMvtTile,
+        tileBytes: ByteArray,
         renderNow: Boolean = true
     ): VectorraMvtRuntimeTile {
-        loadedTiles.remove(tileId)
+        val previousTile = loadedTiles.remove(tileId)
+        val submittedTile = nativeRenderer.submitTile(
+            VectorraMvtNativeTileRequest(
+                sourceId = sourceId,
+                layerId = layer.id,
+                sourceLayer = layer.sourceLayer,
+                tileId = tileId,
+                style = layer.toRenderStyle(),
+                tileBytes = tileBytes,
+                renderNow = renderNow
+            )
+        )
+        if (previousTile != null && previousTile.nativeTileHandle != submittedTile.nativeTileHandle) {
+            activeNativeTileHandles.remove(tileId)
+            nativeRenderer.removeTile(previousTile.nativeTileHandle)
+        }
         val runtimeTile = VectorraMvtRuntimeTile(
             tileId = tileId,
-            decodedTile = decodedTile,
-            nativeTileHandle = null,
-            queryFeatures = decodedTile.toQueryFeatures(tileId)
+            nativeTileHandle = submittedTile.nativeTileHandle,
+            queryFeatures = submittedTile.queryFeatures,
+            rendered = renderNow
         )
         loadedTiles[tileId] = runtimeTile
-        val nativeTileHandle = if (renderNow) {
-            renderLoadedTile(tileId, runtimeTile)
+        if (renderNow) {
+            activeNativeTileHandles[tileId] = submittedTile.nativeTileHandle
         } else {
-            null
+            activeNativeTileHandles.remove(tileId)
         }
-        return runtimeTile.copy(nativeTileHandle = nativeTileHandle)
+        return runtimeTile
     }
 
     fun setRenderedTileIds(tileIds: Set<VectorraMvtTileId>) {
@@ -78,11 +93,14 @@ internal class VectorraMvtRuntimeTileStore(
             "MVT render set can only include loaded tiles."
         }
         tileIds.forEach { tileId ->
+            val runtimeTile = loadedTiles.getValue(tileId)
             if (tileId !in activeNativeTileHandles) {
-                renderLoadedTile(tileId, loadedTiles.getValue(tileId))
+                nativeRenderer.setTileRendered(runtimeTile.nativeTileHandle, true)
+                activeNativeTileHandles[tileId] = runtimeTile.nativeTileHandle
+                loadedTiles[tileId] = runtimeTile.copy(rendered = true)
             }
         }
-        (activeNativeTileHandles.keys - tileIds).forEach(::removeActiveNativeTile)
+        (activeNativeTileHandles.keys - tileIds).forEach(::deactivateTile)
     }
 
     fun trimLoadedTiles(maxLoadedTiles: Int, retainTileIds: Set<VectorraMvtTileId> = emptySet()) {
@@ -97,8 +115,9 @@ internal class VectorraMvtRuntimeTileStore(
 
     fun removeTile(tileId: VectorraMvtTileId): VectorraMvtRuntimeTile? {
         val removed = loadedTiles.remove(tileId) ?: return null
-        removeActiveNativeTile(tileId)
-        return removed
+        activeNativeTileHandles.remove(tileId)
+        nativeRenderer.removeTile(removed.nativeTileHandle)
+        return removed.copy(rendered = false)
     }
 
     fun resubmitLoadedTiles() {
@@ -106,7 +125,9 @@ internal class VectorraMvtRuntimeTileStore(
         activeNativeTileHandles.clear()
         activeTileIds.forEach { tileId ->
             loadedTiles[tileId]?.let { runtimeTile ->
-                renderLoadedTile(tileId, runtimeTile)
+                nativeRenderer.setTileRendered(runtimeTile.nativeTileHandle, true)
+                activeNativeTileHandles[tileId] = runtimeTile.nativeTileHandle
+                loadedTiles[tileId] = runtimeTile.copy(rendered = true)
             }
         }
     }
@@ -117,81 +138,11 @@ internal class VectorraMvtRuntimeTileStore(
         nativeRenderer.removeLayer(layer.id)
     }
 
-    private fun renderLoadedTile(
-        tileId: VectorraMvtTileId,
-        runtimeTile: VectorraMvtRuntimeTile
-    ): String {
-        val previousNativeTileHandle = activeNativeTileHandles[tileId]
-        val nativeTileHandle = nativeRenderer.renderTile(runtimeTile.decodedTile.toRenderInput(tileId))
-        activeNativeTileHandles[tileId] = nativeTileHandle
-        if (previousNativeTileHandle != null && previousNativeTileHandle != nativeTileHandle) {
-            nativeRenderer.removeTile(previousNativeTileHandle)
-        }
-        return nativeTileHandle
-    }
-
-    private fun removeActiveNativeTile(tileId: VectorraMvtTileId) {
+    private fun deactivateTile(tileId: VectorraMvtTileId) {
         val nativeTileHandle = activeNativeTileHandles.remove(tileId) ?: return
-        nativeRenderer.removeTile(nativeTileHandle)
-    }
-
-    private fun VectorraMvtTile.toRenderInput(tileId: VectorraMvtTileId): VectorraMvtRenderTileInput {
-        val renderFeatures = layers
-            .asSequence()
-            .filter { it.name == layer.sourceLayer }
-            .flatMap { mvtLayer ->
-                mvtLayer.features.asSequence().mapIndexed { index, feature ->
-                    feature.toRenderFeatures(tileId, mvtLayer.extent, index)
-                }
-                    .flatten()
-            }
-            .toList()
-        return VectorraMvtRenderTileInput(
-            sourceId = sourceId,
-            layerId = layer.id,
-            tileId = tileId,
-            style = layer.toRenderStyle(),
-            features = renderFeatures
-        )
-    }
-
-    private fun VectorraMvtTile.toQueryFeatures(tileId: VectorraMvtTileId): List<VectorraMvtDecodedFeature> {
-        return layers
-            .asSequence()
-            .filter { it.name == layer.sourceLayer }
-            .flatMap { mvtLayer ->
-                mvtLayer.features.asSequence().flatMap { feature ->
-                    feature.toDecodedFeatures(tileId, mvtLayer.extent).asSequence()
-                }
-            }
-            .toList()
-    }
-
-    private fun VectorraMvtFeature.toRenderFeatures(
-        tileId: VectorraMvtTileId,
-        extent: Int,
-        featureIndex: Int
-    ): List<VectorraMvtRenderFeature> {
-        val geometryType = layer.expectedGeometryType()
-        val coordinateParts = geometry.coordinatesForGeometry(tileId, extent, geometryType)
-        if (coordinateParts.isEmpty()) {
-            return emptyList()
-        }
-        val featureIds = renderFeatureIds(geometry.toRenderGeometries(tileId, extent))
-        val ringEndParts = geometry.ringEndsForGeometry(geometryType)
-        return coordinateParts.mapIndexedNotNull { partIndex, coordinates ->
-            val flatCoordinates = coordinates.toFlatCoordinateList()
-            if (flatCoordinates.isEmpty()) {
-                return@mapIndexedNotNull null
-            }
-            VectorraMvtRenderFeature(
-                featureId = featureIds.getOrNull(partIndex)
-                    ?: "${layer.sourceLayer}:$featureIndex:$partIndex",
-                sourceLayer = layer.sourceLayer,
-                geometryType = geometryType,
-                coordinates = flatCoordinates,
-                ringEnds = ringEndParts.getOrElse(partIndex) { emptyList() }
-            )
+        nativeRenderer.setTileRendered(nativeTileHandle, false)
+        loadedTiles[tileId]?.let { runtimeTile ->
+            loadedTiles[tileId] = runtimeTile.copy(rendered = false)
         }
     }
 
@@ -227,15 +178,6 @@ internal class VectorraMvtRuntimeTileStore(
         }
     }
 
-    private fun VectorraVectorTileLayer.expectedGeometryType(): VectorraMvtRenderGeometryType {
-        return when (this) {
-            is VectorraVectorTileLayer.Line -> VectorraMvtRenderGeometryType.LINE
-            is VectorraVectorTileLayer.Fill -> VectorraMvtRenderGeometryType.POLYGON
-            is VectorraVectorTileLayer.Circle -> VectorraMvtRenderGeometryType.POINT
-            is VectorraVectorTileLayer.Symbol -> VectorraMvtRenderGeometryType.POINT
-        }
-    }
-
     private fun VectorraVectorTileLayer.hitRadiusPixels(): Double {
         return when (this) {
             is VectorraVectorTileLayer.Circle -> radiusPixels
@@ -253,5 +195,4 @@ internal class VectorraMvtRuntimeTileStore(
             is VectorraVectorTileLayer.Symbol -> textOpacity
         }
     }
-
 }

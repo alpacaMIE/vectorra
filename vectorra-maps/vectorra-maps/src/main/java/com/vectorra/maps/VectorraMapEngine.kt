@@ -1026,6 +1026,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         )
         when (result) {
             is VectorraMvtTileLoadResult.Loaded -> {
+                var submitFailure: VectorraVectorTileSubmitFailure? = null
                 synchronized(vectorTileRuntimeLock) {
                     val current = vectorTileLayers[task.layerId] ?: return
                     current.pendingLoadForTask(task) ?: return
@@ -1043,14 +1044,37 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     if (current.loadGeneration == task.loadGeneration &&
                         (task.tileId in currentIdealTiles || task.tileId in currentPrefetchTiles)
                     ) {
-                        current.store.putDecodedTile(
-                            tileId = task.tileId,
-                            decodedTile = result.decodedTile,
-                            renderNow = task.tileId in currentIdealTiles
-                        )
+                        runCatching {
+                            current.store.putTile(
+                                tileId = task.tileId,
+                                tileBytes = result.tileBytes,
+                                renderNow = task.tileId in currentIdealTiles
+                            )
+                        }.onFailure { error ->
+                            submitFailure = VectorraVectorTileSubmitFailure(
+                                sourceId = current.source.id,
+                                layerId = current.layer.id,
+                                message = error.message ?: "MVT tile native decode failed."
+                            )
+                        }
                     }
                 }
-                scheduleVectorTileLoads()
+                val failure = submitFailure
+                if (failure != null) {
+                    emitResourceStatus(
+                        kind = VectorraResourceKind.VECTOR,
+                        sourceId = failure.sourceId,
+                        layerId = failure.layerId,
+                        state = VectorraResourceLoadState.FAILED,
+                        eventSource = VectorraResourceEventSource.ENGINE,
+                        error = VectorraResourceLoadError(
+                            type = VectorraResourceErrorType.RESOURCE,
+                            message = failure.message
+                        )
+                    )
+                } else {
+                    scheduleVectorTileLoads()
+                }
             }
             is VectorraMvtTileLoadResult.Failed -> {
                 val current = synchronized(vectorTileRuntimeLock) {
@@ -1118,8 +1142,32 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         )
         when (result) {
             is VectorraMvtTileLoadResult.Loaded -> {
+                var submitFailure: VectorraVectorTileSubmitFailure? = null
                 synchronized(vectorTileRuntimeLock) {
-                    vectorTileLayers[layerId]?.store?.putDecodedTile(tileId, result.decodedTile)
+                    vectorTileLayers[layerId]?.let { current ->
+                        runCatching {
+                            current.store.putTile(tileId, result.tileBytes)
+                        }.onFailure { error ->
+                            submitFailure = VectorraVectorTileSubmitFailure(
+                                sourceId = current.source.id,
+                                layerId = current.layer.id,
+                                message = error.message ?: "MVT tile native decode failed."
+                            )
+                        }
+                    }
+                }
+                submitFailure?.let { failure ->
+                    emitResourceStatus(
+                        kind = VectorraResourceKind.VECTOR,
+                        sourceId = failure.sourceId,
+                        layerId = failure.layerId,
+                        state = VectorraResourceLoadState.FAILED,
+                        eventSource = VectorraResourceEventSource.ENGINE,
+                        error = VectorraResourceLoadError(
+                            type = VectorraResourceErrorType.RESOURCE,
+                            message = failure.message
+                        )
+                    )
                 }
             }
             is VectorraMvtTileLoadResult.Failed -> {
@@ -1842,6 +1890,12 @@ private fun VectorraVectorTileRuntimeLayer.removePendingLoadForTask(
 private data class VectorraVectorTilePendingLoad(
     val kind: VectorraVectorTileRuntimeTaskKind,
     val requestId: Long
+)
+
+private data class VectorraVectorTileSubmitFailure(
+    val sourceId: String,
+    val layerId: String,
+    val message: String
 )
 
 private data class VectorraVectorTileRuntimeTask(

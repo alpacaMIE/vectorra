@@ -23,6 +23,21 @@ internal object VectorraNative {
         )
     }
 
+    class MvtTileResult(
+        val nativeTileHandle: String,
+        val errorMessage: String?,
+        val featureIds: Array<String>,
+        val sourceLayers: Array<String>,
+        val geometryTypes: IntArray,
+        val coordinateOffsets: IntArray,
+        val coordinates: DoubleArray,
+        val ringOffsets: IntArray,
+        val ringEnds: IntArray,
+        val propertyOffsets: IntArray,
+        val propertyKeys: Array<String>,
+        val propertyValues: Array<String>
+    )
+
     init {
         System.loadLibrary("vectorra_jni")
     }
@@ -138,10 +153,11 @@ internal object VectorraNative {
     external fun removeTileset3DLayer(handle: Long, layerId: String)
     external fun setTileset3DLayerViewportHeight(handle: Long, height: Float)
 
-    external fun renderMvtTile(
+    external fun submitMvtTileBytes(
         handle: Long,
         sourceId: String,
         layerId: String,
+        sourceLayer: String,
         tileZ: Int,
         tileX: Int,
         tileY: Int,
@@ -152,14 +168,10 @@ internal object VectorraNative {
         widthPixels: Float,
         radiusPixels: Float,
         textSizeSp: Float,
-        featureIds: Array<String>,
-        sourceLayers: Array<String>,
-        geometryTypes: IntArray,
-        coordinateOffsets: IntArray,
-        coordinates: DoubleArray,
-        ringOffsets: IntArray,
-        ringEnds: IntArray
-    ): String
+        tileBytes: ByteArray,
+        renderNow: Boolean
+    ): MvtTileResult
+    external fun setMvtTileRendered(handle: Long, nativeTileHandle: String, rendered: Boolean)
     external fun removeMvtTile(handle: Long, nativeTileHandle: String)
     external fun removeMvtLayer(handle: Long, layerId: String)
     external fun clearAnnotations(handle: Long)

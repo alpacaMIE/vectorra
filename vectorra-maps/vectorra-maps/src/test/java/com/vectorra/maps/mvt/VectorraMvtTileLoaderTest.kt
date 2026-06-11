@@ -8,21 +8,23 @@ import com.vectorra.maps.network.TileResponse
 import com.vectorra.maps.network.TileScheme
 import com.vectorra.maps.vector.VectorraVectorTileSource
 import java.io.ByteArrayOutputStream
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VectorraMvtTileLoaderTest {
     @Test
-    fun loadsXyzTileThroughVectorRequestAndDecodesBody() {
+    fun loadsXyzTileThroughVectorRequestAndReturnsRawBody() {
         val requests = mutableListOf<TileRequest>()
+        val body = mvtTile("roads")
         val loader = VectorraMvtTileLoader { request, priority ->
             requests += request
             assertEquals(8, priority)
             TileResponse(
                 request = request,
                 statusCode = 200,
-                body = mvtTile("roads"),
+                body = body,
                 cacheStatus = TileCacheStatus.MISS
             )
         }
@@ -44,7 +46,7 @@ class VectorraMvtTileLoaderTest {
         assertEquals(TileScheme.XYZ, requests.single().tileId?.scheme)
         assertEquals("Bearer token", requests.single().headers["Authorization"])
         assertEquals(TileCacheStatus.MISS, result.response.cacheStatus)
-        assertEquals("roads", result.decodedTile.layers.single().name)
+        assertArrayEquals(body, result.tileBytes)
     }
 
     @Test
@@ -90,8 +92,7 @@ class VectorraMvtTileLoaderTest {
         ) as VectorraMvtTileLoadResult.Loaded
 
         assertEquals(TileCacheStatus.MEMORY, result.response.cacheStatus)
-        assertEquals("roads", result.decodedTile.layers.single().name)
-        assertEquals(1L, result.decodedTile.layers.single().features.single().id)
+        assertArrayEquals(mvtTile("roads"), result.tileBytes)
     }
 
     @Test
@@ -133,7 +134,7 @@ class VectorraMvtTileLoaderTest {
     }
 
     @Test
-    fun decodeFailureReturnsFailedResult() {
+    fun invalidMvtBytesStillReturnLoadedForNativeDecodeStage() {
         val loader = VectorraMvtTileLoader { request, _ ->
             TileResponse(request = request, statusCode = 200, body = byteArrayOf(0xff.toByte()))
         }
@@ -147,8 +148,8 @@ class VectorraMvtTileLoaderTest {
             tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
         )
 
-        assertTrue(result is VectorraMvtTileLoadResult.Failed)
-        assertEquals(VectorraResourceErrorType.RESOURCE, (result as VectorraMvtTileLoadResult.Failed).errorType)
+        assertTrue(result is VectorraMvtTileLoadResult.Loaded)
+        assertArrayEquals(byteArrayOf(0xff.toByte()), (result as VectorraMvtTileLoadResult.Loaded).tileBytes)
     }
 
     private fun mvtTile(layerName: String): ByteArray {

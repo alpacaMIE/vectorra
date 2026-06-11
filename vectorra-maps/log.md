@@ -4685,3 +4685,36 @@ Known issues / next:
 
 - Run device/emulator gesture smoke for drag, pinch focus zoom, rotate, pitch, double-tap zoom, two-finger zoom out, and fling.
 - Later stages still need MVT decode and scheduling migration.
+
+## 2026-06-11
+
+### MVT Decode Native Migration - Stage 3
+
+Completed:
+
+- Moved the runtime MVT hot path from Kotlin object decoding to a native bytes-submit path: Kotlin now fetches vector tile bytes and submits them directly to JNI.
+- Added a bridge-local C++ PBF/MVT decoder in `vectorra_jni.cpp` for MVT layer, value, feature, command geometry, Web Mercator tile-local to WGS84 conversion, render feature extraction, and query snapshot extraction.
+- Replaced the 7-array render JNI call with `submitMvtTileBytes(...)` plus `setMvtTileRendered(...)`; native now caches decoded tile configs and toggles rendered entities without re-decoding.
+- Updated `VectorraMvtRuntimeTileStore` to own native handles/query snapshots/rendered state instead of `VectorraMvtTile` objects; `VectorraMvtDecoder` remains as a beta public utility outside the render hot path.
+- Updated MVT loader, render contract, and runtime store unit tests for the native bytes contract.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+.\gradlew.bat :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.mvt.*"
+.\gradlew.bat :vectorra-maps:assembleDebug
+javap -classpath .\vectorra-maps\build\tmp\kotlin-classes\debug -s "com.vectorra.maps.internal.VectorraNative`$MvtTileResult"
+```
+
+Results:
+
+- MVT-targeted unit tests passed.
+- `:vectorra-maps:assembleDebug` passed for `arm64-v8a` and `x86_64`, including the new native decoder/JNI code.
+- JNI constructor descriptor for `VectorraNative.MvtTileResult` matches the C++ `NewObject` signature.
+- Full `:vectorra-maps:testDebugUnitTest` still fails only in the pre-existing `VectorraPublicApiSurfaceTest.publicApiInventoryKeeps3DTilesModelSmokeOutOfPublishedBaseline` missing `docs/beta/public-api-surface.md`.
+
+Known issues / next:
+
+- Native decode was compile-verified but not device-render smoke tested in this pass.
+- Stage 4 still needs MVT tile scheduling down into a native layer.

@@ -33,20 +33,11 @@ internal class VectorraMvtTileLoader(
                 message = response.errorMessage ?: "MVT tile request failed with HTTP ${response.statusCode}."
             )
         }
-        return runCatching {
-            VectorraMvtTileLoadResult.Loaded(
-                request = request,
-                response = response,
-                decodedTile = VectorraMvtDecoder.decode(response.body)
-            )
-        }.getOrElse { error ->
-            VectorraMvtTileLoadResult.Failed(
-                request = request,
-                statusCode = response.statusCode,
-                errorType = VectorraResourceErrorType.RESOURCE,
-                message = error.message ?: "MVT tile decode failed."
-            )
-        }
+        return VectorraMvtTileLoadResult.Loaded(
+            request = request,
+            response = response,
+            tileBytes = response.body
+        )
     }
 
     private fun VectorraVectorTileSource.toTileRequest(
@@ -92,7 +83,7 @@ internal sealed class VectorraMvtTileLoadResult {
     data class Loaded(
         override val request: TileRequest,
         val response: TileResponse,
-        val decodedTile: VectorraMvtTile
+        val tileBytes: ByteArray
     ) : VectorraMvtTileLoadResult()
 
     data class Failed(

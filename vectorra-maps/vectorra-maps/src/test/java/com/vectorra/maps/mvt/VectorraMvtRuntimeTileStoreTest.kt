@@ -1,5 +1,7 @@
 package com.vectorra.maps.mvt
 
+import com.vectorra.maps.query.VectorraAnnotationGeometry
+import com.vectorra.maps.query.VectorraCoordinate
 import com.vectorra.maps.vector.VectorraVectorTileLayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -7,7 +9,7 @@ import org.junit.Test
 
 class VectorraMvtRuntimeTileStoreTest {
     @Test
-    fun putDecodedTileOwnsDecodedTileNativeHandleAndQueryFeatures() {
+    fun putTileOwnsNativeHandleAndQueryFeatures() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -20,12 +22,14 @@ class VectorraMvtRuntimeTileStoreTest {
             nativeRenderer = renderer
         )
         val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("1", "roads", "Main"))
 
-        val runtimeTile = store.putDecodedTile(tileId, vectorTile())
+        val runtimeTile = store.putTile(tileId, tileBytes(1))
 
         assertEquals(setOf(tileId), store.loadedTileIds())
         assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
         assertEquals("roads-line:0/0/0", runtimeTile.nativeTileHandle)
+        assertEquals(true, runtimeTile.rendered)
         assertEquals(listOf("1"), store.queryFeatures().map { it.id })
         val hitFeature = store.queryHitFeatures().single()
         assertEquals("1", hitFeature.id)
@@ -33,14 +37,13 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals("vector", hitFeature.sourceId)
         assertEquals("roads", hitFeature.properties["source-layer"])
         assertEquals("Main", hitFeature.properties["name"])
-        assertEquals(listOf("roads-line:0/0/0"), renderer.renderedHandles)
-        assertEquals(VectorraMvtRenderLayerKind.LINE, renderer.renderedInputs.single().style.kind)
-        assertEquals(listOf("1"), renderer.renderedInputs.single().features.map { it.featureId })
-        assertEquals(2.0f, renderer.renderedInputs.single().style.widthPixels)
+        assertEquals(listOf("submit:roads-line:0/0/0:true"), renderer.events)
+        assertEquals(VectorraMvtRenderLayerKind.LINE, renderer.submittedRequests.single().style.kind)
+        assertEquals(2.0f, renderer.submittedRequests.single().style.widthPixels)
     }
 
     @Test
-    fun replacingTileRendersReplacementWithoutRemovingSameNativeHandle() {
+    fun replacingTileSubmitsReplacementWithoutRemovingSameNativeHandle() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -53,20 +56,22 @@ class VectorraMvtRuntimeTileStoreTest {
         )
         val tileId = VectorraMvtTileId(z = 1, x = 1, y = 0)
 
-        store.putDecodedTile(tileId, vectorTile(poiId = 7L))
-        store.putDecodedTile(tileId, vectorTile(poiId = 8L))
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("7", "poi", "Old"))
+        store.putTile(tileId, tileBytes(7))
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("8", "poi", "New"))
+        store.putTile(tileId, tileBytes(8))
 
         assertEquals(setOf(tileId), store.loadedTileIds())
         assertTrue(renderer.removedTileHandles.isEmpty())
         assertEquals(
             listOf(
-                "render:poi-circle:1/1/0",
-                "render:poi-circle:1/1/0"
+                "submit:poi-circle:1/1/0:true",
+                "submit:poi-circle:1/1/0:true"
             ),
             renderer.events
         )
         assertEquals(listOf("8"), store.queryFeatures().map { it.id })
-        assertEquals(2, renderer.renderedInputs.size)
+        assertEquals(2, renderer.submittedRequests.size)
     }
 
     @Test
@@ -82,11 +87,13 @@ class VectorraMvtRuntimeTileStoreTest {
             nativeRenderer = renderer
         )
         val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
-        store.putDecodedTile(tileId, vectorTile())
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("2", "land", "Park"))
+        store.putTile(tileId, tileBytes(2))
 
         val removed = store.removeTile(tileId)
 
         assertEquals(tileId, removed?.tileId)
+        assertEquals(false, removed?.rendered)
         assertTrue(store.loadedTileIds().isEmpty())
         assertTrue(store.queryFeatures().isEmpty())
         assertTrue(store.queryHitFeatures().isEmpty())
@@ -94,7 +101,7 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
-    fun queryFeaturesComeOnlyFromCurrentlyLoadedTilesAcrossTileChanges() {
+    fun queryFeaturesComeOnlyFromCurrentlyRenderedTilesAcrossTileChanges() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -107,19 +114,27 @@ class VectorraMvtRuntimeTileStoreTest {
         )
         val westTile = VectorraMvtTileId(z = 1, x = 0, y = 0)
         val eastTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
-        store.putDecodedTile(westTile, vectorTile(roadId = 10L, roadName = "West"))
-        store.putDecodedTile(eastTile, vectorTile(roadId = 20L, roadName = "East"))
+        renderer.queryFeaturesByTileId[westTile] = listOf(queryFeature("10", "roads", "West"))
+        renderer.queryFeaturesByTileId[eastTile] = listOf(queryFeature("20", "roads", "East"))
+        store.putTile(westTile, tileBytes(10))
+        store.putTile(eastTile, tileBytes(20), renderNow = false)
 
         assertEquals(setOf(westTile, eastTile), store.loadedTileIds())
-        assertEquals(listOf("10", "20"), store.queryFeatures().map { it.id })
-        assertEquals(listOf("West", "East"), store.queryHitFeatures().map { it.properties["name"] })
+        assertEquals(listOf("10"), store.queryFeatures().map { it.id })
 
-        store.removeTile(westTile)
+        store.setRenderedTileIds(setOf(eastTile))
 
-        assertEquals(setOf(eastTile), store.loadedTileIds())
         assertEquals(listOf("20"), store.queryFeatures().map { it.id })
         assertEquals(listOf("East"), store.queryHitFeatures().map { it.properties["name"] })
-        assertEquals(listOf("roads-line:1/0/0"), renderer.removedTileHandles)
+        assertEquals(
+            listOf(
+                "submit:roads-line:1/0/0:true",
+                "submit:roads-line:1/1/0:false",
+                "rendered:roads-line:1/1/0:true",
+                "rendered:roads-line:1/0/0:false"
+            ),
+            renderer.events
+        )
     }
 
     @Test
@@ -136,8 +151,10 @@ class VectorraMvtRuntimeTileStoreTest {
         )
         val parentTile = VectorraMvtTileId(z = 0, x = 0, y = 0)
         val childTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
-        store.putDecodedTile(parentTile, vectorTile(roadId = 100L, roadName = "Parent"))
-        store.putDecodedTile(childTile, vectorTile(roadId = 200L, roadName = "Child"))
+        renderer.queryFeaturesByTileId[parentTile] = listOf(queryFeature("100", "roads", "Parent"))
+        renderer.queryFeaturesByTileId[childTile] = listOf(queryFeature("200", "roads", "Child"))
+        store.putTile(parentTile, tileBytes(100))
+        store.putTile(childTile, tileBytes(200))
         renderer.events.clear()
 
         store.setRenderedTileIds(setOf(parentTile))
@@ -145,7 +162,7 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(setOf(parentTile, childTile), store.loadedTileIds())
         assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
         assertEquals(listOf("100"), store.queryFeatures().map { it.id })
-        assertEquals(listOf("remove:roads-line:1/1/0"), renderer.events)
+        assertEquals(listOf("rendered:roads-line:1/1/0:false"), renderer.events)
 
         renderer.events.clear()
         store.setRenderedTileIds(setOf(childTile))
@@ -155,15 +172,15 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(listOf("200"), store.queryFeatures().map { it.id })
         assertEquals(
             listOf(
-                "render:roads-line:1/1/0",
-                "remove:roads-line:0/0/0"
+                "rendered:roads-line:1/1/0:true",
+                "rendered:roads-line:0/0/0:false"
             ),
             renderer.events
         )
     }
 
     @Test
-    fun putDecodedTileCanCacheWithoutRenderingUntilRenderSetSelectsTile() {
+    fun putTileCanCacheWithoutRenderingUntilRenderSetSelectsTile() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -175,19 +192,26 @@ class VectorraMvtRuntimeTileStoreTest {
             nativeRenderer = renderer
         )
         val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("1", "roads", "Main"))
 
-        store.putDecodedTile(tileId, vectorTile(), renderNow = false)
+        store.putTile(tileId, tileBytes(1), renderNow = false)
 
         assertEquals(setOf(tileId), store.loadedTileIds())
         assertTrue(store.nativeTileHandles().isEmpty())
         assertTrue(store.queryFeatures().isEmpty())
-        assertTrue(renderer.events.isEmpty())
+        assertEquals(listOf("submit:roads-line:0/0/0:false"), renderer.events)
 
         store.setRenderedTileIds(setOf(tileId))
 
         assertEquals(setOf("roads-line:0/0/0"), store.nativeTileHandles())
         assertEquals(listOf("1"), store.queryFeatures().map { it.id })
-        assertEquals(listOf("render:roads-line:0/0/0"), renderer.events)
+        assertEquals(
+            listOf(
+                "submit:roads-line:0/0/0:false",
+                "rendered:roads-line:0/0/0:true"
+            ),
+            renderer.events
+        )
     }
 
     @Test
@@ -205,10 +229,12 @@ class VectorraMvtRuntimeTileStoreTest {
         val firstTile = VectorraMvtTileId(z = 1, x = 0, y = 0)
         val retainedTile = VectorraMvtTileId(z = 1, x = 1, y = 0)
         val activeTile = VectorraMvtTileId(z = 1, x = 1, y = 1)
-        store.putDecodedTile(firstTile, vectorTile(roadId = 10L, roadName = "First"))
-        store.putDecodedTile(retainedTile, vectorTile(roadId = 20L, roadName = "Retained"))
-        store.putDecodedTile(activeTile, vectorTile(roadId = 30L, roadName = "Active"))
-        store.setRenderedTileIds(setOf(activeTile))
+        renderer.queryFeaturesByTileId[firstTile] = listOf(queryFeature("10", "roads", "First"))
+        renderer.queryFeaturesByTileId[retainedTile] = listOf(queryFeature("20", "roads", "Retained"))
+        renderer.queryFeaturesByTileId[activeTile] = listOf(queryFeature("30", "roads", "Active"))
+        store.putTile(firstTile, tileBytes(10), renderNow = false)
+        store.putTile(retainedTile, tileBytes(20), renderNow = false)
+        store.putTile(activeTile, tileBytes(30))
         renderer.events.clear()
 
         store.trimLoadedTiles(maxLoadedTiles = 2, retainTileIds = setOf(retainedTile))
@@ -216,28 +242,7 @@ class VectorraMvtRuntimeTileStoreTest {
         assertEquals(setOf(retainedTile, activeTile), store.loadedTileIds())
         assertEquals(setOf("roads-line:1/1/1"), store.nativeTileHandles())
         assertEquals(listOf("30"), store.queryFeatures().map { it.id })
-        assertTrue(renderer.events.isEmpty())
-    }
-
-    @Test
-    fun renderInputContainsEveryLineStringPart() {
-        val renderer = RecordingMvtRenderer()
-        val store = VectorraMvtRuntimeTileStore(
-            sourceId = "vector",
-            layer = VectorraVectorTileLayer.Line(
-                id = "roads-line",
-                sourceId = "vector",
-                sourceLayer = "roads"
-            ),
-            nativeRenderer = renderer
-        )
-
-        store.putDecodedTile(VectorraMvtTileId(z = 0, x = 0, y = 0), multiPartLineVectorTile())
-
-        val renderedFeatures = renderer.renderedInputs.single().features
-        assertEquals(listOf("42:0", "42:1"), renderedFeatures.map { it.featureId })
-        assertEquals(2, renderedFeatures.size)
-        assertEquals(listOf("42:0", "42:1"), store.queryFeatures().map { it.id })
+        assertEquals(listOf("roads-line:1/0/0"), renderer.removedTileHandles)
     }
 
     @Test
@@ -253,7 +258,9 @@ class VectorraMvtRuntimeTileStoreTest {
             ),
             nativeRenderer = renderer
         )
-        store.putDecodedTile(VectorraMvtTileId(z = 0, x = 0, y = 0), vectorTile())
+        val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("7", "poi", "Center"))
+        store.putTile(tileId, tileBytes(7))
 
         store.clear()
 
@@ -265,7 +272,7 @@ class VectorraMvtRuntimeTileStoreTest {
     }
 
     @Test
-    fun resubmitLoadedTilesRendersExistingDecodedTilesAgain() {
+    fun resubmitLoadedTilesRendersExistingNativeTilesAgain() {
         val renderer = RecordingMvtRenderer()
         val store = VectorraMvtRuntimeTileStore(
             sourceId = "vector",
@@ -277,125 +284,53 @@ class VectorraMvtRuntimeTileStoreTest {
             nativeRenderer = renderer
         )
         val tileId = VectorraMvtTileId(z = 0, x = 0, y = 0)
-        store.putDecodedTile(tileId, vectorTile())
+        renderer.queryFeaturesByTileId[tileId] = listOf(queryFeature("1", "roads", "Main"))
+        store.putTile(tileId, tileBytes(1))
         renderer.events.clear()
 
         store.resubmitLoadedTiles()
 
         assertEquals(setOf(tileId), store.loadedTileIds())
-        assertEquals(listOf("render:roads-line:0/0/0"), renderer.events)
+        assertEquals(listOf("rendered:roads-line:0/0/0:true"), renderer.events)
         assertEquals(listOf("1"), store.queryFeatures().map { it.id })
     }
 
-    private fun vectorTile(
-        roadId: Long = 1L,
-        roadName: String = "Main",
-        poiId: Long = 7L
-    ): VectorraMvtTile {
-        return VectorraMvtTile(
-            layers = listOf(
-                VectorraMvtLayer(
-                    name = "roads",
-                    version = 2,
-                    extent = 4096,
-                    features = listOf(
-                        VectorraMvtFeature(
-                            id = roadId,
-                            layerName = "roads",
-                            geometry = VectorraMvtGeometry.LineString(
-                                listOf(
-                                    listOf(
-                                        VectorraMvtPoint(0, 2048),
-                                        VectorraMvtPoint(4096, 2048)
-                                    )
-                                )
-                            ),
-                            properties = mapOf("name" to VectorraMvtValue.StringValue(roadName))
-                        )
-                    )
-                ),
-                VectorraMvtLayer(
-                    name = "land",
-                    version = 2,
-                    extent = 4096,
-                    features = listOf(
-                        VectorraMvtFeature(
-                            id = 2L,
-                            layerName = "land",
-                            geometry = VectorraMvtGeometry.Polygon(
-                                listOf(
-                                    listOf(
-                                        VectorraMvtPoint(0, 0),
-                                        VectorraMvtPoint(4096, 0),
-                                        VectorraMvtPoint(4096, 4096),
-                                        VectorraMvtPoint(0, 0)
-                                    )
-                                )
-                            ),
-                            properties = emptyMap()
-                        )
-                    )
-                ),
-                VectorraMvtLayer(
-                    name = "poi",
-                    version = 2,
-                    extent = 4096,
-                    features = listOf(
-                        VectorraMvtFeature(
-                            id = poiId,
-                            layerName = "poi",
-                            geometry = VectorraMvtGeometry.Point(listOf(VectorraMvtPoint(2048, 2048))),
-                            properties = mapOf("name" to VectorraMvtValue.StringValue("Center"))
-                        )
-                    )
-                )
-            )
-        )
-    }
+    private fun tileBytes(value: Int): ByteArray = byteArrayOf(value.toByte())
 
-    private fun multiPartLineVectorTile(): VectorraMvtTile {
-        return VectorraMvtTile(
-            layers = listOf(
-                VectorraMvtLayer(
-                    name = "roads",
-                    version = 2,
-                    extent = 4096,
-                    features = listOf(
-                        VectorraMvtFeature(
-                            id = 42L,
-                            layerName = "roads",
-                            geometry = VectorraMvtGeometry.LineString(
-                                listOf(
-                                    listOf(
-                                        VectorraMvtPoint(0, 2048),
-                                        VectorraMvtPoint(1024, 2048)
-                                    ),
-                                    listOf(
-                                        VectorraMvtPoint(2048, 2048),
-                                        VectorraMvtPoint(4096, 2048)
-                                    )
-                                )
-                            ),
-                            properties = mapOf("name" to VectorraMvtValue.StringValue("Split Road"))
-                        )
-                    )
+    private fun queryFeature(id: String, layerName: String, name: String): VectorraMvtDecodedFeature {
+        return VectorraMvtDecodedFeature(
+            id = id,
+            layerName = layerName,
+            geometry = VectorraAnnotationGeometry.LineString(
+                listOf(
+                    VectorraCoordinate(-1.0, 0.0),
+                    VectorraCoordinate(1.0, 0.0)
                 )
-            )
+            ),
+            properties = mapOf("name" to name)
         )
     }
 
     private class RecordingMvtRenderer : VectorraMvtNativeRenderer {
-        val renderedInputs = mutableListOf<VectorraMvtRenderTileInput>()
-        val renderedHandles = mutableListOf<String>()
+        val queryFeaturesByTileId = linkedMapOf<VectorraMvtTileId, List<VectorraMvtDecodedFeature>>()
+        val submittedRequests = mutableListOf<VectorraMvtNativeTileRequest>()
+        val renderedToggles = mutableListOf<Pair<String, Boolean>>()
         val removedTileHandles = mutableListOf<String>()
         val removedLayers = mutableListOf<String>()
         val events = mutableListOf<String>()
 
-        override fun renderTile(input: VectorraMvtRenderTileInput): String {
-            renderedInputs += input
-            renderedHandles += input.nativeTileHandle
-            events += "render:${input.nativeTileHandle}"
-            return input.nativeTileHandle
+        override fun submitTile(request: VectorraMvtNativeTileRequest): VectorraMvtSubmittedTile {
+            submittedRequests += request
+            events += "submit:${request.nativeTileHandle}:${request.renderNow}"
+            return VectorraMvtSubmittedTile(
+                nativeTileHandle = request.nativeTileHandle,
+                queryFeatures = queryFeaturesByTileId[request.tileId].orEmpty()
+            )
+        }
+
+        override fun setTileRendered(nativeTileHandle: String, rendered: Boolean) {
+            renderedToggles += nativeTileHandle to rendered
+            events += "rendered:$nativeTileHandle:$rendered"
         }
 
         override fun removeTile(nativeTileHandle: String) {
