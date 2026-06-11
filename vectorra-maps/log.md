@@ -4846,3 +4846,38 @@ Results:
 Known issues / next:
 
 - Native renderer callbacks still call into Java while holding the renderer mutex; this should be moved to lock-free/lock-outside dispatch if gesture latency or lifecycle crashes persist under heavy resource loading.
+
+## 2026-06-11
+
+### Gesture Motion Pipeline Coalescing
+
+Completed:
+
+- Audited all continuous gesture paths: one-finger pan, two-finger pan, pinch zoom, rotate, pitch, fling, double tap zoom, and two-finger zoom-out.
+- Removed high-frequency gesture events from the renderer mutex and rocky `onNextUpdate` queue path.
+- Added a native motion accumulator guarded by a short-lived motion mutex; UI-thread JNI gesture calls now only merge deltas and return.
+- Moved pan, zoom, zoom-at-focus, rotate, pitch, and fling application to the render thread, where all pending deltas are consumed at most once per frame.
+- Reduced pinch zoom terrain picking from every `ACTION_MOVE` to at most once per rendered frame, eliminating command backlog and renderer-mutex stalls on the input thread.
+- Kept render-state reads protected by the renderer mutex while consuming motion, so surface lifecycle and camera state remain synchronized.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-sample:assembleDebug
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+adb -s emulator-5554 install -r -d -t .\vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+adb -s emulator-5554 shell am start -n com.vectorra.sample/.MainActivity
+adb -s emulator-5554 shell input swipe 800 900 250 900 450
+adb -s emulator-5554 shell input swipe 250 900 800 900 450
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed for `arm64-v8a` and `x86_64`, including native compilation.
+- `:vectorra-maps:testDebugUnitTest` passed.
+- New x86_64 APK installed on `emulator-5554`.
+- Sample app launched and repeated swipe gestures completed without `FATAL EXCEPTION`, `AndroidRuntime`, ANR, or `vectorra_jni` crash logs.
+
+Known issues / next:
+
+- The local ADB `input` command does not provide a reliable multi-touch pinch primitive, so pinch was verified through the rebuilt native path and code inspection rather than automated two-finger input.

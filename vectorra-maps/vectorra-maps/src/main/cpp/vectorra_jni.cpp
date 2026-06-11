@@ -137,6 +137,34 @@ namespace
         ScreenToCoordinateResult result;
     };
 
+    struct PendingGestureMotion
+    {
+        bool hasPan = false;
+        double panDeltaX = 0.0;
+        double panDeltaY = 0.0;
+        int panViewWidth = 1;
+        int panViewHeight = 1;
+
+        bool hasZoom = false;
+        bool zoomAtFocus = false;
+        double scale = 1.0;
+        double focusX = 0.0;
+        double focusY = 0.0;
+        int zoomViewWidth = 1;
+        int zoomViewHeight = 1;
+
+        bool hasRotate = false;
+        double rotateDegrees = 0.0;
+
+        bool hasPitch = false;
+        double pitchDegrees = 0.0;
+
+        bool empty() const
+        {
+            return !hasPan && !hasZoom && !hasRotate && !hasPitch;
+        }
+    };
+
     const char* vkResultName(VkResult result)
     {
         switch (result)
@@ -2119,8 +2147,8 @@ namespace
             double targetHeightMeters,
             long durationMillis)
         {
+            clearPendingMotion();
             std::lock_guard<std::mutex> lock(mutex);
-            cancelFlingLocked();
             setCachedCameraStateLocked(NativeCameraState{
                 wrapLongitude(longitude),
                 clampLatitude(latitude),
@@ -2144,18 +2172,7 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            queueCameraCommandLocked([this, deltaX, deltaY, viewWidth, viewHeight](rocky::Application* activeApp)
-            {
-                auto manipulator = manipulatorFor(activeApp);
-                if (!manipulator)
-                {
-                    return false;
-                }
-                const auto delta = normalizedPixelDelta(deltaX, deltaY, viewWidth, viewHeight);
-                manipulator->pan(delta.x, delta.y);
-                return true;
-            });
+            enqueuePanGesture(deltaX, deltaY, viewWidth, viewHeight);
         }
 
         void zoomByScale(float scale)
@@ -2164,18 +2181,7 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            queueCameraCommandLocked([scale](rocky::Application* activeApp)
-            {
-                auto manipulator = manipulatorFor(activeApp);
-                if (!manipulator)
-                {
-                    return false;
-                }
-                const double zoomDelta = 1.0 / static_cast<double>(scale) - 1.0;
-                manipulator->zoom(0.0, zoomDelta);
-                return true;
-            });
+            enqueueZoomGesture(scale);
         }
 
         void zoomByScaleAt(float scale, float focusX, float focusY, int viewWidth, int viewHeight)
@@ -2186,11 +2192,7 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            queueCameraCommandLocked([this, scale, focusX, focusY, viewWidth, viewHeight](rocky::Application* activeApp)
-            {
-                return zoomByScaleAtOnUpdate(activeApp, scale, focusX, focusY, viewWidth, viewHeight);
-            });
+            enqueueZoomAtGesture(scale, focusX, focusY, viewWidth, viewHeight);
         }
 
         void rotateByDegrees(double deltaDegrees)
@@ -2199,17 +2201,7 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            queueCameraCommandLocked([deltaDegrees](rocky::Application* activeApp)
-            {
-                auto manipulator = manipulatorFor(activeApp);
-                if (!manipulator)
-                {
-                    return false;
-                }
-                manipulator->rotate((-deltaDegrees * PI / 180.0), 0.0);
-                return true;
-            });
+            enqueueRotateGesture(deltaDegrees);
         }
 
         void pitchByDegrees(double deltaDegrees)
@@ -2218,17 +2210,7 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            queueCameraCommandLocked([deltaDegrees](rocky::Application* activeApp)
-            {
-                auto manipulator = manipulatorFor(activeApp);
-                if (!manipulator)
-                {
-                    return false;
-                }
-                manipulator->rotate(0.0, deltaDegrees * PI / 180.0);
-                return true;
-            });
+            enqueuePitchGesture(deltaDegrees);
         }
 
         void flingByVelocity(float velocityX, float velocityY, int viewWidth, int viewHeight)
@@ -2237,24 +2219,23 @@ namespace
             {
                 return;
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            if (!app)
+            if (!running.load())
             {
                 return;
             }
+            std::lock_guard<std::mutex> lock(motionMutex);
             flingVelocityX = velocityX;
             flingVelocityY = velocityY;
             flingViewWidth = viewWidth;
             flingViewHeight = viewHeight;
             flingActive = true;
             flingLastTick = std::chrono::steady_clock::now();
-            requestFrameLocked();
         }
 
         void cancelCameraMotion()
         {
+            clearPendingMotion();
             std::lock_guard<std::mutex> lock(mutex);
-            cancelFlingLocked();
             if (app)
             {
                 queueCameraCommandLocked([](rocky::Application* activeApp)
@@ -2272,8 +2253,7 @@ namespace
 
         void cancelFling()
         {
-            std::lock_guard<std::mutex> lock(mutex);
-            cancelFlingLocked();
+            clearPendingMotion();
         }
 
         std::vector<double> projectCoordinates(const std::vector<double>& lonLatHeight)
@@ -3381,6 +3361,13 @@ namespace
                         {
                             try
                             {
+                                {
+                                    std::lock_guard<std::mutex> motionServiceLock(mutex);
+                                    if (app.get() == activeApp)
+                                    {
+                                        servicePendingMotionOnRenderThread(activeApp);
+                                    }
+                                }
                                 if (!activeApp->frame())
                                 {
                                     __android_log_print(ANDROID_LOG_WARN, TAG, "rocky frame returned false");
@@ -3399,11 +3386,10 @@ namespace
                                     std::lock_guard<std::mutex> statusLock(mutex);
                                     if (app.get() == activeApp)
                                     {
-                                        const bool flingChangedCamera = serviceFlingLocked(activeApp);
                                         updateProjectionSnapshotLocked(activeApp);
                                         const bool nativeChangedCamera =
                                             syncCameraStateFromManipulatorLocked(activeApp, false);
-                                        if (flingChangedCamera || nativeChangedCamera)
+                                        if (nativeChangedCamera)
                                         {
                                             emitCameraStateLocked(currentCameraState());
                                         }
@@ -3468,7 +3454,7 @@ namespace
         {
             running = false;
             terrainExaggerationUpdateQueued = false;
-            cancelFlingLocked();
+            clearPendingMotion();
             if (renderThread.joinable())
             {
                 auto thread = std::move(renderThread);
@@ -3866,16 +3852,132 @@ namespace
             return true;
         }
 
-        void cancelFlingLocked()
+        void cancelFlingMotionLocked()
         {
             flingActive = false;
             flingVelocityX = 0.0;
             flingVelocityY = 0.0;
         }
 
-        bool serviceFlingLocked(rocky::Application* activeApp)
+        void clearPendingMotion()
         {
-            if (!flingActive)
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture = PendingGestureMotion{};
+            cancelFlingMotionLocked();
+        }
+
+        void enqueuePanGesture(float deltaX, float deltaY, int viewWidth, int viewHeight)
+        {
+            if (!running.load())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture.hasPan = true;
+            pendingGesture.panDeltaX += deltaX;
+            pendingGesture.panDeltaY += deltaY;
+            pendingGesture.panViewWidth = viewWidth;
+            pendingGesture.panViewHeight = viewHeight;
+        }
+
+        void enqueueZoomGesture(float scale)
+        {
+            if (!running.load())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture.hasZoom = true;
+            pendingGesture.scale = std::clamp(
+                pendingGesture.scale * static_cast<double>(scale),
+                1.0e-6,
+                1.0e6);
+        }
+
+        void enqueueZoomAtGesture(float scale, float focusX, float focusY, int viewWidth, int viewHeight)
+        {
+            if (!running.load())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture.hasZoom = true;
+            pendingGesture.zoomAtFocus = true;
+            pendingGesture.scale = std::clamp(
+                pendingGesture.scale * static_cast<double>(scale),
+                1.0e-6,
+                1.0e6);
+            pendingGesture.focusX = focusX;
+            pendingGesture.focusY = focusY;
+            pendingGesture.zoomViewWidth = viewWidth;
+            pendingGesture.zoomViewHeight = viewHeight;
+        }
+
+        void enqueueRotateGesture(double deltaDegrees)
+        {
+            if (!running.load())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture.hasRotate = true;
+            pendingGesture.rotateDegrees += deltaDegrees;
+        }
+
+        void enqueuePitchGesture(double deltaDegrees)
+        {
+            if (!running.load())
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(motionMutex);
+            pendingGesture.hasPitch = true;
+            pendingGesture.pitchDegrees += deltaDegrees;
+        }
+
+        bool servicePendingMotionOnRenderThread(rocky::Application* activeApp)
+        {
+            PendingGestureMotion gesture;
+            bool hasFlingDelta = false;
+            float flingDeltaX = 0.0f;
+            float flingDeltaY = 0.0f;
+            int flingWidth = 1;
+            int flingHeight = 1;
+
+            {
+                std::lock_guard<std::mutex> lock(motionMutex);
+                if (!pendingGesture.empty())
+                {
+                    gesture = pendingGesture;
+                    pendingGesture = PendingGestureMotion{};
+                }
+
+                if (flingActive)
+                {
+                    const auto now = std::chrono::steady_clock::now();
+                    double dt = std::chrono::duration<double>(now - flingLastTick).count();
+                    flingLastTick = now;
+                    dt = std::clamp(dt, 0.0, 0.05);
+                    if (dt > 0.0)
+                    {
+                        flingDeltaX = static_cast<float>(flingVelocityX * dt);
+                        flingDeltaY = static_cast<float>(flingVelocityY * dt);
+                        flingWidth = flingViewWidth;
+                        flingHeight = flingViewHeight;
+                        hasFlingDelta = true;
+
+                        const double decay = std::exp(-FLING_DECAY_PER_SECOND * dt);
+                        flingVelocityX *= decay;
+                        flingVelocityY *= decay;
+                        if (std::hypot(flingVelocityX, flingVelocityY) <= FLING_STOP_VELOCITY_PIXELS_PER_SECOND)
+                        {
+                            cancelFlingMotionLocked();
+                        }
+                    }
+                }
+            }
+
+            if (gesture.empty() && !hasFlingDelta)
             {
                 return false;
             }
@@ -3883,36 +3985,62 @@ namespace
             auto manipulator = manipulatorFor(activeApp);
             if (!manipulator)
             {
-                cancelFlingLocked();
+                std::lock_guard<std::mutex> lock(motionMutex);
+                cancelFlingMotionLocked();
                 return false;
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            double dt = std::chrono::duration<double>(now - flingLastTick).count();
-            flingLastTick = now;
-            dt = std::clamp(dt, 0.0, 0.05);
-            if (dt <= 0.0)
+            bool changed = false;
+            if (gesture.hasPan)
             {
-                return false;
+                const auto delta = normalizedPixelDelta(
+                    static_cast<float>(gesture.panDeltaX),
+                    static_cast<float>(gesture.panDeltaY),
+                    gesture.panViewWidth,
+                    gesture.panViewHeight);
+                manipulator->pan(delta.x, delta.y);
+                changed = true;
             }
-
-            const float deltaX = static_cast<float>(flingVelocityX * dt);
-            const float deltaY = static_cast<float>(flingVelocityY * dt);
-            const auto delta = normalizedPixelDelta(deltaX, deltaY, flingViewWidth, flingViewHeight);
-            manipulator->pan(delta.x, delta.y);
-
-            const double decay = std::exp(-FLING_DECAY_PER_SECOND * dt);
-            flingVelocityX *= decay;
-            flingVelocityY *= decay;
-            if (std::hypot(flingVelocityX, flingVelocityY) <= FLING_STOP_VELOCITY_PIXELS_PER_SECOND)
+            if (gesture.hasZoom)
             {
-                cancelFlingLocked();
+                if (gesture.zoomAtFocus)
+                {
+                    changed = zoomByScaleAtOnUpdate(
+                        activeApp,
+                        static_cast<float>(gesture.scale),
+                        static_cast<float>(gesture.focusX),
+                        static_cast<float>(gesture.focusY),
+                        gesture.zoomViewWidth,
+                        gesture.zoomViewHeight) || changed;
+                }
+                else
+                {
+                    const double zoomDelta = 1.0 / gesture.scale - 1.0;
+                    manipulator->zoom(0.0, zoomDelta);
+                    changed = true;
+                }
             }
-            else if (activeApp && activeApp->vsgcontext)
+            if (gesture.hasRotate)
+            {
+                manipulator->rotate((-gesture.rotateDegrees * PI / 180.0), 0.0);
+                changed = true;
+            }
+            if (gesture.hasPitch)
+            {
+                manipulator->rotate(0.0, gesture.pitchDegrees * PI / 180.0);
+                changed = true;
+            }
+            if (hasFlingDelta)
+            {
+                const auto delta = normalizedPixelDelta(flingDeltaX, flingDeltaY, flingWidth, flingHeight);
+                manipulator->pan(delta.x, delta.y);
+                changed = true;
+            }
+            if (changed && activeApp && activeApp->vsgcontext)
             {
                 activeApp->vsgcontext->requestFrame();
             }
-            return true;
+            return changed;
         }
 
         bool cameraStatesClose(const NativeCameraState& lhs, const NativeCameraState& rhs) const
@@ -5872,7 +6000,7 @@ namespace
                 return;
             }
 
-            cancelFlingLocked();
+            clearPendingMotion();
             const auto viewpoint = viewpointForCameraState(cameraState, effectiveRenderHeight());
             manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
             syncCameraStateFromManipulatorLocked(activeApp, true);
@@ -5952,6 +6080,9 @@ namespace
         NativeCameraState cameraState;
         float terrainExaggeration = 1.0f;
         bool terrainExaggerationUpdateQueued = false;
+
+        std::mutex motionMutex;
+        PendingGestureMotion pendingGesture;
         bool flingActive = false;
         double flingVelocityX = 0.0;
         double flingVelocityY = 0.0;
