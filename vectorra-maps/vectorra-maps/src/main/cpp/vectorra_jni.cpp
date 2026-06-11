@@ -14,6 +14,7 @@
 #include <rocky/GeoPoint.h>
 #include <rocky/TMSImageLayer.h>
 #include <rocky/TMSElevationLayer.h>
+#include <rocky/URI.h>
 #include <rocky/Units.h>
 #include <rocky/Viewpoint.h>
 #include <rocky/Color.h>
@@ -48,13 +49,16 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <cmath>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -85,6 +89,12 @@ namespace
     constexpr int COORDINATE_PROJECTION_INPUT_STRIDE = 3;
     constexpr int COORDINATE_PROJECTION_OUTPUT_STRIDE = 3;
     constexpr int SCREEN_TO_COORDINATE_OUTPUT_STRIDE = 3;
+    constexpr int MVT_MAX_COVER_ZOOM = 30;
+    constexpr int MVT_DECODED_TILE_CACHE_SIZE = 256;
+    constexpr int MVT_PREFETCH_ZOOM_DELTA = 4;
+    constexpr int MVT_PREFETCH_PADDING_TILES = 1;
+    constexpr int MVT_COVER_SAMPLE_GRID = 5;
+    constexpr double MVT_MERCATOR_MAX_LATITUDE = 85.0511287798066;
 
     struct NativeCameraState
     {
@@ -572,6 +582,80 @@ namespace
         std::string nativeTileHandle;
         std::string errorMessage;
         MvtQuerySnapshot query;
+    };
+
+    struct MvtTileId
+    {
+        int z = 0;
+        int x = 0;
+        int y = 0;
+
+        bool operator<(const MvtTileId& rhs) const
+        {
+            if (z != rhs.z) return z < rhs.z;
+            if (x != rhs.x) return x < rhs.x;
+            return y < rhs.y;
+        }
+
+        bool operator==(const MvtTileId& rhs) const
+        {
+            return z == rhs.z && x == rhs.x && y == rhs.y;
+        }
+    };
+
+    struct MvtLayerConfig
+    {
+        std::string sourceId;
+        std::string layerId;
+        std::string sourceLayer;
+        std::string templateUrl;
+        int sourceMinZoom = 0;
+        int sourceMaxZoom = 14;
+        int layerMinZoom = 0;
+        int layerMaxZoom = 24;
+        int tileSize = 512;
+        std::string scheme = "XYZ";
+        MvtRenderStyleConfig style;
+        std::vector<std::pair<std::string, std::string>> headers;
+    };
+
+    struct MvtLoadedTile
+    {
+        MvtRenderTileConfig config;
+        MvtQuerySnapshot query;
+        std::uint64_t lastTouched = 0;
+        bool active = false;
+    };
+
+    struct MvtTileLoadJobResult
+    {
+        std::string layerId;
+        MvtTileId tileId;
+        std::uint64_t generation = 0;
+        bool success = false;
+        bool idealAtRequest = false;
+        std::string errorMessage;
+        MvtRenderTileConfig config;
+        MvtQuerySnapshot query;
+    };
+
+    struct MvtPendingTileLoad
+    {
+        std::uint64_t generation = 0;
+        bool ideal = false;
+        rocky::Future<MvtTileLoadJobResult> future;
+    };
+
+    struct MvtLayerRuntime
+    {
+        MvtLayerConfig config;
+        std::uint64_t generation = 0;
+        std::uint64_t touchCounter = 0;
+        std::map<MvtTileId, MvtLoadedTile> loadedTiles;
+        std::map<MvtTileId, MvtPendingTileLoad> pendingTiles;
+        std::set<MvtTileId> activeTiles;
+        std::set<MvtTileId> idealTiles;
+        std::set<MvtTileId> prefetchTiles;
     };
 
     struct MvtByteView
@@ -1357,6 +1441,346 @@ namespace
         return query;
     }
 
+    std::string mvtTileHandle(const std::string& layerId, const MvtTileId& tileId)
+    {
+        return layerId + ":" +
+            std::to_string(tileId.z) + "/" +
+            std::to_string(tileId.x) + "/" +
+            std::to_string(tileId.y);
+    }
+
+    void appendMvtQuerySnapshotForLayer(
+        MvtQuerySnapshot& target,
+        const MvtQuerySnapshot& source,
+        const std::string& renderLayerId)
+    {
+        for (std::size_t index = 0; index < source.featureIds.size(); ++index)
+        {
+            target.featureIds.push_back(source.featureIds[index]);
+            target.sourceLayers.push_back(source.sourceLayers[index]);
+            target.geometryTypes.push_back(source.geometryTypes[index]);
+
+            const int coordinateStart = source.coordinateOffsets[index];
+            const int coordinateEnd = source.coordinateOffsets[index + 1];
+            target.coordinates.insert(
+                target.coordinates.end(),
+                source.coordinates.begin() + coordinateStart,
+                source.coordinates.begin() + coordinateEnd);
+            target.coordinateOffsets.push_back(static_cast<int>(target.coordinates.size()));
+
+            const int ringStart = source.ringOffsets[index];
+            const int ringEnd = source.ringOffsets[index + 1];
+            for (int ringIndex = ringStart; ringIndex < ringEnd; ++ringIndex)
+            {
+                target.ringEnds.push_back(source.ringEnds[ringIndex]);
+            }
+            target.ringOffsets.push_back(static_cast<int>(target.ringEnds.size()));
+
+            const int propertyStart = source.propertyOffsets[index];
+            const int propertyEnd = source.propertyOffsets[index + 1];
+            for (int propertyIndex = propertyStart; propertyIndex < propertyEnd; ++propertyIndex)
+            {
+                target.propertyKeys.push_back(source.propertyKeys[propertyIndex]);
+                target.propertyValues.push_back(source.propertyValues[propertyIndex]);
+            }
+            target.propertyKeys.push_back("__vectorra-render-layer");
+            target.propertyValues.push_back(renderLayerId);
+            target.propertyOffsets.push_back(static_cast<int>(target.propertyKeys.size()));
+        }
+    }
+
+    void replaceAll(std::string& value, const std::string& token, const std::string& replacement)
+    {
+        std::size_t cursor = 0;
+        while ((cursor = value.find(token, cursor)) != std::string::npos)
+        {
+            value.replace(cursor, token.size(), replacement);
+            cursor += replacement.size();
+        }
+    }
+
+    int mvtTmsRequestY(int z, int y)
+    {
+        if (z < 0 || z > MVT_MAX_COVER_ZOOM)
+        {
+            return y;
+        }
+        const int maxY = (1 << z) - 1;
+        return std::max(0, maxY - y);
+    }
+
+    std::string mvtTileUrl(const MvtLayerConfig& config, const MvtTileId& tileId)
+    {
+        const int requestY = config.scheme == "TMS"
+            ? mvtTmsRequestY(tileId.z, tileId.y)
+            : tileId.y;
+        std::string url = config.templateUrl;
+        replaceAll(url, "${z}", std::to_string(tileId.z));
+        replaceAll(url, "${x}", std::to_string(tileId.x));
+        replaceAll(url, "${y}", std::to_string(requestY));
+        replaceAll(url, "{z}", std::to_string(tileId.z));
+        replaceAll(url, "{x}", std::to_string(tileId.x));
+        replaceAll(url, "{y}", std::to_string(requestY));
+        return url;
+    }
+
+    MvtRenderTileConfig mvtBaseTileConfig(const MvtLayerConfig& layer, const MvtTileId& tileId, bool rendered)
+    {
+        MvtRenderTileConfig config;
+        config.sourceId = layer.sourceId;
+        config.layerId = layer.layerId;
+        config.sourceLayer = layer.sourceLayer;
+        config.tileZ = tileId.z;
+        config.tileX = tileId.x;
+        config.tileY = tileId.y;
+        config.style = layer.style;
+        config.rendered = rendered;
+        return config;
+    }
+
+    MvtTileLoadJobResult loadMvtTileJob(
+        MvtLayerConfig layer,
+        MvtTileId tileId,
+        std::uint64_t generation,
+        bool idealAtRequest,
+        rocky::IOOptions io,
+        rocky::Cancelable& cancelable)
+    {
+        MvtTileLoadJobResult result;
+        result.layerId = layer.layerId;
+        result.tileId = tileId;
+        result.generation = generation;
+        result.idealAtRequest = idealAtRequest;
+        result.config = mvtBaseTileConfig(layer, tileId, false);
+
+        if (cancelable.canceled())
+        {
+            result.errorMessage = "MVT tile load canceled.";
+            return result;
+        }
+
+        try
+        {
+            rocky::URI::Context uriContext;
+            for (const auto& header : layer.headers)
+            {
+                uriContext.headers.emplace_back(header.first, header.second);
+            }
+            const auto url = mvtTileUrl(layer, tileId);
+            auto response = rocky::URI(url, uriContext).read(io.with(cancelable));
+            if (response.failed())
+            {
+                result.errorMessage = response.error().string();
+                return result;
+            }
+            if (cancelable.canceled())
+            {
+                result.errorMessage = "MVT tile load canceled.";
+                return result;
+            }
+
+            const auto& data = response.value().content.data;
+            if (data.empty())
+            {
+                result.errorMessage = "MVT tile response was empty.";
+                return result;
+            }
+            std::vector<std::uint8_t> bytes(data.begin(), data.end());
+            result.query = decodeMvtTileBytesIntoConfig(bytes, result.config);
+            if (!std::all_of(result.config.coordinates.begin(), result.config.coordinates.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }) ||
+                !std::all_of(result.query.coordinates.begin(), result.query.coordinates.end(), [](double value)
+                {
+                    return std::isfinite(value);
+                }))
+            {
+                result.errorMessage = "MVT tile decoded to non-finite coordinates.";
+                return result;
+            }
+            result.success = true;
+            return result;
+        }
+        catch (const std::exception& error)
+        {
+            result.errorMessage = error.what();
+            return result;
+        }
+    }
+
+    int mvtFloorMod(int value, int modulus)
+    {
+        const int remainder = value % modulus;
+        return remainder < 0 ? remainder + modulus : remainder;
+    }
+
+    double mvtWrappedLongitude(double longitude)
+    {
+        if (!std::isfinite(longitude))
+        {
+            return 0.0;
+        }
+        double result = std::fmod(longitude + 180.0, 360.0);
+        if (result < 0.0)
+        {
+            result += 360.0;
+        }
+        return result - 180.0;
+    }
+
+    double mvtMercatorTileX(double longitude, int z)
+    {
+        const double tileCount = static_cast<double>(1 << z);
+        return (mvtWrappedLongitude(longitude) + 180.0) / 360.0 * tileCount;
+    }
+
+    double mvtMercatorTileY(double latitude, int z)
+    {
+        const double tileCount = static_cast<double>(1 << z);
+        const double clampedLatitude = std::clamp(
+            std::isfinite(latitude) ? latitude : 0.0,
+            -MVT_MERCATOR_MAX_LATITUDE,
+            MVT_MERCATOR_MAX_LATITUDE);
+        const double sinLatitude = std::sin(clampedLatitude * PI / 180.0);
+        return (0.5 - std::log((1.0 + sinLatitude) / (1.0 - sinLatitude)) / (4.0 * PI)) * tileCount;
+    }
+
+    bool mvtLayerVisibleAtZoom(const MvtLayerConfig& config, double zoom)
+    {
+        return config.style.visible &&
+            config.layerMinZoom <= config.layerMaxZoom &&
+            zoom >= static_cast<double>(std::max(config.sourceMinZoom, config.layerMinZoom)) &&
+            zoom <= static_cast<double>(config.layerMaxZoom);
+    }
+
+    int mvtIdealTileZoom(const MvtLayerConfig& config, double zoom)
+    {
+        return std::clamp(
+            static_cast<int>(std::floor(std::isfinite(zoom) ? zoom : 0.0)),
+            std::clamp(config.sourceMinZoom, 0, MVT_MAX_COVER_ZOOM),
+            std::clamp(std::max(config.sourceMinZoom, config.sourceMaxZoom), 0, MVT_MAX_COVER_ZOOM));
+    }
+
+    MvtTileId mvtParentTileId(const MvtTileId& tileId)
+    {
+        return MvtTileId{
+            tileId.z - 1,
+            tileId.x / 2,
+            tileId.y / 2};
+    }
+
+    std::array<MvtTileId, 4> mvtChildTileIds(const MvtTileId& tileId)
+    {
+        const int childZ = tileId.z + 1;
+        const int childX = tileId.x * 2;
+        const int childY = tileId.y * 2;
+        return {
+            MvtTileId{childZ, childX, childY},
+            MvtTileId{childZ, childX + 1, childY},
+            MvtTileId{childZ, childX, childY + 1},
+            MvtTileId{childZ, childX + 1, childY + 1}};
+    }
+
+    bool mvtTileIsInside(const MvtTileId& tileId, const MvtTileId& ancestor)
+    {
+        if (tileId.z < ancestor.z)
+        {
+            return false;
+        }
+        const int scale = 1 << (tileId.z - ancestor.z);
+        return tileId.x / scale == ancestor.x && tileId.y / scale == ancestor.y;
+    }
+
+    bool mvtLoadedDescendantCover(
+        const MvtTileId& tileId,
+        const std::set<MvtTileId>& loadedTileIds,
+        int maxZoom,
+        std::set<MvtTileId>& output)
+    {
+        if (loadedTileIds.find(tileId) != loadedTileIds.end())
+        {
+            output.insert(tileId);
+            return true;
+        }
+        if (tileId.z >= maxZoom)
+        {
+            return false;
+        }
+        const bool hasDescendant = std::any_of(loadedTileIds.begin(), loadedTileIds.end(), [&](const MvtTileId& loaded)
+        {
+            return mvtTileIsInside(loaded, tileId);
+        });
+        if (!hasDescendant)
+        {
+            return false;
+        }
+        std::set<MvtTileId> cover;
+        for (const auto& child : mvtChildTileIds(tileId))
+        {
+            if (!mvtLoadedDescendantCover(child, loadedTileIds, maxZoom, cover))
+            {
+                return false;
+            }
+        }
+        output.insert(cover.begin(), cover.end());
+        return true;
+    }
+
+    std::optional<MvtTileId> mvtLoadedParentTile(
+        MvtTileId tileId,
+        const std::set<MvtTileId>& loadedTileIds,
+        int minZoom)
+    {
+        while (tileId.z > minZoom)
+        {
+            tileId = mvtParentTileId(tileId);
+            if (loadedTileIds.find(tileId) != loadedTileIds.end())
+            {
+                return tileId;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::set<MvtTileId> mvtRenderTileIds(
+        const std::set<MvtTileId>& idealTileIds,
+        const std::set<MvtTileId>& loadedTileIds,
+        int minZoom,
+        int maxZoom)
+    {
+        std::set<MvtTileId> renderTiles;
+        if (idealTileIds.empty() || loadedTileIds.empty())
+        {
+            return renderTiles;
+        }
+        int maxLoadedZoom = minZoom;
+        for (const auto& loaded : loadedTileIds)
+        {
+            maxLoadedZoom = std::max(maxLoadedZoom, loaded.z);
+        }
+        const int childCoverMaxZoom = std::min(maxZoom, maxLoadedZoom);
+        for (const auto& ideal : idealTileIds)
+        {
+            if (loadedTileIds.find(ideal) != loadedTileIds.end())
+            {
+                renderTiles.insert(ideal);
+                continue;
+            }
+            std::set<MvtTileId> childCover;
+            if (mvtLoadedDescendantCover(ideal, loadedTileIds, childCoverMaxZoom, childCover))
+            {
+                renderTiles.insert(childCover.begin(), childCover.end());
+                continue;
+            }
+            if (auto parent = mvtLoadedParentTile(ideal, loadedTileIds, minZoom))
+            {
+                renderTiles.insert(*parent);
+            }
+        }
+        return renderTiles;
+    }
+
     struct LabelAnnotationConfig
     {
         std::string id;
@@ -2011,6 +2435,7 @@ namespace
             std::lock_guard<std::mutex> lock(mutex);
             rasterLayers.erase(id);
             rasterLayerOrder.erase(std::remove(rasterLayerOrder.begin(), rasterLayerOrder.end(), id), rasterLayerOrder.end());
+            removeMvtLayerLocked(id);
             if (app)
             {
                 queueRemoveLayerLocked(id);
@@ -2221,6 +2646,16 @@ namespace
                 {
                     queueRasterLayerStyleLocked(id, itr->second);
                 }
+            }
+            auto mvtItr = mvtLayers.find(id);
+            if (mvtItr != mvtLayers.end())
+            {
+                mvtItr->second.config.style.visible = visible;
+                if (!visible)
+                {
+                    setMvtLayerActiveTilesLocked(mvtItr->second, {});
+                }
+                requestFrameLocked();
             }
         }
 
@@ -2475,209 +2910,69 @@ namespace
                 layer->setViewportHeight(height);
         }
 
-        std::string renderMvtTile(const MvtRenderTileConfig& config)
+        void addMvtLayer(const MvtLayerConfig& config)
         {
-            if (config.sourceId.empty() || config.layerId.empty())
+            if (config.sourceId.empty() ||
+                config.layerId.empty() ||
+                config.sourceLayer.empty() ||
+                config.templateUrl.empty())
             {
-                return "";
+                return;
             }
-            if (config.tileZ < 0 || config.tileX < 0 || config.tileY < 0)
+            if (config.sourceMinZoom < 0 ||
+                config.sourceMaxZoom < config.sourceMinZoom ||
+                config.layerMinZoom < 0 ||
+                config.layerMaxZoom < config.layerMinZoom ||
+                config.sourceMaxZoom > MVT_MAX_COVER_ZOOM)
             {
-                return "";
+                return;
             }
-            const auto featureCount = config.featureIds.size();
-            if (featureCount != config.sourceLayers.size() ||
-                featureCount != config.geometryTypes.size() ||
-                config.coordinateOffsets.size() != featureCount + 1 ||
-                config.ringOffsets.size() != featureCount + 1)
-            {
-                __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    TAG,
-                    "rejecting MVT tile layer=%s z=%d x=%d y=%d with inconsistent feature arrays",
-                    config.layerId.c_str(),
-                    config.tileZ,
-                    config.tileX,
-                    config.tileY);
-                return "";
-            }
-            if (!std::all_of(config.coordinates.begin(), config.coordinates.end(), [](double value)
-                {
-                    return std::isfinite(value);
-                }) ||
-                !std::isfinite(config.style.opacity) ||
+            if (!std::isfinite(config.style.opacity) ||
                 !std::isfinite(config.style.widthPixels) ||
                 !std::isfinite(config.style.radiusPixels) ||
                 !std::isfinite(config.style.textSizeSp))
             {
-                __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    TAG,
-                    "rejecting MVT tile layer=%s z=%d x=%d y=%d with non-finite values",
-                    config.layerId.c_str(),
-                    config.tileZ,
-                    config.tileX,
-                    config.tileY);
-                return "";
+                return;
             }
-
-            const std::string handle =
-                config.layerId + ":" +
-                std::to_string(config.tileZ) + "/" +
-                std::to_string(config.tileX) + "/" +
-                std::to_string(config.tileY);
 
             std::lock_guard<std::mutex> lock(mutex);
-            auto currentConfig = config;
-            currentConfig.revision = nextMvtTileRevisionLocked(handle);
-            mvtTiles[handle] = currentConfig;
-            if (app)
-            {
-                queueApplyMvtTileLocked(handle, currentConfig);
-            }
+            removeMvtLayerLocked(config.layerId);
+            MvtLayerRuntime runtime;
+            runtime.config = config;
+            runtime.generation = ++mvtLayerGenerationCounter;
+            mvtLayers[config.layerId] = std::move(runtime);
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
-                "registered MVT render tile handle=%s revision=%llu source=%s style=%s features=%zu coordinates=%zu visible=%d",
-                handle.c_str(),
-                static_cast<unsigned long long>(currentConfig.revision),
-                config.sourceId.c_str(),
-                config.style.kind.c_str(),
-                featureCount,
-                config.coordinates.size() / 2,
-                config.style.visible ? 1 : 0);
-            return handle;
-        }
-
-        MvtSubmitResult submitMvtTileBytes(
-            const MvtRenderTileConfig& baseConfig,
-            const std::vector<std::uint8_t>& tileBytes)
-        {
-            MvtSubmitResult result;
-            if (baseConfig.sourceId.empty() || baseConfig.layerId.empty() || baseConfig.sourceLayer.empty())
-            {
-                result.errorMessage = "MVT tile sourceId, layerId, and sourceLayer must not be blank.";
-                return result;
-            }
-            if (baseConfig.tileZ < 0 || baseConfig.tileX < 0 || baseConfig.tileY < 0)
-            {
-                result.errorMessage = "MVT tile coordinates must be non-negative.";
-                return result;
-            }
-            if (tileBytes.empty())
-            {
-                result.errorMessage = "MVT tile bytes must not be empty.";
-                return result;
-            }
-            if (!std::isfinite(baseConfig.style.opacity) ||
-                !std::isfinite(baseConfig.style.widthPixels) ||
-                !std::isfinite(baseConfig.style.radiusPixels) ||
-                !std::isfinite(baseConfig.style.textSizeSp))
-            {
-                result.errorMessage = "MVT render style contains non-finite values.";
-                return result;
-            }
-
-            MvtRenderTileConfig config = baseConfig;
-            try
-            {
-                result.query = decodeMvtTileBytesIntoConfig(tileBytes, config);
-            }
-            catch (const std::exception& error)
-            {
-                result.errorMessage = error.what();
-                return result;
-            }
-
-            if (!std::all_of(config.coordinates.begin(), config.coordinates.end(), [](double value)
-                {
-                    return std::isfinite(value);
-                }) ||
-                !std::all_of(result.query.coordinates.begin(), result.query.coordinates.end(), [](double value)
-                {
-                    return std::isfinite(value);
-                }))
-            {
-                result.errorMessage = "MVT tile decoded to non-finite coordinates.";
-                return result;
-            }
-
-            const std::string handle =
-                config.layerId + ":" +
-                std::to_string(config.tileZ) + "/" +
-                std::to_string(config.tileX) + "/" +
-                std::to_string(config.tileY);
-
-            std::lock_guard<std::mutex> lock(mutex);
-            config.revision = nextMvtTileRevisionLocked(handle);
-            mvtTiles[handle] = config;
-            if (app)
-            {
-                queueApplyMvtTileLocked(handle, config);
-            }
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "registered MVT byte tile handle=%s revision=%llu source=%s sourceLayer=%s style=%s renderFeatures=%zu queryFeatures=%zu coordinates=%zu rendered=%d",
-                handle.c_str(),
-                static_cast<unsigned long long>(config.revision),
+                "registered native MVT layer id=%s source=%s sourceLayer=%s min=%d max=%d scheme=%s visible=%d",
+                config.layerId.c_str(),
                 config.sourceId.c_str(),
                 config.sourceLayer.c_str(),
-                config.style.kind.c_str(),
-                config.featureIds.size(),
-                result.query.featureIds.size(),
-                config.coordinates.size() / 2,
-                config.rendered ? 1 : 0);
-            result.nativeTileHandle = handle;
+                config.sourceMinZoom,
+                config.sourceMaxZoom,
+                config.scheme.c_str(),
+                config.style.visible ? 1 : 0);
+            emitResourceStatusLocked("VECTOR", config.layerId, "LOADED");
+            requestFrameLocked();
+        }
+
+        MvtSubmitResult queryMvtRenderedFeatures()
+        {
+            MvtSubmitResult result;
+            std::lock_guard<std::mutex> lock(mutex);
+            for (const auto& layerEntry : mvtLayers)
+            {
+                const auto& runtime = layerEntry.second;
+                for (const auto& tileId : runtime.activeTiles)
+                {
+                    auto tile = runtime.loadedTiles.find(tileId);
+                    if (tile != runtime.loadedTiles.end() && tile->second.active)
+                    {
+                        appendMvtQuerySnapshotForLayer(result.query, tile->second.query, runtime.config.layerId);
+                    }
+                }
+            }
             return result;
-        }
-
-        void setMvtTileRendered(const std::string& handle, bool rendered)
-        {
-            if (handle.empty())
-            {
-                return;
-            }
-            std::lock_guard<std::mutex> lock(mutex);
-            auto itr = mvtTiles.find(handle);
-            if (itr == mvtTiles.end())
-            {
-                return;
-            }
-            itr->second.rendered = rendered;
-            itr->second.revision = nextMvtTileRevisionLocked(handle);
-            if (app)
-            {
-                queueApplyMvtTileLocked(handle, itr->second);
-            }
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "set MVT render tile handle=%s revision=%llu rendered=%d",
-                handle.c_str(),
-                static_cast<unsigned long long>(itr->second.revision),
-                rendered ? 1 : 0);
-        }
-
-        void removeMvtTile(const std::string& handle)
-        {
-            if (handle.empty())
-            {
-                return;
-            }
-            std::lock_guard<std::mutex> lock(mutex);
-            const auto revision = nextMvtTileRevisionLocked(handle);
-            mvtTiles.erase(handle);
-            if (app)
-            {
-                queueRemoveMvtTileLocked(handle, revision);
-            }
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "removed MVT render tile handle=%s revision=%llu",
-                handle.c_str(),
-                static_cast<unsigned long long>(revision));
         }
 
         void removeMvtLayer(const std::string& layerId)
@@ -2687,35 +2982,7 @@ namespace
                 return;
             }
             std::lock_guard<std::mutex> lock(mutex);
-            int removed = 0;
-            std::vector<std::string> removedHandles;
-            for (auto itr = mvtTiles.begin(); itr != mvtTiles.end();)
-            {
-                if (itr->second.layerId == layerId)
-                {
-                    removedHandles.push_back(itr->first);
-                    nextMvtTileRevisionLocked(itr->first);
-                    itr = mvtTiles.erase(itr);
-                    ++removed;
-                }
-                else
-                {
-                    ++itr;
-                }
-            }
-            if (app)
-            {
-                for (const auto& handle : removedHandles)
-                {
-                    queueRemoveMvtTileLocked(handle, mvtTileRevisions[handle]);
-                }
-            }
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "removed MVT render layer id=%s tiles=%d",
-                layerId.c_str(),
-                removed);
+            removeMvtLayerLocked(layerId);
         }
 
         void clearAnnotations()
@@ -3123,6 +3390,7 @@ namespace
                                         {
                                             emitCameraStateLocked(currentCameraState());
                                         }
+                                        serviceMvtLayersLocked(activeApp);
                                         logModelLayerStatusesLocked(activeApp);
                                     }
                                 }
@@ -3231,6 +3499,14 @@ namespace
             tiles3DLoggedErrors.clear();
             tiles3DRendererContent.clear();
             tiles3DLayerMap.clear();
+            for (auto& entry : mvtLayers)
+            {
+                for (auto& pending : entry.second.pendingTiles)
+                {
+                    pending.second.future.reset();
+                }
+            }
+            mvtLayers.clear();
             mvtTiles.clear();
             mvtEntities.clear();
             mvtTileRevisions.clear();
@@ -3780,6 +4056,432 @@ namespace
             }
         }
 
+        std::set<MvtTileId> loadedMvtTileIds(const MvtLayerRuntime& runtime) const
+        {
+            std::set<MvtTileId> result;
+            for (const auto& entry : runtime.loadedTiles)
+            {
+                result.insert(entry.first);
+            }
+            return result;
+        }
+
+        std::set<MvtTileId> visibleMvtTilesAtZoomLocked(
+            rocky::Application* activeApp,
+            const MvtLayerConfig& config,
+            int tileZoom,
+            int tilePadding)
+        {
+            std::set<MvtTileId> result;
+            const int z = std::clamp(tileZoom, 0, MVT_MAX_COVER_ZOOM);
+            const int tileCount = 1 << z;
+            const double centerTileX = mvtMercatorTileX(cameraState.longitude, z);
+            const double centerTileY = mvtMercatorTileY(cameraState.latitude, z);
+
+            struct CoverPoint
+            {
+                double x = 0.0;
+                double y = 0.0;
+            };
+            std::vector<CoverPoint> points;
+            const int renderWidth = std::max(effectiveRenderWidth(), 1);
+            const int renderHeight = std::max(effectiveRenderHeight(), 1);
+            for (int sampleY = 0; sampleY < MVT_COVER_SAMPLE_GRID; ++sampleY)
+            {
+                for (int sampleX = 0; sampleX < MVT_COVER_SAMPLE_GRID; ++sampleX)
+                {
+                    const int x = MVT_COVER_SAMPLE_GRID <= 1
+                        ? renderWidth / 2
+                        : static_cast<int>(std::lround(
+                            static_cast<double>(sampleX) * static_cast<double>(renderWidth - 1) /
+                            static_cast<double>(MVT_COVER_SAMPLE_GRID - 1)));
+                    const int y = MVT_COVER_SAMPLE_GRID <= 1
+                        ? renderHeight / 2
+                        : static_cast<int>(std::lround(
+                            static_cast<double>(sampleY) * static_cast<double>(renderHeight - 1) /
+                            static_cast<double>(MVT_COVER_SAMPLE_GRID - 1)));
+                    const auto hit = screenToCoordinateOnUpdateLocked(activeApp, x, y);
+                    if (!hit.hit)
+                    {
+                        continue;
+                    }
+                    double tileX = mvtMercatorTileX(hit.longitude, z);
+                    while (tileX - centerTileX > static_cast<double>(tileCount) * 0.5)
+                    {
+                        tileX -= static_cast<double>(tileCount);
+                    }
+                    while (tileX - centerTileX < -static_cast<double>(tileCount) * 0.5)
+                    {
+                        tileX += static_cast<double>(tileCount);
+                    }
+                    points.push_back(CoverPoint{
+                        tileX,
+                        mvtMercatorTileY(hit.latitude, z)});
+                }
+            }
+
+            if (points.empty())
+            {
+                points.push_back(CoverPoint{centerTileX, centerTileY});
+            }
+
+            double minX = points.front().x;
+            double maxX = points.front().x;
+            double minY = points.front().y;
+            double maxY = points.front().y;
+            for (const auto& point : points)
+            {
+                minX = std::min(minX, point.x);
+                maxX = std::max(maxX, point.x);
+                minY = std::min(minY, point.y);
+                maxY = std::max(maxY, point.y);
+            }
+
+            const int minTileY = std::max(0, static_cast<int>(std::floor(minY)) - tilePadding);
+            const int maxTileY = std::min(tileCount - 1, static_cast<int>(std::floor(maxY - 1e-9)) + tilePadding);
+            if (minTileY > maxTileY)
+            {
+                return result;
+            }
+
+            const int minTileX = static_cast<int>(std::floor(minX)) - tilePadding;
+            const int maxTileX = static_cast<int>(std::floor(maxX - 1e-9)) + tilePadding;
+            const long long xSpan = static_cast<long long>(maxTileX) - static_cast<long long>(minTileX) + 1LL;
+
+            struct Candidate
+            {
+                MvtTileId tileId;
+                double distanceSquared = 0.0;
+            };
+            std::vector<Candidate> candidates;
+            const auto addCandidate = [&](int rawX, int y)
+            {
+                const int wrappedX = mvtFloorMod(rawX, tileCount);
+                const double dx = static_cast<double>(rawX) + 0.5 - centerTileX;
+                const double dy = static_cast<double>(y) + 0.5 - centerTileY;
+                candidates.push_back(Candidate{
+                    MvtTileId{z, wrappedX, y},
+                    dx * dx + dy * dy});
+            };
+            if (xSpan >= static_cast<long long>(tileCount))
+            {
+                for (int x = 0; x < tileCount; ++x)
+                {
+                    for (int y = minTileY; y <= maxTileY; ++y)
+                    {
+                        addCandidate(x, y);
+                    }
+                }
+            }
+            else
+            {
+                for (int x = minTileX; x <= maxTileX; ++x)
+                {
+                    for (int y = minTileY; y <= maxTileY; ++y)
+                    {
+                        addCandidate(x, y);
+                    }
+                }
+            }
+            std::sort(candidates.begin(), candidates.end(), [](const Candidate& lhs, const Candidate& rhs)
+            {
+                return lhs.distanceSquared < rhs.distanceSquared;
+            });
+            for (const auto& candidate : candidates)
+            {
+                result.insert(candidate.tileId);
+            }
+            return result;
+        }
+
+        std::set<MvtTileId> visibleMvtTilesLocked(
+            rocky::Application* activeApp,
+            const MvtLayerConfig& config,
+            int tilePadding)
+        {
+            if (!mvtLayerVisibleAtZoom(config, cameraState.zoom))
+            {
+                return {};
+            }
+            return visibleMvtTilesAtZoomLocked(
+                activeApp,
+                config,
+                mvtIdealTileZoom(config, cameraState.zoom),
+                tilePadding);
+        }
+
+        std::set<MvtTileId> prefetchMvtTilesLocked(
+            rocky::Application* activeApp,
+            const MvtLayerConfig& config)
+        {
+            if (!mvtLayerVisibleAtZoom(config, cameraState.zoom))
+            {
+                return {};
+            }
+            const int idealZoom = mvtIdealTileZoom(config, cameraState.zoom);
+            const int prefetchZoom = std::max(config.sourceMinZoom, idealZoom - MVT_PREFETCH_ZOOM_DELTA);
+            if (prefetchZoom >= idealZoom)
+            {
+                return {};
+            }
+            return visibleMvtTilesAtZoomLocked(activeApp, config, prefetchZoom, MVT_PREFETCH_PADDING_TILES);
+        }
+
+        void setMvtLayerActiveTilesLocked(MvtLayerRuntime& runtime, const std::set<MvtTileId>& nextActiveTiles)
+        {
+            for (const auto& tileId : runtime.activeTiles)
+            {
+                if (nextActiveTiles.find(tileId) != nextActiveTiles.end())
+                {
+                    continue;
+                }
+                auto loaded = runtime.loadedTiles.find(tileId);
+                if (loaded == runtime.loadedTiles.end())
+                {
+                    continue;
+                }
+                loaded->second.active = false;
+                loaded->second.config.rendered = false;
+                const auto handle = mvtTileHandle(runtime.config.layerId, tileId);
+                mvtTiles[handle] = loaded->second.config;
+                removeMvtTileEntitiesLocked(handle);
+            }
+
+            for (const auto& tileId : nextActiveTiles)
+            {
+                auto loaded = runtime.loadedTiles.find(tileId);
+                if (loaded == runtime.loadedTiles.end())
+                {
+                    continue;
+                }
+                if (loaded->second.active && runtime.activeTiles.find(tileId) != runtime.activeTiles.end())
+                {
+                    loaded->second.lastTouched = ++runtime.touchCounter;
+                    continue;
+                }
+                loaded->second.active = true;
+                loaded->second.lastTouched = ++runtime.touchCounter;
+                loaded->second.config.rendered = true;
+                const auto handle = mvtTileHandle(runtime.config.layerId, tileId);
+                loaded->second.config.revision = nextMvtTileRevisionLocked(handle);
+                mvtTiles[handle] = loaded->second.config;
+                applyMvtTileLocked(handle, loaded->second.config);
+            }
+            runtime.activeTiles = nextActiveTiles;
+        }
+
+        void removeMvtLoadedTileLocked(MvtLayerRuntime& runtime, const MvtTileId& tileId)
+        {
+            const auto handle = mvtTileHandle(runtime.config.layerId, tileId);
+            removeMvtTileEntitiesLocked(handle);
+            mvtTiles.erase(handle);
+            mvtTileRevisions.erase(handle);
+            runtime.activeTiles.erase(tileId);
+            runtime.loadedTiles.erase(tileId);
+        }
+
+        void trimMvtLayerLoadedTilesLocked(MvtLayerRuntime& runtime)
+        {
+            std::set<MvtTileId> retain = runtime.idealTiles;
+            retain.insert(runtime.prefetchTiles.begin(), runtime.prefetchTiles.end());
+            retain.insert(runtime.activeTiles.begin(), runtime.activeTiles.end());
+            for (const auto& pending : runtime.pendingTiles)
+            {
+                retain.insert(pending.first);
+            }
+
+            while (runtime.loadedTiles.size() > MVT_DECODED_TILE_CACHE_SIZE)
+            {
+                auto evict = runtime.loadedTiles.end();
+                for (auto itr = runtime.loadedTiles.begin(); itr != runtime.loadedTiles.end(); ++itr)
+                {
+                    if (itr->second.active || retain.find(itr->first) != retain.end())
+                    {
+                        continue;
+                    }
+                    if (evict == runtime.loadedTiles.end() || itr->second.lastTouched < evict->second.lastTouched)
+                    {
+                        evict = itr;
+                    }
+                }
+                if (evict == runtime.loadedTiles.end())
+                {
+                    return;
+                }
+                removeMvtLoadedTileLocked(runtime, evict->first);
+            }
+        }
+
+        void integrateMvtLayerLoadsLocked(MvtLayerRuntime& runtime)
+        {
+            for (auto itr = runtime.pendingTiles.begin(); itr != runtime.pendingTiles.end();)
+            {
+                if (!itr->second.future.available())
+                {
+                    ++itr;
+                    continue;
+                }
+
+                auto result = itr->second.future.release();
+                const auto tileId = itr->first;
+                const bool idealAtRequest = itr->second.ideal;
+                itr = runtime.pendingTiles.erase(itr);
+                if (result.generation != runtime.generation)
+                {
+                    continue;
+                }
+                if (!result.success)
+                {
+                    if (idealAtRequest)
+                    {
+                        emitResourceStatusLocked(
+                            "VECTOR",
+                            runtime.config.layerId,
+                            "FAILED",
+                            "RESOURCE",
+                            result.errorMessage.empty() ? "MVT tile load failed." : result.errorMessage);
+                    }
+                    continue;
+                }
+
+                result.config.revision = 0;
+                MvtLoadedTile loaded;
+                loaded.config = std::move(result.config);
+                loaded.query = std::move(result.query);
+                loaded.lastTouched = ++runtime.touchCounter;
+                loaded.active = false;
+                runtime.loadedTiles[tileId] = std::move(loaded);
+                mvtTiles[mvtTileHandle(runtime.config.layerId, tileId)] = runtime.loadedTiles[tileId].config;
+            }
+        }
+
+        void dispatchMvtTileLoadLocked(
+            rocky::Application* activeApp,
+            MvtLayerRuntime& runtime,
+            const MvtTileId& tileId,
+            bool ideal)
+        {
+            if (!activeApp || !activeApp->vsgcontext)
+            {
+                return;
+            }
+            if (runtime.loadedTiles.find(tileId) != runtime.loadedTiles.end())
+            {
+                return;
+            }
+            auto pending = runtime.pendingTiles.find(tileId);
+            if (pending != runtime.pendingTiles.end())
+            {
+                pending->second.ideal = pending->second.ideal || ideal;
+                return;
+            }
+
+            const auto layer = runtime.config;
+            const auto generation = runtime.generation;
+            auto io = activeApp->vsgcontext->io;
+            io.maxNetworkAttempts = 1u;
+            auto& jobs = activeApp->vsgcontext->io.services().jobs;
+            MvtPendingTileLoad pendingLoad;
+            pendingLoad.generation = generation;
+            pendingLoad.ideal = ideal;
+            pendingLoad.future = jobs.dispatch(
+                [layer, tileId, generation, ideal, io](rocky::Cancelable& cancelable)
+                {
+                    return loadMvtTileJob(layer, tileId, generation, ideal, io, cancelable);
+                },
+                WEEJOBS_NAMESPACE::context{
+                    "load mvt " + layer.layerId + " " +
+                        std::to_string(tileId.z) + "/" +
+                        std::to_string(tileId.x) + "/" +
+                        std::to_string(tileId.y)});
+            runtime.pendingTiles[tileId] = std::move(pendingLoad);
+            requestFrameLocked();
+        }
+
+        void serviceMvtLayersLocked(rocky::Application* activeApp)
+        {
+            for (auto& entry : mvtLayers)
+            {
+                auto& runtime = entry.second;
+                integrateMvtLayerLoadsLocked(runtime);
+
+                runtime.idealTiles = visibleMvtTilesLocked(activeApp, runtime.config, 0);
+                runtime.prefetchTiles = prefetchMvtTilesLocked(activeApp, runtime.config);
+                const auto loadedIds = loadedMvtTileIds(runtime);
+                const int pyramidMinZoom = std::clamp(runtime.config.sourceMinZoom, 0, MVT_MAX_COVER_ZOOM);
+                const int pyramidMaxZoom = std::clamp(
+                    std::max(runtime.config.sourceMinZoom, runtime.config.sourceMaxZoom),
+                    pyramidMinZoom,
+                    MVT_MAX_COVER_ZOOM);
+                const auto renderTiles = mvtRenderTileIds(
+                    runtime.idealTiles,
+                    loadedIds,
+                    pyramidMinZoom,
+                    pyramidMaxZoom);
+                setMvtLayerActiveTilesLocked(runtime, renderTiles);
+                trimMvtLayerLoadedTilesLocked(runtime);
+
+                for (const auto& tileId : runtime.idealTiles)
+                {
+                    dispatchMvtTileLoadLocked(activeApp, runtime, tileId, true);
+                }
+                for (const auto& tileId : runtime.prefetchTiles)
+                {
+                    if (runtime.idealTiles.find(tileId) == runtime.idealTiles.end())
+                    {
+                        dispatchMvtTileLoadLocked(activeApp, runtime, tileId, false);
+                    }
+                }
+            }
+        }
+
+        void removeMvtLayerLocked(const std::string& layerId)
+        {
+            if (layerId.empty())
+            {
+                return;
+            }
+
+            auto runtime = mvtLayers.find(layerId);
+            if (runtime != mvtLayers.end())
+            {
+                for (auto& pending : runtime->second.pendingTiles)
+                {
+                    pending.second.future.reset();
+                }
+                for (const auto& tile : runtime->second.loadedTiles)
+                {
+                    const auto handle = mvtTileHandle(layerId, tile.first);
+                    removeMvtTileEntitiesLocked(handle);
+                    mvtTiles.erase(handle);
+                    mvtTileRevisions.erase(handle);
+                }
+                mvtLayers.erase(runtime);
+            }
+
+            int removed = 0;
+            for (auto itr = mvtTiles.begin(); itr != mvtTiles.end();)
+            {
+                if (itr->second.layerId == layerId)
+                {
+                    removeMvtTileEntitiesLocked(itr->first);
+                    mvtTileRevisions.erase(itr->first);
+                    itr = mvtTiles.erase(itr);
+                    ++removed;
+                }
+                else
+                {
+                    ++itr;
+                }
+            }
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "removed native MVT layer id=%s tiles=%d",
+                layerId.c_str(),
+                removed);
+        }
+
         void removeModelEntityLocked(const std::string& id)
         {
             auto existing = modelEntities.find(id);
@@ -3887,54 +4589,11 @@ namespace
             requestFrameLocked();
         }
 
-        void queueApplyMvtTileLocked(
-            const std::string& handle,
-            const MvtRenderTileConfig& config)
-        {
-            auto* activeApp = app.get();
-            activeApp->onNextUpdate([this, activeApp, handle, config]()
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (app.get() != activeApp || !isCurrentMvtTileRevisionLocked(handle, config.revision))
-                {
-                    return;
-                }
-                applyMvtTileLocked(handle, config);
-            });
-            requestFrameLocked();
-        }
-
-        void queueRemoveMvtTileLocked(const std::string& handle, std::uint64_t revision)
-        {
-            auto* activeApp = app.get();
-            activeApp->onNextUpdate([this, activeApp, handle, revision]()
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (app.get() != activeApp || !isCurrentMvtTileRevisionLocked(handle, revision))
-                {
-                    return;
-                }
-                if (mvtTiles.find(handle) != mvtTiles.end())
-                {
-                    return;
-                }
-                removeMvtTileEntitiesLocked(handle);
-                mvtTileRevisions.erase(handle);
-            });
-            requestFrameLocked();
-        }
-
         std::uint64_t nextMvtTileRevisionLocked(const std::string& handle)
         {
             const auto revision = ++mvtTileRevisionCounter;
             mvtTileRevisions[handle] = revision;
             return revision;
-        }
-
-        bool isCurrentMvtTileRevisionLocked(const std::string& handle, std::uint64_t revision) const
-        {
-            const auto itr = mvtTileRevisions.find(handle);
-            return itr != mvtTileRevisions.end() && itr->second == revision;
         }
 
         void removeMvtTileEntitiesLocked(const std::string& handle)
@@ -5295,6 +5954,8 @@ namespace
         std::unordered_map<std::string, std::string> tiles3DLoggedErrors;
         // Layer-level 3D Tiles (new C++ pipeline)
         std::unordered_map<std::string, std::shared_ptr<rocky::Tiles3DLayer>> tiles3DLayerMap;
+        std::unordered_map<std::string, MvtLayerRuntime> mvtLayers;
+        std::uint64_t mvtLayerGenerationCounter = 0;
         std::unordered_map<std::string, MvtRenderTileConfig> mvtTiles;
         std::unordered_map<std::string, std::vector<entt::entity>> mvtEntities;
         std::unordered_map<std::string, std::uint64_t> mvtTileRevisions;
@@ -5366,75 +6027,6 @@ namespace
             }
         }
         return headers;
-    }
-
-    std::vector<std::string> stringsFromJArray(JNIEnv* env, jobjectArray array)
-    {
-        std::vector<std::string> result;
-        if (!array)
-        {
-            return result;
-        }
-        const auto count = env->GetArrayLength(array);
-        result.reserve(static_cast<std::size_t>(count));
-        for (jsize i = 0; i < count; ++i)
-        {
-            auto value = static_cast<jstring>(env->GetObjectArrayElement(array, i));
-            result.push_back(jstringToString(env, value));
-            if (value)
-            {
-                env->DeleteLocalRef(value);
-            }
-        }
-        return result;
-    }
-
-    std::vector<int> intsFromJArray(JNIEnv* env, jintArray array)
-    {
-        std::vector<int> result;
-        if (!array)
-        {
-            return result;
-        }
-        const auto count = env->GetArrayLength(array);
-        std::vector<jint> values(static_cast<std::size_t>(count));
-        env->GetIntArrayRegion(array, 0, count, values.data());
-        result.reserve(static_cast<std::size_t>(count));
-        for (jint value : values)
-        {
-            result.push_back(static_cast<int>(value));
-        }
-        return result;
-    }
-
-    std::vector<double> doublesFromJArray(JNIEnv* env, jdoubleArray array)
-    {
-        std::vector<double> result;
-        if (!array)
-        {
-            return result;
-        }
-        const auto count = env->GetArrayLength(array);
-        result.resize(static_cast<std::size_t>(count));
-        env->GetDoubleArrayRegion(array, 0, count, result.data());
-        return result;
-    }
-
-    std::vector<std::uint8_t> bytesFromJArray(JNIEnv* env, jbyteArray array)
-    {
-        std::vector<std::uint8_t> result;
-        if (!array)
-        {
-            return result;
-        }
-        const auto count = env->GetArrayLength(array);
-        result.resize(static_cast<std::size_t>(count));
-        env->GetByteArrayRegion(
-            array,
-            0,
-            count,
-            reinterpret_cast<jbyte*>(result.data()));
-        return result;
     }
 
     jobjectArray stringArrayFromVector(JNIEnv* env, const std::vector<std::string>& values)
@@ -6117,17 +6709,21 @@ Java_com_vectorra_maps_internal_VectorraNative_setTileset3DLayerViewportHeight(
         engine->setTileset3DLayerViewportHeight(static_cast<float>(height));
 }
 
-extern "C" JNIEXPORT jobject JNICALL
-Java_com_vectorra_maps_internal_VectorraNative_submitMvtTileBytes(
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_addMvtLayer(
     JNIEnv* env,
     jobject,
     jlong handle,
     jstring sourceId,
     jstring layerId,
     jstring sourceLayer,
-    jint tileZ,
-    jint tileX,
-    jint tileY,
+    jstring templateUrl,
+    jint sourceMinZoom,
+    jint sourceMaxZoom,
+    jint layerMinZoom,
+    jint layerMaxZoom,
+    jint tileSize,
+    jstring scheme,
     jstring styleKind,
     jboolean visible,
     jint color,
@@ -6135,19 +6731,22 @@ Java_com_vectorra_maps_internal_VectorraNative_submitMvtTileBytes(
     jfloat widthPixels,
     jfloat radiusPixels,
     jfloat textSizeSp,
-    jbyteArray tileBytes,
-    jboolean renderNow)
+    jobjectArray headerNames,
+    jobjectArray headerValues)
 {
-    MvtSubmitResult result;
     if (auto* engine = fromHandle(handle))
     {
-        MvtRenderTileConfig config;
+        MvtLayerConfig config;
         config.sourceId = jstringToString(env, sourceId);
         config.layerId = jstringToString(env, layerId);
         config.sourceLayer = jstringToString(env, sourceLayer);
-        config.tileZ = static_cast<int>(tileZ);
-        config.tileX = static_cast<int>(tileX);
-        config.tileY = static_cast<int>(tileY);
+        config.templateUrl = jstringToString(env, templateUrl);
+        config.sourceMinZoom = static_cast<int>(sourceMinZoom);
+        config.sourceMaxZoom = static_cast<int>(sourceMaxZoom);
+        config.layerMinZoom = static_cast<int>(layerMinZoom);
+        config.layerMaxZoom = static_cast<int>(layerMaxZoom);
+        config.tileSize = static_cast<int>(tileSize);
+        config.scheme = jstringToString(env, scheme);
         config.style = MvtRenderStyleConfig{
             jstringToString(env, styleKind),
             visible == JNI_TRUE,
@@ -6156,95 +6755,27 @@ Java_com_vectorra_maps_internal_VectorraNative_submitMvtTileBytes(
             widthPixels,
             radiusPixels,
             textSizeSp};
-        config.rendered = renderNow == JNI_TRUE;
-        result = engine->submitMvtTileBytes(config, bytesFromJArray(env, tileBytes));
+        config.headers = headersFromJArrays(env, headerNames, headerValues);
+        engine->addMvtLayer(config);
+    }
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_queryMvtRenderedFeatures(
+    JNIEnv* env,
+    jobject,
+    jlong handle)
+{
+    MvtSubmitResult result;
+    if (auto* engine = fromHandle(handle))
+    {
+        result = engine->queryMvtRenderedFeatures();
     }
     else
     {
         result.errorMessage = "MVT native renderer handle is invalid.";
     }
     return mvtSubmitResultToJObject(env, result);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_vectorra_maps_internal_VectorraNative_setMvtTileRendered(
-    JNIEnv* env,
-    jobject,
-    jlong handle,
-    jstring nativeTileHandle,
-    jboolean rendered)
-{
-    if (auto* engine = fromHandle(handle))
-    {
-        engine->setMvtTileRendered(jstringToString(env, nativeTileHandle), rendered == JNI_TRUE);
-    }
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_vectorra_maps_internal_VectorraNative_renderMvtTile(
-    JNIEnv* env,
-    jobject,
-    jlong handle,
-    jstring sourceId,
-    jstring layerId,
-    jint tileZ,
-    jint tileX,
-    jint tileY,
-    jstring styleKind,
-    jboolean visible,
-    jint color,
-    jfloat opacity,
-    jfloat widthPixels,
-    jfloat radiusPixels,
-    jfloat textSizeSp,
-    jobjectArray featureIds,
-    jobjectArray sourceLayers,
-    jintArray geometryTypes,
-    jintArray coordinateOffsets,
-    jdoubleArray coordinates,
-    jintArray ringOffsets,
-    jintArray ringEnds)
-{
-    std::string nativeHandle;
-    if (auto* engine = fromHandle(handle))
-    {
-        MvtRenderTileConfig config;
-        config.sourceId = jstringToString(env, sourceId);
-        config.layerId = jstringToString(env, layerId);
-        config.tileZ = static_cast<int>(tileZ);
-        config.tileX = static_cast<int>(tileX);
-        config.tileY = static_cast<int>(tileY);
-        config.style = MvtRenderStyleConfig{
-            jstringToString(env, styleKind),
-            visible == JNI_TRUE,
-            static_cast<int>(color),
-            opacity,
-            widthPixels,
-            radiusPixels,
-            textSizeSp};
-        config.featureIds = stringsFromJArray(env, featureIds);
-        config.sourceLayers = stringsFromJArray(env, sourceLayers);
-        config.geometryTypes = intsFromJArray(env, geometryTypes);
-        config.coordinateOffsets = intsFromJArray(env, coordinateOffsets);
-        config.coordinates = doublesFromJArray(env, coordinates);
-        config.ringOffsets = intsFromJArray(env, ringOffsets);
-        config.ringEnds = intsFromJArray(env, ringEnds);
-        nativeHandle = engine->renderMvtTile(config);
-    }
-    return env->NewStringUTF(nativeHandle.c_str());
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_vectorra_maps_internal_VectorraNative_removeMvtTile(
-    JNIEnv* env,
-    jobject,
-    jlong handle,
-    jstring nativeTileHandle)
-{
-    if (auto* engine = fromHandle(handle))
-    {
-        engine->removeMvtTile(jstringToString(env, nativeTileHandle));
-    }
 }
 
 extern "C" JNIEXPORT void JNICALL

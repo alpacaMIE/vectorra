@@ -4756,3 +4756,33 @@ Known issues / next:
 
 - The local MBTiles smoke intentionally contains one tile, so surrounding tile cover requests log expected 404 resource failures while the center tile validates line/fill/point render and query behavior.
 - Stage 4 still needs MVT tile scheduling down into a native layer.
+
+## 2026-06-11
+
+### MVT Tile Cover and Pyramid Native Runtime - Stage 4
+
+Completed:
+
+- Moved vector tile cover, prefetch, pyramid fallback, native tile loading, active render set selection, and decoded tile eviction into the C++ Vectorra bridge runtime.
+- Kept the Kotlin public vector APIs unchanged; `addVectorTileLayer` and MBTiles vector layers now register proxied vector source templates with `VectorraNative.addMvtLayer(...)`.
+- Changed vector query to read the native MVT rendered-feature snapshot and reuse the existing Kotlin hit tester for screen hit filtering.
+- Removed the JVM MVT tile cover, pyramid, runtime store, tile loader, worker scheduling path, old per-tile JNI declarations, and their owner tests.
+- Kept `VectorraMvtDecoder` and `VectorraMvtGeoJson` as beta utility APIs outside the render hot path.
+
+Verification commands:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-maps:testDebugUnitTest
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-sample:assembleDebug
+git diff --check
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed, including `arm64-v8a` and `x86_64` native CMake builds.
+- `git diff --check` passed with CRLF warnings only.
+
+Known issues / next:
+
+- Device MVT smoke for ordinary MVT, MBTiles MVT, pan/readd/hide/bad tile, eviction, fallback, and query was not run in this pass.

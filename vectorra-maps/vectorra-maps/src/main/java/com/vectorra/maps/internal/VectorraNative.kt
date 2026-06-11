@@ -153,14 +153,18 @@ internal object VectorraNative {
     external fun removeTileset3DLayer(handle: Long, layerId: String)
     external fun setTileset3DLayerViewportHeight(handle: Long, height: Float)
 
-    external fun submitMvtTileBytes(
+    external fun addMvtLayer(
         handle: Long,
         sourceId: String,
         layerId: String,
         sourceLayer: String,
-        tileZ: Int,
-        tileX: Int,
-        tileY: Int,
+        templateUrl: String,
+        sourceMinZoom: Int,
+        sourceMaxZoom: Int,
+        layerMinZoom: Int,
+        layerMaxZoom: Int,
+        tileSize: Int,
+        scheme: String,
         styleKind: String,
         visible: Boolean,
         color: Int,
@@ -168,11 +172,11 @@ internal object VectorraNative {
         widthPixels: Float,
         radiusPixels: Float,
         textSizeSp: Float,
-        tileBytes: ByteArray,
-        renderNow: Boolean
-    ): MvtTileResult
-    external fun setMvtTileRendered(handle: Long, nativeTileHandle: String, rendered: Boolean)
-    external fun removeMvtTile(handle: Long, nativeTileHandle: String)
+        headerNames: Array<String>,
+        headerValues: Array<String>
+    )
+    external fun queryMvtRenderedFeatures(handle: Long): MvtTileResult
+
     external fun removeMvtLayer(handle: Long, layerId: String)
     external fun clearAnnotations(handle: Long)
     external fun addPointAnnotation(handle: Long, id: String, longitude: Double, latitude: Double)
