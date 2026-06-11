@@ -4819,3 +4819,30 @@ Known issues / next:
 
 - Long-term native TLS, `ROCKY_SUPPORTS_HTTPS ON`, native raster/DEM direct fetch, and native MBTiles direct read remain future work.
 - No device smoke test was run for live raster/DEM proxy loading in this pass.
+
+## 2026-06-11
+
+### Gesture Startup Lag Root Cause
+
+Completed:
+
+- Traced drag startup latency to `VectorraMapView.ACTION_DOWN -> stopFling() -> VectorraNative.cancelCameraMotion()`.
+- Found that `cancelCameraMotion()` always queued `rocky::MapManipulator::clearViewpoint()`, whose implementation recalculates the camera center by intersecting the view ray with the terrain scene. That made every new gesture wait behind a terrain traversal before queued pan commands could execute.
+- Added a lightweight internal `cancelFling` JNI path that only clears Vectorra's fling state.
+- Changed touch startup to call `cancelFling()` instead of full camera motion cancellation, so repeated drag starts no longer enqueue rocky `clearViewpoint()` work.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+.\gradlew.bat :vectorra-sample:assembleDebug
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed for `arm64-v8a` and `x86_64`, including JNI/native compilation.
+
+Known issues / next:
+
+- Native renderer callbacks still call into Java while holding the renderer mutex; this should be moved to lock-free/lock-outside dispatch if gesture latency or lifecycle crashes persist under heavy resource loading.

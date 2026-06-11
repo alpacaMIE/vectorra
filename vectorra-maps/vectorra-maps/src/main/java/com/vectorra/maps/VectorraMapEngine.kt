@@ -1082,6 +1082,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    internal fun cancelFling() {
+        ifOpen {
+            VectorraNative.cancelFling(nativeHandle)
+        }
+    }
+
     internal fun onUserGesture() {
         (location as? VectorraLocationComponentImpl)?.onUserGesture()
     }

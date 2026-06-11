@@ -73,6 +73,7 @@ internal object VectorraNative {
     external fun rotateByDegrees(handle: Long, deltaDegrees: Double)
     external fun pitchByDegrees(handle: Long, deltaDegrees: Double)
     external fun flingByVelocity(handle: Long, velocityX: Float, velocityY: Float, viewWidth: Int, viewHeight: Int)
+    external fun cancelFling(handle: Long)
     external fun cancelCameraMotion(handle: Long)
     external fun projectCoordinates(handle: Long, lonLatHeight: DoubleArray): DoubleArray
     external fun screenToCoordinate(handle: Long, x: Double, y: Double): DoubleArray

@@ -2270,6 +2270,12 @@ namespace
             }
         }
 
+        void cancelFling()
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            cancelFlingLocked();
+        }
+
         std::vector<double> projectCoordinates(const std::vector<double>& lonLatHeight)
         {
             ProjectionSnapshot snapshot;
@@ -6375,6 +6381,15 @@ Java_com_vectorra_maps_internal_VectorraNative_cancelCameraMotion(JNIEnv*, jobje
     if (auto* engine = fromHandle(handle))
     {
         engine->cancelCameraMotion();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_cancelFling(JNIEnv*, jobject, jlong handle)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->cancelFling();
     }
 }
 

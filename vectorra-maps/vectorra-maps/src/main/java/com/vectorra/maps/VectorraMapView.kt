@@ -431,7 +431,7 @@ class VectorraMapView @JvmOverloads constructor(
     }
 
     private fun stopFling() {
-        engine.cancelCameraMotion()
+        engine.cancelFling()
     }
 
     private fun updateTwoFingerTapCandidate(eventTime: Long, x: Float, y: Float, span: Float) {
