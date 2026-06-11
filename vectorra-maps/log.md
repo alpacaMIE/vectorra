@@ -4604,3 +4604,20 @@ Results:
 
 - `:vectorra-sample:assembleDebug` passed.
 - APK install completed with `Success`.
+
+## 2026-06-11
+
+### Kotlin → C++ 迁移审查
+
+Completed:
+
+- 审查 `:vectorra-maps` Kotlin/C++ 职责划分，输出 `docs/kotlin-to-cpp-migration-review.md`。
+- 核心结论：投影/命中测试（三套不一致投影模型，P0 正确性）、相机手势与动画（native MapManipulator 闲置，公式双份维护）、MVT 解码与调度（JVM 装箱热路径 + 7 数组 JNI 编组）应分阶段下沉；网络代理短期修 UUID 缓存 key 与 keep-alive，GeoJSON 聚类暂缓。
+- 附带发现：代理 URL 含随机 UUID 导致 rocky 磁盘缓存冷启动全 miss；`setTileset3DLayerViewportHeight` 为死 JNI 接口；native `onTouch` 是空壳。
+
+Verification: 纯文档变更，无构建；引用行号均来自本次对照阅读（`VectorraMapEngine.kt`、`VectorraAnnotationHitTester.kt`、`VectorraMvtDecoder.kt`、`TileProxyServer.kt`、`vectorra_jni.cpp` 等）。
+
+Next:
+
+- 按文档阶段 1 实现 native worldToScreen/screenToWorld 投影 API。
+- 网络代理两项短期修复（稳定注册 key、keep-alive）可独立先行。
