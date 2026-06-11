@@ -1,12 +1,10 @@
 package com.vectorra.maps
 
-import android.animation.ValueAnimator
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import android.view.Choreographer
-import android.view.animation.DecelerateInterpolator
 import com.vectorra.maps.annotation.VectorraDrawLineAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPointAnnotation
 import com.vectorra.maps.annotation.VectorraDrawPolygonAnnotation
@@ -82,16 +80,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.atan
-import kotlin.math.cos
 import kotlin.math.floor
-import kotlin.math.ln
-import kotlin.math.pow
-import kotlin.math.sin
-import kotlin.math.sqrt
-import kotlin.math.sinh
 
 internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val closed = AtomicBoolean(false)
@@ -108,6 +97,25 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             errorMessage: String?
         ) {
             handleNativeResourceStatus(kind, layerId, state, errorType, errorMessage)
+        }
+    }
+    private val nativeCameraCallback = object : VectorraNative.CameraCallback {
+        override fun onNativeCameraChanged(
+            longitude: Double,
+            latitude: Double,
+            zoom: Double,
+            pitch: Double,
+            bearing: Double
+        ) {
+            handleNativeCameraChanged(
+                CameraState(
+                    longitude = longitude,
+                    latitude = latitude,
+                    zoom = zoom,
+                    pitch = pitch,
+                    bearing = bearing
+                )
+            )
         }
     }
     private val nativeProjector = VectorraCoordinateProjector { coordinates ->
@@ -162,9 +170,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private val resourceGenerationByKey = linkedMapOf<String, Long>()
     private val resourceStatusByLayerId = linkedMapOf<String, VectorraResourceStatus>()
     private val resourceStatusBySourceId = linkedMapOf<String, VectorraResourceStatus>()
-    private var nativeCameraApplyScheduled = false
     private var cameraNotificationScheduled = false
-    private var cameraAnimator: ValueAnimator? = null
     private val hitTester = VectorraAnnotationHitTester(
         projector = nativeProjector,
         camera = { cameraState }
@@ -204,6 +210,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
 
     init {
         VectorraNative.setResourceStatusCallback(nativeHandle, nativeResourceStatusCallback)
+        VectorraNative.setCameraCallback(nativeHandle, nativeCameraCallback)
     }
 
     fun attachSurface(surface: Surface, width: Int, height: Int): VectorraMapLoadError? {
@@ -231,7 +238,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         return if (failure.isNullOrBlank()) {
             lastLoadError = null
             loadState = VectorraMapLoadState.READY
-            applyCamera(cameraState)
             resubmitLoadedVectorTiles()
             scheduleVectorTileLoads()
             null
@@ -277,142 +283,65 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         pitch: Double,
         bearing: Double
     ) {
-        cameraAnimator?.cancel()
-        setCameraInternal(longitude, latitude, zoom, pitch, bearing)
-    }
-
-    private fun setCameraInternal(
-        longitude: Double,
-        latitude: Double,
-        zoom: Double,
-        pitch: Double,
-        bearing: Double
-    ) {
-        val next = CameraState(
-            longitude = wrapLongitude(longitude),
-            latitude = latitude.coerceIn(MIN_LATITUDE, MAX_LATITUDE),
-            zoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM),
-            pitch = pitch.coerceIn(MIN_PITCH, MAX_PITCH),
-            bearing = normalizeBearing(bearing)
+        setNativeCamera(
+            CameraState(
+                longitude = longitude,
+                latitude = latitude,
+                zoom = zoom,
+                pitch = pitch,
+                bearing = bearing
+            ),
+            durationMillis = 0L
         )
-        cameraState = next
-        scheduleNativeCameraApply()
-        scheduleCameraNotification()
-        scheduleVectorTileLoads()
-        (location as? VectorraLocationComponentImpl)?.onCameraChanged()
     }
 
     override fun panByPixels(deltaX: Float, deltaY: Float, viewWidth: Int, viewHeight: Int) {
         if (viewWidth <= 0 || viewHeight <= 0) {
             return
         }
-
-        val bearingRadians = Math.toRadians(gestureVisualBearing(cameraState.bearing))
-        val cosBearing = cos(bearingRadians)
-        val sinBearing = sin(bearingRadians)
-        val worldDeltaX = -deltaX.toDouble() * cosBearing - deltaY.toDouble() * sinBearing
-        val worldDeltaY = deltaX.toDouble() * sinBearing - deltaY.toDouble() * cosBearing
-        val center = worldPointFor(cameraState.longitude, cameraState.latitude, cameraState.zoom)
-        val next = coordinateForWorldPoint(
-            WorldPoint(
-                x = center.x + worldDeltaX,
-                y = center.y + worldDeltaY
-            ),
-            cameraState.zoom
-        )
-        setCamera(
-            longitude = next.longitude,
-            latitude = next.latitude,
-            zoom = cameraState.zoom,
-            pitch = cameraState.pitch,
-            bearing = cameraState.bearing
-        )
+        ifOpen {
+            VectorraNative.panByPixels(nativeHandle, deltaX, deltaY, viewWidth, viewHeight)
+        }
     }
 
     override fun zoomByScale(scale: Float) {
-        val zoomDelta = zoomDeltaForScale(scale) ?: return
-        setCamera(
-            longitude = cameraState.longitude,
-            latitude = cameraState.latitude,
-            zoom = cameraState.zoom + zoomDelta,
-            pitch = cameraState.pitch,
-            bearing = cameraState.bearing
-        )
+        if (scale <= 0f || !scale.isFinite()) {
+            return
+        }
+        ifOpen {
+            VectorraNative.zoomByScale(nativeHandle, scale)
+        }
     }
 
     internal fun zoomByScaleAt(scale: Float, focusX: Float, focusY: Float, viewWidth: Int, viewHeight: Int) {
-        val zoomDelta = zoomDeltaForScale(scale) ?: return
+        if (scale <= 0f || !scale.isFinite()) {
+            return
+        }
         if (viewWidth <= 0 || viewHeight <= 0) {
             zoomByScale(scale)
             return
         }
-
-        val current = cameraState
-        val nextZoom = (current.zoom + zoomDelta).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        val focusOffsetX = focusX.toDouble() - viewWidth.toDouble() * 0.5
-        val focusOffsetY = focusY.toDouble() - viewHeight.toDouble() * 0.5
-        val currentCenter = worldPointFor(current.longitude, current.latitude, current.zoom)
-        val visualBearing = gestureVisualBearing(current.bearing)
-        val currentFocusOffset = screenOffsetToWorldOffset(focusOffsetX, focusOffsetY, visualBearing)
-        val focusCoordinate = coordinateForWorldPoint(
-            WorldPoint(
-                x = currentCenter.x + currentFocusOffset.x,
-                y = currentCenter.y + currentFocusOffset.y
-            ),
-            current.zoom
-        )
-        val nextFocusWorld = worldPointFor(focusCoordinate.longitude, focusCoordinate.latitude, nextZoom)
-        val nextFocusOffset = screenOffsetToWorldOffset(focusOffsetX, focusOffsetY, visualBearing)
-        val nextCenter = coordinateForWorldPoint(
-            WorldPoint(
-                x = nextFocusWorld.x - nextFocusOffset.x,
-                y = nextFocusWorld.y - nextFocusOffset.y
-            ),
-            nextZoom
-        )
-
-        setCamera(
-            longitude = nextCenter.longitude,
-            latitude = nextCenter.latitude,
-            zoom = nextZoom,
-            pitch = current.pitch,
-            bearing = current.bearing
-        )
-    }
-
-    private fun zoomDeltaForScale(scale: Float): Double? {
-        if (scale <= 0f || !scale.isFinite()) {
-            return null
+        ifOpen {
+            VectorraNative.zoomByScaleAt(nativeHandle, scale, focusX, focusY, viewWidth, viewHeight)
         }
-
-        val zoomDelta = ln(scale.toDouble()) / ln(2.0)
-        return zoomDelta.takeIf { it.isFinite() }
     }
 
     override fun rotateBy(deltaDegrees: Double) {
-        if (!deltaDegrees.isFinite() || abs(deltaDegrees) < 0.01) {
+        if (!deltaDegrees.isFinite()) {
             return
         }
-        setCamera(
-            longitude = cameraState.longitude,
-            latitude = cameraState.latitude,
-            zoom = cameraState.zoom,
-            pitch = cameraState.pitch,
-            bearing = cameraState.bearing + deltaDegrees
-        )
+        ifOpen {
+            VectorraNative.rotateByDegrees(nativeHandle, deltaDegrees)
+        }
     }
 
     override fun pitchBy(deltaDegrees: Double) {
-        if (!deltaDegrees.isFinite() || abs(deltaDegrees) < 0.01) {
+        if (!deltaDegrees.isFinite()) {
             return
         }
-        setCamera(
-            longitude = cameraState.longitude,
-            latitude = cameraState.latitude,
-            zoom = cameraState.zoom,
-            pitch = cameraState.pitch + deltaDegrees,
-            bearing = cameraState.bearing
-        )
+        ifOpen {
+            VectorraNative.pitchByDegrees(nativeHandle, deltaDegrees)
+        }
     }
 
     override fun easeTo(options: CameraOptions, animationOptions: CameraAnimationOptions) {
@@ -432,35 +361,21 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             pitch = options.pitch ?: start.pitch,
             bearing = options.bearing ?: start.bearing
         )
-        val duration = durationMillis.coerceAtLeast(0L)
-        cameraAnimator?.cancel()
-        if (duration == 0L) {
-            setCamera(
-                longitude = target.longitude,
-                latitude = target.latitude,
-                zoom = target.zoom,
-                pitch = target.pitch,
-                bearing = target.bearing
-            )
-            return
-        }
+        setNativeCamera(target, durationMillis.coerceAtLeast(0L))
+    }
 
-        val longitudeDelta = shortestLongitudeDelta(start.longitude, target.longitude)
-        val bearingDelta = shortestBearingDelta(start.bearing, target.bearing)
-        cameraAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            this.duration = duration
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { animator ->
-                val t = animator.animatedValue as Float
-                setCameraInternal(
-                    longitude = start.longitude + longitudeDelta * t,
-                    latitude = lerp(start.latitude, target.latitude, t),
-                    zoom = lerp(start.zoom, target.zoom, t),
-                    pitch = lerp(start.pitch, target.pitch, t),
-                    bearing = start.bearing + bearingDelta * t
-                )
-            }
-            start()
+    private fun setNativeCamera(target: CameraState, durationMillis: Long) {
+        ifOpen {
+            VectorraNative.setCamera(
+                nativeHandle,
+                target.longitude,
+                target.latitude,
+                target.zoom,
+                target.pitch,
+                target.bearing,
+                0.0,
+                durationMillis
+            )
         }
     }
 
@@ -1400,9 +1315,18 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         return mapClickListeners.any { listener -> listener(event) }
     }
 
-    internal fun onTouch(action: Int, pointerCount: Int, x0: Float, y0: Float, x1: Float, y1: Float) {
+    internal fun flingByVelocity(velocityX: Float, velocityY: Float, viewWidth: Int, viewHeight: Int) {
+        if (viewWidth <= 0 || viewHeight <= 0 || !velocityX.isFinite() || !velocityY.isFinite()) {
+            return
+        }
         ifOpen {
-            VectorraNative.onTouch(nativeHandle, action, pointerCount, x0, y0, x1, y1)
+            VectorraNative.flingByVelocity(nativeHandle, velocityX, velocityY, viewWidth, viewHeight)
+        }
+    }
+
+    internal fun cancelCameraMotion() {
+        ifOpen {
+            VectorraNative.cancelCameraMotion(nativeHandle)
         }
     }
 
@@ -1436,31 +1360,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
-    private fun applyCamera(camera: CameraState) {
-        ifOpen {
-            VectorraNative.setCamera(
-                nativeHandle,
-                camera.longitude,
-                camera.latitude,
-                camera.zoom,
-                camera.pitch,
-                camera.bearing,
-                0.0
-            )
-        }
-    }
-
-    private fun scheduleNativeCameraApply() {
-        if (nativeCameraApplyScheduled) {
-            return
-        }
-        nativeCameraApplyScheduled = true
-        Choreographer.getInstance().postFrameCallback {
-            nativeCameraApplyScheduled = false
-            applyCamera(cameraState)
-        }
-    }
-
     private fun scheduleCameraNotification() {
         if (cameraNotificationScheduled) {
             return
@@ -1472,6 +1371,26 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             onCameraChanged?.invoke(camera)
             cameraChangedListeners.forEach { it.invoke(camera) }
         }
+    }
+
+    private fun handleNativeCameraChanged(camera: CameraState) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            applyNativeCameraState(camera)
+        } else {
+            mainHandler.post {
+                applyNativeCameraState(camera)
+            }
+        }
+    }
+
+    private fun applyNativeCameraState(camera: CameraState) {
+        if (closed.get() || camera == cameraState) {
+            return
+        }
+        cameraState = camera
+        scheduleCameraNotification()
+        scheduleVectorTileLoads()
+        (location as? VectorraLocationComponentImpl)?.onCameraChanged()
     }
 
     private fun resubmitLoadedVectorTiles() {
@@ -1719,9 +1638,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             VectorraNative.setResourceStatusCallback(nativeHandle, null)
-            cameraAnimator?.cancel()
-            cameraAnimator = null
-            nativeCameraApplyScheduled = false
+            VectorraNative.setCameraCallback(nativeHandle, null)
             cameraNotificationScheduled = false
             loadState = VectorraMapLoadState.IDLE
             mapClickListeners.clear()
@@ -1752,85 +1669,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     private companion object {
-        const val MIN_LATITUDE = -85.0
-        const val MAX_LATITUDE = 85.0
-        const val MIN_ZOOM = 0.0
-        const val MAX_ZOOM = 22.0
-        const val MIN_PITCH = 0.0
-        const val MAX_PITCH = 80.0
-        const val WEB_MERCATOR_TILE_SIZE = 256.0
         const val COORDINATE_PROJECTION_INPUT_STRIDE = 3
         const val COORDINATE_PROJECTION_OUTPUT_STRIDE = 3
         const val SCREEN_TO_COORDINATE_OUTPUT_STRIDE = 3
         const val LOG_TAG = "VectorraMapEngine"
-
-        data class WorldPoint(val x: Double, val y: Double)
-
-        fun wrapLongitude(longitude: Double): Double {
-            var result = longitude
-            while (result < -180.0) result += 360.0
-            while (result > 180.0) result -= 360.0
-            return result
-        }
-
-        fun worldSizeFor(zoom: Double): Double = WEB_MERCATOR_TILE_SIZE * 2.0.pow(zoom)
-
-        fun worldPointFor(longitude: Double, latitude: Double, zoom: Double): WorldPoint {
-            val worldSize = worldSizeFor(zoom)
-            val clampedLatitude = latitude.coerceIn(MIN_LATITUDE, MAX_LATITUDE)
-            val sinLatitude = sin(Math.toRadians(clampedLatitude))
-            return WorldPoint(
-                x = (wrapLongitude(longitude) + 180.0) / 360.0 * worldSize,
-                y = (0.5 - ln((1.0 + sinLatitude) / (1.0 - sinLatitude)) / (4.0 * PI)) * worldSize
-            )
-        }
-
-        fun coordinateForWorldPoint(point: WorldPoint, zoom: Double): VectorraCoordinate {
-            val worldSize = worldSizeFor(zoom)
-            val normalizedX = ((point.x % worldSize) + worldSize) % worldSize
-            val longitude = normalizedX / worldSize * 360.0 - 180.0
-            val mercatorY = PI * (1.0 - 2.0 * point.y / worldSize)
-            val latitude = Math.toDegrees(atan(sinh(mercatorY))).coerceIn(MIN_LATITUDE, MAX_LATITUDE)
-            return VectorraCoordinate(longitude, latitude)
-        }
-
-        fun gestureVisualBearing(bearing: Double): Double = -bearing
-
-        fun screenOffsetToWorldOffset(offsetX: Double, offsetY: Double, bearing: Double): WorldPoint {
-            val bearingRadians = Math.toRadians(bearing)
-            val cosBearing = cos(bearingRadians)
-            val sinBearing = sin(bearingRadians)
-            return WorldPoint(
-                x = offsetX * cosBearing + offsetY * sinBearing,
-                y = -offsetX * sinBearing + offsetY * cosBearing
-            )
-        }
-
-        fun normalizeBearing(bearing: Double): Double {
-            var result = bearing % 360.0
-            if (result < 0.0) {
-                result += 360.0
-            }
-            return result
-        }
-
-        fun shortestBearingDelta(from: Double, to: Double): Double {
-            var delta = normalizeBearing(to) - normalizeBearing(from)
-            if (delta > 180.0) delta -= 360.0
-            if (delta < -180.0) delta += 360.0
-            return delta
-        }
-
-        fun shortestLongitudeDelta(from: Double, to: Double): Double {
-            var delta = wrapLongitude(to) - wrapLongitude(from)
-            if (delta > 180.0) delta -= 360.0
-            if (delta < -180.0) delta += 360.0
-            return delta
-        }
-
-        fun lerp(from: Double, to: Double, fraction: Float): Double {
-            return from + (to - from) * fraction
-        }
 
         fun VectorraCoordinate.isValid(): Boolean {
             return longitude.isFinite() && latitude.isFinite() &&
@@ -1857,20 +1699,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         fun Map<String, String>.toNameArray(): Array<String> = keys.toTypedArray()
 
         fun Map<String, String>.toValueArray(): Array<String> = values.toTypedArray()
-
-        fun cameraRangeMetersForZoom(
-            zoom: Double,
-            latitude: Double,
-            viewportHeightPixels: Int = DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS
-        ): Double {
-            return vectorraNativeCameraRangeMetersForZoom(
-                zoom = zoom,
-                latitude = latitude,
-                minZoom = MIN_ZOOM,
-                maxZoom = MAX_ZOOM,
-                viewportHeightPixels = viewportHeightPixels
-            )
-        }
 
         private const val DEFAULT_3D_TILES_VIEWPORT_HEIGHT_PIXELS = 1080
         private const val DEFAULT_VECTOR_TILE_VIEWPORT_PIXELS = 1080

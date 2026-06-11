@@ -13,6 +13,16 @@ internal object VectorraNative {
         )
     }
 
+    interface CameraCallback {
+        fun onNativeCameraChanged(
+            longitude: Double,
+            latitude: Double,
+            zoom: Double,
+            pitch: Double,
+            bearing: Double
+        )
+    }
+
     init {
         System.loadLibrary("vectorra_jni")
     }
@@ -20,6 +30,7 @@ internal object VectorraNative {
     external fun create(): Long
     external fun destroy(handle: Long)
     external fun setResourceStatusCallback(handle: Long, callback: ResourceStatusCallback?)
+    external fun setCameraCallback(handle: Long, callback: CameraCallback?)
     external fun setResourcePath(handle: Long, path: String)
     external fun setCachePath(handle: Long, path: String)
     external fun setSurface(handle: Long, surface: Surface?, width: Int, height: Int): String?
@@ -31,8 +42,23 @@ internal object VectorraNative {
         zoom: Double,
         pitch: Double,
         bearing: Double,
-        targetHeightMeters: Double
+        targetHeightMeters: Double,
+        durationMillis: Long
     )
+    external fun panByPixels(handle: Long, deltaX: Float, deltaY: Float, viewWidth: Int, viewHeight: Int)
+    external fun zoomByScale(handle: Long, scale: Float)
+    external fun zoomByScaleAt(
+        handle: Long,
+        scale: Float,
+        focusX: Float,
+        focusY: Float,
+        viewWidth: Int,
+        viewHeight: Int
+    )
+    external fun rotateByDegrees(handle: Long, deltaDegrees: Double)
+    external fun pitchByDegrees(handle: Long, deltaDegrees: Double)
+    external fun flingByVelocity(handle: Long, velocityX: Float, velocityY: Float, viewWidth: Int, viewHeight: Int)
+    external fun cancelCameraMotion(handle: Long)
     external fun projectCoordinates(handle: Long, lonLatHeight: DoubleArray): DoubleArray
     external fun screenToCoordinate(handle: Long, x: Double, y: Double): DoubleArray
 
@@ -199,5 +225,4 @@ internal object VectorraNative {
         accuracyRadiusPixels: Double
     )
     external fun clearLocationIndicator(handle: Long)
-    external fun onTouch(handle: Long, action: Int, pointerCount: Int, x0: Float, y0: Float, x1: Float, y1: Float)
 }

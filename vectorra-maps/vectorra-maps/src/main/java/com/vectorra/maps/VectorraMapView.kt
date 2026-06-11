@@ -12,7 +12,6 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
-import android.widget.OverScroller
 import com.vectorra.maps.gestures.VectorraGestureSettings
 import java.io.Closeable
 import java.io.File
@@ -63,10 +62,7 @@ class VectorraMapView @JvmOverloads constructor(
     private val touchSlop = viewConfiguration.scaledTouchSlop.toFloat()
     private val minimumFlingVelocity = viewConfiguration.scaledMinimumFlingVelocity.toFloat()
     private val maximumFlingVelocity = viewConfiguration.scaledMaximumFlingVelocity.toFloat()
-    private val flingScroller = OverScroller(context)
     private var velocityTracker: VelocityTracker? = null
-    private var lastFlingX = 0
-    private var lastFlingY = 0
     private var twoFingerTapCandidate = false
     private var twoFingerTapStartTime = 0L
     private var twoFingerTapStartX = 0f
@@ -78,23 +74,6 @@ class VectorraMapView @JvmOverloads constructor(
     private var twoFingerStartAngle = 0.0
     private var twoFingerPitching = false
     private var suppressSingleTap = false
-    private val flingRunnable = object : Runnable {
-        override fun run() {
-            if (flingScroller.computeScrollOffset()) {
-                val currentX = flingScroller.currX
-                val currentY = flingScroller.currY
-                val deltaX = currentX - lastFlingX
-                val deltaY = currentY - lastFlingY
-                lastFlingX = currentX
-                lastFlingY = currentY
-                if (deltaX != 0 || deltaY != 0) {
-                    engine.panByPixels(deltaX.toFloat(), deltaY.toFloat(), width, height)
-                }
-                postOnAnimation(this)
-            }
-        }
-    }
-
     init {
         engine.setResourcePath(ensureVectorraAssets(context).absolutePath)
         engine.setCachePath(File(context.cacheDir, "vectorra-net").absolutePath)
@@ -448,26 +427,11 @@ class VectorraMapView @JvmOverloads constructor(
         }
 
         engine.onUserGesture()
-        lastFlingX = 0
-        lastFlingY = 0
-        flingScroller.fling(
-            0,
-            0,
-            velocityX.toInt(),
-            velocityY.toInt(),
-            Int.MIN_VALUE,
-            Int.MAX_VALUE,
-            Int.MIN_VALUE,
-            Int.MAX_VALUE
-        )
-        postOnAnimation(flingRunnable)
+        engine.flingByVelocity(velocityX, velocityY, width, height)
     }
 
     private fun stopFling() {
-        removeCallbacks(flingRunnable)
-        if (!flingScroller.isFinished) {
-            flingScroller.forceFinished(true)
-        }
+        engine.cancelCameraMotion()
     }
 
     private fun updateTwoFingerTapCandidate(eventTime: Long, x: Float, y: Float, span: Float) {

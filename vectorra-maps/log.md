@@ -4651,3 +4651,37 @@ Known issues / next:
 
 - Device visual validation for pitch/high-latitude click alignment was not run in this pass.
 - Later stages still need native camera ownership and MVT decode/scheduling migration.
+
+## 2026-06-11
+
+### Native Camera Owner Refactor - Stage 2
+
+Completed:
+
+- Moved `VectorraMap` camera ownership to native `rocky::MapManipulator`: Kotlin `setCamera`, `easeTo`, `flyTo`, pan, pinch zoom, rotate, pitch, and fling now send semantic JNI commands instead of recomputing a Web Mercator camera in Kotlin.
+- Added native `CameraCallback` plumbing; Kotlin `cameraState` is now a read-only mirror updated from native callbacks, and camera updates continue to notify listeners, location follow mode, and MVT scheduling.
+- Added native focus zoom, pixel-delta pan, native fling decay, transition cancellation, per-frame projection snapshot refresh, and per-frame camera state sync from the manipulator.
+- Removed the old native `onTouch` shell, Kotlin `ValueAnimator`/`OverScroller` camera paths, `VectorraCameraRange.kt`, and the Kotlin-only range formula test.
+
+Verification commands:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-maps:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-maps:testDebugUnitTest
+git diff --check
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' devices
+```
+
+Results:
+
+- `:vectorra-maps:assembleDebug` passed for `arm64-v8a` and `x86_64`.
+- `:vectorra-sample:assembleDebug` passed.
+- Full `:vectorra-maps:testDebugUnitTest`: 172 tests, 171 passed; the only failure remains the pre-existing `VectorraPublicApiSurfaceTest.publicApiInventoryKeeps3DTilesModelSmokeOutOfPublishedBaseline` missing `docs/beta/public-api-surface.md`.
+- `git diff --check` passed (CRLF warnings only).
+- No Android device/emulator was attached, so manual gesture smoke was not run in this pass.
+
+Known issues / next:
+
+- Run device/emulator gesture smoke for drag, pinch focus zoom, rotate, pitch, double-tap zoom, two-finger zoom out, and fling.
+- Later stages still need MVT decode and scheduling migration.

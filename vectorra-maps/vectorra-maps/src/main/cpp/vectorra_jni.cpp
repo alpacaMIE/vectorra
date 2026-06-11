@@ -47,6 +47,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <cmath>
@@ -65,9 +66,30 @@ namespace
     constexpr double EARTH_CIRCUMFERENCE_METERS = 40075016.686;
     constexpr double WEB_MERCATOR_TILE_SIZE = 256.0;
     constexpr double VECTORRA_CAMERA_FOVY_DEGREES = 30.0;
+    constexpr double MIN_CAMERA_LATITUDE = -85.0;
+    constexpr double MAX_CAMERA_LATITUDE = 85.0;
+    constexpr double MIN_CAMERA_ZOOM = 0.0;
+    constexpr double MAX_CAMERA_ZOOM = 22.0;
+    constexpr double MIN_CAMERA_PITCH = 0.0;
+    constexpr double MAX_CAMERA_PITCH = 80.0;
+    constexpr double MIN_CAMERA_RANGE_METERS = 100.0;
+    constexpr double MAX_CAMERA_RANGE_METERS = 30000000.0;
+    constexpr double CAMERA_STATE_EPSILON = 1e-6;
+    constexpr double FLING_DECAY_PER_SECOND = 4.0;
+    constexpr double FLING_STOP_VELOCITY_PIXELS_PER_SECOND = 6.0;
     constexpr int COORDINATE_PROJECTION_INPUT_STRIDE = 3;
     constexpr int COORDINATE_PROJECTION_OUTPUT_STRIDE = 3;
     constexpr int SCREEN_TO_COORDINATE_OUTPUT_STRIDE = 3;
+
+    struct NativeCameraState
+    {
+        double longitude = 104.293174;
+        double latitude = 32.2857965;
+        double zoom = 2.0;
+        double pitch = 0.0;
+        double bearing = 0.0;
+        double targetHeightMeters = 0.0;
+    };
 
     struct ProjectionSnapshot
     {
@@ -699,6 +721,7 @@ namespace
             std::unique_lock<std::mutex> lock(mutex);
             shutdownRendererLocked(lock);
             clearResourceStatusCallback();
+            clearCameraCallback();
         }
 
         void setResourceStatusCallback(JNIEnv* env, jobject callback)
@@ -710,7 +733,10 @@ namespace
                 statusCallback = nullptr;
             }
             statusCallbackMethod = nullptr;
-            javaVm = nullptr;
+            if (!cameraCallback)
+            {
+                javaVm = nullptr;
+            }
 
             if (!callback)
             {
@@ -729,7 +755,52 @@ namespace
             {
                 env->DeleteGlobalRef(statusCallback);
                 statusCallback = nullptr;
+                if (!cameraCallback)
+                {
+                    javaVm = nullptr;
+                }
+            }
+        }
+
+        void setCameraCallback(JNIEnv* env, jobject callback)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (cameraCallback)
+            {
+                env->DeleteGlobalRef(cameraCallback);
+                cameraCallback = nullptr;
+            }
+            cameraCallbackMethod = nullptr;
+            if (!statusCallback)
+            {
                 javaVm = nullptr;
+            }
+
+            if (!callback)
+            {
+                return;
+            }
+
+            env->GetJavaVM(&javaVm);
+            cameraCallback = env->NewGlobalRef(callback);
+            jclass callbackClass = env->GetObjectClass(callback);
+            cameraCallbackMethod = env->GetMethodID(
+                callbackClass,
+                "onNativeCameraChanged",
+                "(DDDDD)V");
+            env->DeleteLocalRef(callbackClass);
+            if (!cameraCallbackMethod)
+            {
+                env->DeleteGlobalRef(cameraCallback);
+                cameraCallback = nullptr;
+                if (!statusCallback)
+                {
+                    javaVm = nullptr;
+                }
+            }
+            else
+            {
+                emitCameraStateLocked(currentCameraState());
             }
         }
 
@@ -808,18 +879,157 @@ namespace
             double zoom,
             double pitch,
             double bearing,
-            double targetHeightMeters)
+            double targetHeightMeters,
+            long durationMillis)
         {
             std::lock_guard<std::mutex> lock(mutex);
-            cameraLongitude = longitude;
-            cameraLatitude = latitude;
-            cameraZoom = zoom;
-            cameraPitch = pitch;
-            cameraBearing = bearing;
-            cameraTargetHeightMeters = std::isfinite(targetHeightMeters) ? targetHeightMeters : 0.0;
+            cancelFlingLocked();
+            setCachedCameraStateLocked(NativeCameraState{
+                wrapLongitude(longitude),
+                clampLatitude(latitude),
+                clampZoom(zoom),
+                clampPitch(pitch),
+                normalizeBearing(bearing),
+                std::isfinite(targetHeightMeters) ? targetHeightMeters : 0.0});
             if (app)
             {
-                queueLatestCameraUpdateLocked();
+                queueSetCameraLocked(static_cast<float>(std::max<long>(durationMillis, 0L) / 1000.0));
+            }
+            else
+            {
+                emitCameraStateLocked(currentCameraState());
+            }
+        }
+
+        void panByPixels(float deltaX, float deltaY, int viewWidth, int viewHeight)
+        {
+            if (!std::isfinite(deltaX) || !std::isfinite(deltaY) || viewWidth <= 0 || viewHeight <= 0)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            queueCameraCommandLocked([this, deltaX, deltaY, viewWidth, viewHeight](rocky::Application* activeApp)
+            {
+                auto manipulator = manipulatorFor(activeApp);
+                if (!manipulator)
+                {
+                    return false;
+                }
+                const auto delta = normalizedPixelDelta(deltaX, deltaY, viewWidth, viewHeight);
+                manipulator->pan(delta.x, delta.y);
+                return true;
+            });
+        }
+
+        void zoomByScale(float scale)
+        {
+            if (!std::isfinite(scale) || scale <= 0.0f)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            queueCameraCommandLocked([scale](rocky::Application* activeApp)
+            {
+                auto manipulator = manipulatorFor(activeApp);
+                if (!manipulator)
+                {
+                    return false;
+                }
+                const double zoomDelta = 1.0 / static_cast<double>(scale) - 1.0;
+                manipulator->zoom(0.0, zoomDelta);
+                return true;
+            });
+        }
+
+        void zoomByScaleAt(float scale, float focusX, float focusY, int viewWidth, int viewHeight)
+        {
+            if (!std::isfinite(scale) || scale <= 0.0f ||
+                !std::isfinite(focusX) || !std::isfinite(focusY) ||
+                viewWidth <= 0 || viewHeight <= 0)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            queueCameraCommandLocked([this, scale, focusX, focusY, viewWidth, viewHeight](rocky::Application* activeApp)
+            {
+                return zoomByScaleAtOnUpdate(activeApp, scale, focusX, focusY, viewWidth, viewHeight);
+            });
+        }
+
+        void rotateByDegrees(double deltaDegrees)
+        {
+            if (!std::isfinite(deltaDegrees) || std::abs(deltaDegrees) < 0.01)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            queueCameraCommandLocked([deltaDegrees](rocky::Application* activeApp)
+            {
+                auto manipulator = manipulatorFor(activeApp);
+                if (!manipulator)
+                {
+                    return false;
+                }
+                manipulator->rotate((-deltaDegrees * PI / 180.0), 0.0);
+                return true;
+            });
+        }
+
+        void pitchByDegrees(double deltaDegrees)
+        {
+            if (!std::isfinite(deltaDegrees) || std::abs(deltaDegrees) < 0.01)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            queueCameraCommandLocked([deltaDegrees](rocky::Application* activeApp)
+            {
+                auto manipulator = manipulatorFor(activeApp);
+                if (!manipulator)
+                {
+                    return false;
+                }
+                manipulator->rotate(0.0, deltaDegrees * PI / 180.0);
+                return true;
+            });
+        }
+
+        void flingByVelocity(float velocityX, float velocityY, int viewWidth, int viewHeight)
+        {
+            if (!std::isfinite(velocityX) || !std::isfinite(velocityY) || viewWidth <= 0 || viewHeight <= 0)
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!app)
+            {
+                return;
+            }
+            flingVelocityX = velocityX;
+            flingVelocityY = velocityY;
+            flingViewWidth = viewWidth;
+            flingViewHeight = viewHeight;
+            flingActive = true;
+            flingLastTick = std::chrono::steady_clock::now();
+            requestFrameLocked();
+        }
+
+        void cancelCameraMotion()
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            cancelFlingLocked();
+            if (app)
+            {
+                queueCameraCommandLocked([](rocky::Application* activeApp)
+                {
+                    auto manipulator = manipulatorFor(activeApp);
+                    if (!manipulator)
+                    {
+                        return false;
+                    }
+                    manipulator->clearViewpoint();
+                    return true;
+                });
             }
         }
 
@@ -1763,17 +1973,6 @@ namespace
             clearLocationEntitiesLocked();
         }
 
-        void onTouch(int action, int pointerCount, float x0, float y0, float x1, float y1)
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            lastTouchAction = action;
-            lastPointerCount = pointerCount;
-            lastTouchX0 = x0;
-            lastTouchY0 = y0;
-            lastTouchX1 = x1;
-            lastTouchY1 = y1;
-        }
-
     private:
         std::string startRendererLocked()
         {
@@ -1995,6 +2194,14 @@ namespace
                                     std::lock_guard<std::mutex> statusLock(mutex);
                                     if (app.get() == activeApp)
                                     {
+                                        const bool flingChangedCamera = serviceFlingLocked(activeApp);
+                                        updateProjectionSnapshotLocked(activeApp);
+                                        const bool nativeChangedCamera =
+                                            syncCameraStateFromManipulatorLocked(activeApp, false);
+                                        if (flingChangedCamera || nativeChangedCamera)
+                                        {
+                                            emitCameraStateLocked(currentCameraState());
+                                        }
                                         logModelLayerStatusesLocked(activeApp);
                                     }
                                 }
@@ -2054,8 +2261,8 @@ namespace
         void detachSurfaceLocked(std::unique_lock<std::mutex>& lock)
         {
             running = false;
-            cameraUpdateQueued = false;
             terrainExaggerationUpdateQueued = false;
+            cancelFlingLocked();
             if (renderThread.joinable())
             {
                 auto thread = std::move(renderThread);
@@ -2145,7 +2352,10 @@ namespace
             {
                 statusCallback = nullptr;
                 statusCallbackMethod = nullptr;
-                javaVm = nullptr;
+                if (!cameraCallback)
+                {
+                    javaVm = nullptr;
+                }
                 return;
             }
 
@@ -2158,7 +2368,10 @@ namespace
                 {
                     statusCallback = nullptr;
                     statusCallbackMethod = nullptr;
-                    javaVm = nullptr;
+                    if (!cameraCallback)
+                    {
+                        javaVm = nullptr;
+                    }
                     return;
                 }
                 attached = true;
@@ -2175,7 +2388,58 @@ namespace
             {
                 javaVm->DetachCurrentThread();
             }
-            javaVm = nullptr;
+            if (!cameraCallback)
+            {
+                javaVm = nullptr;
+            }
+        }
+
+        void clearCameraCallback()
+        {
+            if (!javaVm || !cameraCallback)
+            {
+                cameraCallback = nullptr;
+                cameraCallbackMethod = nullptr;
+                if (!statusCallback)
+                {
+                    javaVm = nullptr;
+                }
+                return;
+            }
+
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            jint envResult = javaVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+            if (envResult == JNI_EDETACHED)
+            {
+                if (javaVm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+                {
+                    cameraCallback = nullptr;
+                    cameraCallbackMethod = nullptr;
+                    if (!statusCallback)
+                    {
+                        javaVm = nullptr;
+                    }
+                    return;
+                }
+                attached = true;
+            }
+
+            if (env)
+            {
+                env->DeleteGlobalRef(cameraCallback);
+            }
+            cameraCallback = nullptr;
+            cameraCallbackMethod = nullptr;
+
+            if (attached)
+            {
+                javaVm->DetachCurrentThread();
+            }
+            if (!statusCallback)
+            {
+                javaVm = nullptr;
+            }
         }
 
         void emitResourceStatusLocked(
@@ -2235,6 +2499,49 @@ namespace
             }
         }
 
+        void emitCameraStateLocked(const NativeCameraState& state)
+        {
+            if (!javaVm || !cameraCallback || !cameraCallbackMethod)
+            {
+                return;
+            }
+
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            jint envResult = javaVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+            if (envResult == JNI_EDETACHED)
+            {
+                if (javaVm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+                {
+                    return;
+                }
+                attached = true;
+            }
+            else if (envResult != JNI_OK || !env)
+            {
+                return;
+            }
+
+            env->CallVoidMethod(
+                cameraCallback,
+                cameraCallbackMethod,
+                static_cast<jdouble>(state.longitude),
+                static_cast<jdouble>(state.latitude),
+                static_cast<jdouble>(state.zoom),
+                static_cast<jdouble>(state.pitch),
+                static_cast<jdouble>(state.bearing));
+            if (env->ExceptionCheck())
+            {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+
+            if (attached)
+            {
+                javaVm->DetachCurrentThread();
+            }
+        }
+
         void queueApplyModelLayerLocked(const std::string& id, const ModelLayerConfig& config)
         {
             auto* activeApp = app.get();
@@ -2248,6 +2555,206 @@ namespace
                 applyModelLayerLocked(id, config);
             });
             requestFrameLocked();
+        }
+
+        vsg::dvec2 normalizedPixelDelta(float deltaX, float deltaY, int viewWidth, int viewHeight) const
+        {
+            const double renderWidth = static_cast<double>(std::max(effectiveRenderWidth(), 1));
+            const double renderHeight = static_cast<double>(std::max(effectiveRenderHeight(), 1));
+            const double renderDeltaX = static_cast<double>(deltaX) * renderWidth /
+                static_cast<double>(std::max(viewWidth, 1));
+            const double renderDeltaY = static_cast<double>(deltaY) * renderHeight /
+                static_cast<double>(std::max(viewHeight, 1));
+            const double aspectRatio = renderWidth / renderHeight;
+            return vsg::dvec2(
+                renderDeltaX / renderWidth * 2.0 * aspectRatio,
+                -renderDeltaY / renderHeight * 2.0);
+        }
+
+        bool zoomByScaleAtOnUpdate(
+            rocky::Application* activeApp,
+            float scale,
+            float focusX,
+            float focusY,
+            int viewWidth,
+            int viewHeight)
+        {
+            auto manipulator = manipulatorFor(activeApp);
+            if (!manipulator || !activeApp || !activeApp->mapNode)
+            {
+                return false;
+            }
+
+            const double renderX = static_cast<double>(focusX) *
+                static_cast<double>(std::max(effectiveRenderWidth(), 1)) /
+                static_cast<double>(std::max(viewWidth, 1));
+            const double renderY = static_cast<double>(focusY) *
+                static_cast<double>(std::max(effectiveRenderHeight(), 1)) /
+                static_cast<double>(std::max(viewHeight, 1));
+
+            vsg::dvec3 targetWorld;
+            if (!manipulator->viewportToWorld(static_cast<float>(renderX), static_cast<float>(renderY), targetWorld))
+            {
+                const double zoomDelta = 1.0 / static_cast<double>(scale) - 1.0;
+                manipulator->zoom(0.0, zoomDelta);
+                return true;
+            }
+
+            auto viewpoint = manipulator->viewpoint();
+            if (!viewpoint.valid() || !viewpoint.range.has_value())
+            {
+                return false;
+            }
+
+            const double oldRange = viewpoint.range->as(rocky::Units::METERS);
+            if (!std::isfinite(oldRange) || oldRange <= 0.0)
+            {
+                return false;
+            }
+
+            const double newRange = std::clamp(
+                oldRange / static_cast<double>(scale),
+                MIN_CAMERA_RANGE_METERS,
+                MAX_CAMERA_RANGE_METERS);
+            const double ratio = std::clamp((oldRange - newRange) / oldRange, -4.0, 4.0);
+
+            auto centerWorldGeo = viewpoint.position().transform(activeApp->mapNode->srs());
+            if (!centerWorldGeo)
+            {
+                return false;
+            }
+
+            vsg::dvec3 centerWorld(centerWorldGeo.x, centerWorldGeo.y, centerWorldGeo.z);
+            vsg::dvec3 nextCenter = centerWorld + (targetWorld - centerWorld) * ratio;
+            if (activeApp->mapNode->srs().isGeocentric())
+            {
+                const double centerLength = vsg::length(centerWorld);
+                const double nextLength = vsg::length(nextCenter);
+                if (centerLength > 0.0 && nextLength > 0.0)
+                {
+                    nextCenter = vsg::normalize(nextCenter) * centerLength;
+                }
+            }
+
+            auto nextWgs84 = rocky::GeoPoint(activeApp->mapNode->srs(), nextCenter).transform(rocky::SRS::WGS84);
+            if (!nextWgs84)
+            {
+                return false;
+            }
+
+            viewpoint.point = rocky::GeoPoint(
+                rocky::SRS::WGS84,
+                wrapLongitude(nextWgs84.x),
+                clampLatitude(nextWgs84.y),
+                std::isfinite(nextWgs84.z) ? nextWgs84.z : 0.0);
+            viewpoint.range = rocky::Distance(newRange, rocky::Units::METERS);
+            manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
+            return true;
+        }
+
+        void cancelFlingLocked()
+        {
+            flingActive = false;
+            flingVelocityX = 0.0;
+            flingVelocityY = 0.0;
+        }
+
+        bool serviceFlingLocked(rocky::Application* activeApp)
+        {
+            if (!flingActive)
+            {
+                return false;
+            }
+
+            auto manipulator = manipulatorFor(activeApp);
+            if (!manipulator)
+            {
+                cancelFlingLocked();
+                return false;
+            }
+
+            const auto now = std::chrono::steady_clock::now();
+            double dt = std::chrono::duration<double>(now - flingLastTick).count();
+            flingLastTick = now;
+            dt = std::clamp(dt, 0.0, 0.05);
+            if (dt <= 0.0)
+            {
+                return false;
+            }
+
+            const float deltaX = static_cast<float>(flingVelocityX * dt);
+            const float deltaY = static_cast<float>(flingVelocityY * dt);
+            const auto delta = normalizedPixelDelta(deltaX, deltaY, flingViewWidth, flingViewHeight);
+            manipulator->pan(delta.x, delta.y);
+
+            const double decay = std::exp(-FLING_DECAY_PER_SECOND * dt);
+            flingVelocityX *= decay;
+            flingVelocityY *= decay;
+            if (std::hypot(flingVelocityX, flingVelocityY) <= FLING_STOP_VELOCITY_PIXELS_PER_SECOND)
+            {
+                cancelFlingLocked();
+            }
+            else if (activeApp && activeApp->vsgcontext)
+            {
+                activeApp->vsgcontext->requestFrame();
+            }
+            return true;
+        }
+
+        bool cameraStatesClose(const NativeCameraState& lhs, const NativeCameraState& rhs) const
+        {
+            return std::abs(lhs.longitude - rhs.longitude) <= CAMERA_STATE_EPSILON &&
+                std::abs(lhs.latitude - rhs.latitude) <= CAMERA_STATE_EPSILON &&
+                std::abs(lhs.zoom - rhs.zoom) <= CAMERA_STATE_EPSILON &&
+                std::abs(lhs.pitch - rhs.pitch) <= CAMERA_STATE_EPSILON &&
+                std::abs(lhs.bearing - rhs.bearing) <= CAMERA_STATE_EPSILON;
+        }
+
+        bool syncCameraStateFromManipulatorLocked(rocky::Application* activeApp, bool force)
+        {
+            auto manipulator = manipulatorFor(activeApp);
+            if (!manipulator || !activeApp || !activeApp->mapNode)
+            {
+                return false;
+            }
+
+            const auto viewpoint = manipulator->viewpoint();
+            if (!viewpoint.valid())
+            {
+                return false;
+            }
+
+            auto wgs84 = viewpoint.position().transform(rocky::SRS::WGS84);
+            if (!wgs84 || !std::isfinite(wgs84.x) || !std::isfinite(wgs84.y))
+            {
+                return false;
+            }
+
+            const double rangeMeters = viewpoint.range.has_value()
+                ? viewpoint.range->as(rocky::Units::METERS)
+                : cameraRangeMeters();
+            const double pitchDegrees = viewpoint.pitch.has_value()
+                ? viewpoint.pitch->as(rocky::Units::DEGREES)
+                : (cameraState.pitch - 90.0);
+            const double headingDegrees = viewpoint.heading.has_value()
+                ? viewpoint.heading->as(rocky::Units::DEGREES)
+                : cameraState.bearing;
+
+            NativeCameraState next{
+                wrapLongitude(wgs84.x),
+                clampLatitude(wgs84.y),
+                cameraZoomForRange(rangeMeters, wgs84.y, effectiveRenderHeight()),
+                clampPitch(pitchDegrees + 90.0),
+                normalizeBearing(headingDegrees),
+                std::isfinite(wgs84.z) ? wgs84.z : 0.0};
+
+            if (!force && cameraStatesClose(cameraState, next))
+            {
+                return false;
+            }
+
+            setCachedCameraStateLocked(next);
+            return true;
         }
 
         void queueRemoveModelLayerLocked(const std::string& id)
@@ -3497,12 +4004,12 @@ namespace
 
         double cameraRangeMeters() const
         {
-            return cameraRangeMeters(cameraZoom, cameraLatitude, effectiveRenderHeight());
+            return cameraRangeMeters(cameraState.zoom, cameraState.latitude, effectiveRenderHeight());
         }
 
         static double cameraRangeMeters(double zoom, double latitude, int viewportHeight)
         {
-            const double clampedZoom = std::clamp(zoom, 0.0, 22.0);
+            const double clampedZoom = clampZoom(zoom);
             const double latitudeScale = std::max(std::cos(latitude * PI / 180.0), 0.05);
             const double metersPerPixel =
                 EARTH_CIRCUMFERENCE_METERS * latitudeScale /
@@ -3512,8 +4019,32 @@ namespace
 
             return std::clamp(
                 visibleGroundMeters / (2.0 * std::tan(halfFovyRadians)),
-                100.0,
-                30000000.0);
+                MIN_CAMERA_RANGE_METERS,
+                MAX_CAMERA_RANGE_METERS);
+        }
+
+        static double cameraZoomForRange(double rangeMeters, double latitude, int viewportHeight)
+        {
+            if (!std::isfinite(rangeMeters) || rangeMeters <= 0.0)
+            {
+                return MIN_CAMERA_ZOOM;
+            }
+            const double halfFovyRadians = (VECTORRA_CAMERA_FOVY_DEGREES * PI / 180.0) * 0.5;
+            const double visibleGroundMeters =
+                rangeMeters * 2.0 * std::tan(halfFovyRadians);
+            const double metersPerPixel =
+                visibleGroundMeters / static_cast<double>(std::max(viewportHeight, 1));
+            if (!std::isfinite(metersPerPixel) || metersPerPixel <= 0.0)
+            {
+                return MIN_CAMERA_ZOOM;
+            }
+            const double latitudeScale = std::max(std::cos(latitude * PI / 180.0), 0.05);
+            const double denominator = WEB_MERCATOR_TILE_SIZE * metersPerPixel;
+            if (denominator <= 0.0)
+            {
+                return MIN_CAMERA_ZOOM;
+            }
+            return clampZoom(std::log2(EARTH_CIRCUMFERENCE_METERS * latitudeScale / denominator));
         }
 
         int effectiveRenderWidth() const
@@ -3640,141 +4171,173 @@ namespace
                 wgs84.y};
         }
 
-        rocky::Viewpoint currentViewpoint() const
-        {
-            rocky::Viewpoint viewpoint;
-            viewpoint.point = rocky::GeoPoint(
-                rocky::SRS::WGS84,
-                cameraLongitude,
-                cameraLatitude,
-                cameraTargetHeightMeters);
-            viewpoint.range = rocky::Distance(cameraRangeMeters(), rocky::Units::METERS);
-            viewpoint.heading = rocky::Angle(cameraBearing, rocky::Units::DEGREES);
-            viewpoint.pitch = rocky::Angle(std::clamp(cameraPitch - 90.0, -90.0, -5.0), rocky::Units::DEGREES);
-            return viewpoint;
-        }
-
-        void applyCameraNow(rocky::Application* activeApp)
+        static vsg::ref_ptr<rocky::MapManipulator> manipulatorFor(rocky::Application* activeApp)
         {
             if (!activeApp || activeApp->display.windows().empty())
             {
-                return;
+                return {};
             }
 
             auto& window = activeApp->display.window(0);
             if (window.views().empty())
             {
-                return;
+                return {};
             }
 
             auto& view = window.view(0);
-            auto manipulator = rocky::MapManipulator::get(view.vsgView);
+            if (!view.vsgView)
+            {
+                return {};
+            }
+            return rocky::MapManipulator::get(view.vsgView);
+        }
+
+        static double wrapLongitude(double longitude)
+        {
+            if (!std::isfinite(longitude))
+            {
+                return 0.0;
+            }
+            double result = std::fmod(longitude + 180.0, 360.0);
+            if (result < 0.0)
+            {
+                result += 360.0;
+            }
+            return result - 180.0;
+        }
+
+        static double clampLatitude(double latitude)
+        {
+            return std::isfinite(latitude) ? std::clamp(latitude, MIN_CAMERA_LATITUDE, MAX_CAMERA_LATITUDE) : 0.0;
+        }
+
+        static double clampZoom(double zoom)
+        {
+            return std::isfinite(zoom) ? std::clamp(zoom, MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM) : MIN_CAMERA_ZOOM;
+        }
+
+        static double clampPitch(double pitch)
+        {
+            return std::isfinite(pitch) ? std::clamp(pitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH) : MIN_CAMERA_PITCH;
+        }
+
+        static double normalizeBearing(double bearing)
+        {
+            if (!std::isfinite(bearing))
+            {
+                return 0.0;
+            }
+            double result = std::fmod(bearing, 360.0);
+            if (result < 0.0)
+            {
+                result += 360.0;
+            }
+            return result;
+        }
+
+        NativeCameraState currentCameraState() const
+        {
+            return cameraState;
+        }
+
+        void setCachedCameraStateLocked(const NativeCameraState& state)
+        {
+            cameraState.longitude = wrapLongitude(state.longitude);
+            cameraState.latitude = clampLatitude(state.latitude);
+            cameraState.zoom = clampZoom(state.zoom);
+            cameraState.pitch = clampPitch(state.pitch);
+            cameraState.bearing = normalizeBearing(state.bearing);
+            cameraState.targetHeightMeters = std::isfinite(state.targetHeightMeters) ? state.targetHeightMeters : 0.0;
+        }
+
+        rocky::Viewpoint viewpointForCameraState(const NativeCameraState& state, int viewportHeight) const
+        {
+            rocky::Viewpoint viewpoint;
+            viewpoint.point = rocky::GeoPoint(
+                rocky::SRS::WGS84,
+                wrapLongitude(state.longitude),
+                clampLatitude(state.latitude),
+                std::isfinite(state.targetHeightMeters) ? state.targetHeightMeters : 0.0);
+            viewpoint.range = rocky::Distance(cameraRangeMeters(state.zoom, state.latitude, viewportHeight), rocky::Units::METERS);
+            viewpoint.heading = rocky::Angle(normalizeBearing(state.bearing), rocky::Units::DEGREES);
+            viewpoint.pitch = rocky::Angle(clampPitch(state.pitch) - 90.0, rocky::Units::DEGREES);
+            return viewpoint;
+        }
+
+        void applyCameraNow(rocky::Application* activeApp)
+        {
+            auto manipulator = manipulatorFor(activeApp);
             if (!manipulator)
             {
                 __android_log_print(ANDROID_LOG_WARN, TAG, "camera update skipped: manipulator missing");
                 return;
             }
 
-            const auto viewpoint = currentViewpoint();
+            cancelFlingLocked();
+            const auto viewpoint = viewpointForCameraState(cameraState, effectiveRenderHeight());
             manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
+            syncCameraStateFromManipulatorLocked(activeApp, true);
             updateProjectionSnapshotLocked(activeApp);
-            if (activeApp->vsgcontext)
+            if (activeApp && activeApp->vsgcontext)
             {
                 activeApp->vsgcontext->requestFrame();
             }
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "camera applied lon=%.6f lat=%.6f height=%.1f zoom=%.2f range=%.1f pitch=%.1f bearing=%.1f",
-                cameraLongitude,
-                cameraLatitude,
-                cameraTargetHeightMeters,
-                cameraZoom,
-                cameraRangeMeters(),
-                cameraPitch - 90.0,
-                cameraBearing);
+            emitCameraStateLocked(currentCameraState());
         }
 
-        void queueLatestCameraUpdateLocked()
+        void queueSetCameraLocked(float durationSeconds)
         {
-            if (cameraUpdateQueued)
+            queueCameraCommandLocked([this, durationSeconds](rocky::Application* activeApp)
+            {
+                auto manipulator = manipulatorFor(activeApp);
+                if (!manipulator)
+                {
+                    __android_log_print(ANDROID_LOG_WARN, TAG, "queued camera update skipped: manipulator missing");
+                    return false;
+                }
+                const auto viewpoint = viewpointForCameraState(cameraState, effectiveRenderHeight());
+                manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(std::max(durationSeconds, 0.0f)));
+                return true;
+            }, true);
+        }
+
+        using CameraCommand = std::function<bool(rocky::Application*)>;
+
+        void queueCameraCommandLocked(CameraCommand command, bool forceEmit = false)
+        {
+            if (!app)
             {
                 return;
             }
 
             auto* activeApp = app.get();
-            cameraUpdateQueued = true;
-            activeApp->onNextUpdate([this, activeApp]()
+            activeApp->onNextUpdate([this, activeApp, command = std::move(command), forceEmit]()
             {
-                double longitude = 0.0;
-                double latitude = 0.0;
-                double zoom = 0.0;
-                double pitch = 0.0;
-                double bearing = 0.0;
-                double targetHeightMeters = 0.0;
-                int viewportHeight = 1;
+                bool changed = false;
                 {
                     std::lock_guard<std::mutex> lock(mutex);
-                    cameraUpdateQueued = false;
-                    longitude = cameraLongitude;
-                    latitude = cameraLatitude;
-                    zoom = cameraZoom;
-                    pitch = cameraPitch;
-                    bearing = cameraBearing;
-                    targetHeightMeters = cameraTargetHeightMeters;
-                    viewportHeight = effectiveRenderHeight();
-                }
-
-                if (!activeApp || activeApp->display.windows().empty())
-                {
-                    return;
-                }
-
-                auto& window = activeApp->display.window(0);
-                if (window.views().empty())
-                {
-                    return;
-                }
-
-                auto& view = window.view(0);
-                auto manipulator = rocky::MapManipulator::get(view.vsgView);
-                if (!manipulator)
-                {
-                    __android_log_print(ANDROID_LOG_WARN, TAG, "queued camera update skipped: manipulator missing");
-                    return;
-                }
-
-                const double rangeMeters = cameraRangeMeters(zoom, latitude, viewportHeight);
-
-                rocky::Viewpoint viewpoint;
-                viewpoint.point = rocky::GeoPoint(rocky::SRS::WGS84, longitude, latitude, targetHeightMeters);
-                viewpoint.range = rocky::Distance(rangeMeters, rocky::Units::METERS);
-                viewpoint.heading = rocky::Angle(bearing, rocky::Units::DEGREES);
-                viewpoint.pitch = rocky::Angle(std::clamp(pitch - 90.0, -90.0, -5.0), rocky::Units::DEGREES);
-                manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
-                {
-                    std::lock_guard<std::mutex> lock(mutex);
-                    if (app.get() == activeApp)
+                    if (app.get() != activeApp)
+                    {
+                        return;
+                    }
+                    changed = command(activeApp);
+                    if (changed)
                     {
                         updateProjectionSnapshotLocked(activeApp);
+                        syncCameraStateFromManipulatorLocked(activeApp, forceEmit);
+                    }
+                    if (activeApp->vsgcontext)
+                    {
+                        activeApp->vsgcontext->requestFrame();
                     }
                 }
-                if (activeApp->vsgcontext)
+                if (changed)
                 {
-                    activeApp->vsgcontext->requestFrame();
+                    std::lock_guard<std::mutex> lock(mutex);
+                    emitCameraStateLocked(currentCameraState());
                 }
-                __android_log_print(
-                    ANDROID_LOG_INFO,
-                    TAG,
-                    "camera applied lon=%.6f lat=%.6f height=%.1f zoom=%.2f range=%.1f pitch=%.1f bearing=%.1f",
-                    longitude,
-                    latitude,
-                    targetHeightMeters,
-                    zoom,
-                    rangeMeters,
-                    pitch - 90.0,
-                    bearing);
             });
+            requestFrameLocked();
         }
 
         std::mutex mutex;
@@ -3787,22 +4350,15 @@ namespace
         int surfaceHeight = 1;
         ProjectionSnapshot projectionSnapshot;
 
-        double cameraLongitude = 104.293174;
-        double cameraLatitude = 32.2857965;
-        double cameraZoom = 2.0;
-        double cameraPitch = 0.0;
-        double cameraBearing = 0.0;
-        double cameraTargetHeightMeters = 0.0;
-        bool cameraUpdateQueued = false;
+        NativeCameraState cameraState;
         float terrainExaggeration = 1.0f;
         bool terrainExaggerationUpdateQueued = false;
-
-        int lastTouchAction = 0;
-        int lastPointerCount = 0;
-        float lastTouchX0 = 0.0f;
-        float lastTouchY0 = 0.0f;
-        float lastTouchX1 = 0.0f;
-        float lastTouchY1 = 0.0f;
+        bool flingActive = false;
+        double flingVelocityX = 0.0;
+        double flingVelocityY = 0.0;
+        int flingViewWidth = 1;
+        int flingViewHeight = 1;
+        std::chrono::steady_clock::time_point flingLastTick = std::chrono::steady_clock::now();
 
         std::unordered_map<std::string, RasterLayerConfig> rasterLayers;
         std::vector<std::string> rasterLayerOrder;
@@ -3831,6 +4387,8 @@ namespace
         JavaVM* javaVm = nullptr;
         jobject statusCallback = nullptr;
         jmethodID statusCallbackMethod = nullptr;
+        jobject cameraCallback = nullptr;
+        jmethodID cameraCallbackMethod = nullptr;
     };
 
     VectorraNativeEngine* fromHandle(jlong handle)
@@ -4035,6 +4593,15 @@ Java_com_vectorra_maps_internal_VectorraNative_setResourceStatusCallback(JNIEnv*
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setCameraCallback(JNIEnv* env, jobject, jlong handle, jobject callback)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->setCameraCallback(env, callback);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_vectorra_maps_internal_VectorraNative_setResourcePath(JNIEnv* env, jobject, jlong handle, jstring path)
 {
     if (auto* engine = fromHandle(handle))
@@ -4085,11 +4652,78 @@ Java_com_vectorra_maps_internal_VectorraNative_setCamera(
     jdouble zoom,
     jdouble pitch,
     jdouble bearing,
-    jdouble targetHeightMeters)
+    jdouble targetHeightMeters,
+    jlong durationMillis)
 {
     if (auto* engine = fromHandle(handle))
     {
-        engine->setCamera(longitude, latitude, zoom, pitch, bearing, targetHeightMeters);
+        engine->setCamera(longitude, latitude, zoom, pitch, bearing, targetHeightMeters, durationMillis);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_panByPixels(
+    JNIEnv*, jobject, jlong handle, jfloat deltaX, jfloat deltaY, jint viewWidth, jint viewHeight)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->panByPixels(deltaX, deltaY, viewWidth, viewHeight);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_zoomByScale(JNIEnv*, jobject, jlong handle, jfloat scale)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->zoomByScale(scale);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_zoomByScaleAt(
+    JNIEnv*, jobject, jlong handle, jfloat scale, jfloat focusX, jfloat focusY, jint viewWidth, jint viewHeight)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->zoomByScaleAt(scale, focusX, focusY, viewWidth, viewHeight);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_rotateByDegrees(JNIEnv*, jobject, jlong handle, jdouble deltaDegrees)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->rotateByDegrees(deltaDegrees);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_pitchByDegrees(JNIEnv*, jobject, jlong handle, jdouble deltaDegrees)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->pitchByDegrees(deltaDegrees);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_flingByVelocity(
+    JNIEnv*, jobject, jlong handle, jfloat velocityX, jfloat velocityY, jint viewWidth, jint viewHeight)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->flingByVelocity(velocityX, velocityY, viewWidth, viewHeight);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_cancelCameraMotion(JNIEnv*, jobject, jlong handle)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->cancelCameraMotion();
     }
 }
 
@@ -4714,15 +5348,5 @@ Java_com_vectorra_maps_internal_VectorraNative_clearLocationIndicator(JNIEnv*, j
     if (auto* engine = fromHandle(handle))
     {
         engine->clearLocationIndicator();
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_vectorra_maps_internal_VectorraNative_onTouch(
-    JNIEnv*, jobject, jlong handle, jint action, jint pointerCount, jfloat x0, jfloat y0, jfloat x1, jfloat y1)
-{
-    if (auto* engine = fromHandle(handle))
-    {
-        engine->onTouch(action, pointerCount, x0, y0, x1, y1);
     }
 }
