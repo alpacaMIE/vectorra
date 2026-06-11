@@ -386,6 +386,11 @@ void Tiles3DNode::compileWorker(VSGContext ctx) const
             vsg::ref_ptr<const Tiles3DNode> self(this);
             ctx->onNextUpdate([self, ctx, attaches](VSGContext)
                 {
+                    const auto& viewer = ctx->viewer();
+                    auto* stamp = viewer ? viewer->getFrameStamp() : nullptr;
+                    const uint64_t frame = stamp ? stamp->frameCount : 0u;
+                    const double simTime = stamp ? stamp->simulationTime : 0.0;
+
                     for (auto& a : attaches)
                     {
                         if (!a.tile->_compilePending.exchange(false))
@@ -399,6 +404,7 @@ void Tiles3DNode::compileWorker(VSGContext ctx) const
                         {
                             a.tile->_content = a.node;
                             a.tile->_gpuBytes = a.bytes;
+                            a.tile->touch(frame, simTime, true);
                             self->_residentBytes.fetch_add(a.bytes);
                             self->registerResident(a.tile.get());
                             self->unregisterPending(a.tile.get());
@@ -438,14 +444,15 @@ void Tiles3DNode::traverse(vsg::RecordTraversal& rv) const
             : 1.0;
     }
 
-    // Per-frame housekeeping (sweep, eviction, prune)
+    Inherit::traverse(rv);
+
+    // Per-frame housekeeping after traversal so the current visible and
+    // refinement-candidate set has a chance to refresh its LRU stamps first.
     if (rv.getFrameStamp())
     {
         const auto frame = rv.getFrameStamp()->frameCount;
         expireTiles(frame, rv.getFrameStamp()->simulationTime);
     }
-
-    Inherit::traverse(rv);
 }
 
 void Tiles3DNode::traverse(vsg::Visitor& v) { Inherit::traverse(v); }
@@ -515,6 +522,24 @@ bool Tile3DNode::hasContent() const
     return _tile->content.has_value();
 }
 
+void Tile3DNode::touch(uint64_t frame, double simulationTime, bool protectResident) const
+{
+    _lastSeenFrame = frame;
+    if (protectResident && hasContent())
+    {
+        _lastUsedFrame = frame;
+        _lastUsedTime = simulationTime;
+    }
+}
+
+void Tile3DNode::touch(const vsg::RecordTraversal& rv, bool protectResident) const
+{
+    const uint64_t frame = frameOf(rv);
+    auto* stamp = const_cast<vsg::RecordTraversal&>(rv).getFrameStamp();
+    const double simTime = stamp ? stamp->simulationTime : 0.0;
+    touch(frame, simTime, protectResident);
+}
+
 bool Tile3DNode::isContentReady() const
 {
     // A permanently failed tile is as ready as it will ever be: report ready
@@ -534,13 +559,14 @@ bool Tile3DNode::isContentReady() const
     // nobody else would request its content during the gating phase.
     if (auto* graft = _content->cast<Tile3DNode>())
     {
+        graft->_screenSpaceError.store(_screenSpaceError.load());
+        graft->touch(_lastUsedFrame, _lastUsedTime, true);
+
         if (graft->hasContent() && !graft->isContentReady())
         {
             // inherit the pointing tile's SSE and liveness so the load queue
             // prioritizes the graft like the tile it stands in for and the
             // stale sweep doesn't cancel it
-            graft->_screenSpaceError.store(_screenSpaceError.load());
-            graft->_lastSeenFrame = _lastSeenFrame;
             graft->requestContent();
             graft->resolveContent();
             return false;
@@ -899,8 +925,12 @@ bool Tile3DNode::allChildrenReady(const vsg::RecordTraversal& rv) const
         // the refinement switch. Off-screen children are never requested, so
         // requiring them here would block refinement forever near the
         // viewport edges.
-        if (ct && ct->hasContent() && !ct->isContentReady() && ct->intersectsFrustum(rv))
-            return false;
+        if (ct && ct->intersectsFrustum(rv))
+        {
+            ct->touch(rv, true);
+            if (ct->hasContent() && !ct->isContentReady())
+                return false;
+        }
     }
     return true;
 }
@@ -959,7 +989,8 @@ double Tile3DNode::computeScreenSpaceError(const vsg::RecordTraversal& rv) const
 void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
 {
     const uint64_t frame = frameOf(rv);
-    _lastSeenFrame = frame;
+    const double simTime = rv.getFrameStamp() ? rv.getFrameStamp()->simulationTime : 0.0;
+    touch(frame, simTime, false);
 
     if (!intersectsFrustum(rv))
         return;
@@ -980,18 +1011,12 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
     // must always recurse to children to show anything at all.
     const bool needsRefinement = !hasContent() || sse > _tilesetNode->maximumScreenSpaceError;
 
-    const double simTime = rv.getFrameStamp() ? rv.getFrameStamp()->simulationTime : 0.0;
-
     if (needsRefinement && childrenReady && _childGroup)
     {
         // Keep this tile fresh in the LRU even while its children render — it
         // is the fallback when a child gets evicted or a new child scrolls
         // into view before its content is loaded.
-        if (hasContent())
-        {
-            _lastUsedFrame = frame;
-            _lastUsedTime = simTime;
-        }
+        touch(frame, simTime, true);
 
         // ADD: render parent content too
         if (_content && _tile->refine == Tiles3DRefine::ADD)
@@ -1008,7 +1033,7 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
             {
                 if (ct->intersectsFrustum(rv))
                 {
-                    ct->_lastSeenFrame = frame; // keep the stale sweep off pre-fetched tiles
+                    ct->touch(frame, simTime, true);
                     ct->computeScreenSpaceError(rv);
                     ct->requestContent();
                 }
@@ -1018,11 +1043,7 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
     else
     {
         // This tile IS the leaf being rendered — touch it so it stays alive
-        if (hasContent())
-        {
-            _lastUsedFrame = frame;
-            _lastUsedTime = simTime;
-        }
+        touch(frame, simTime, true);
 
         // Render this tile's content
         if (_content)
@@ -1041,7 +1062,7 @@ void Tile3DNode::traverse(vsg::RecordTraversal& rv) const
                 {
                     if (ct->intersectsFrustum(rv))
                     {
-                        ct->_lastSeenFrame = frame;
+                        ct->touch(frame, simTime, true);
                         ct->computeScreenSpaceError(rv);
                         ct->requestContent();
                         ct->resolveContent();

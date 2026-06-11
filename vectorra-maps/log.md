@@ -4881,3 +4881,40 @@ Results:
 Known issues / next:
 
 - The local ADB `input` command does not provide a reliable multi-touch pinch primitive, so pinch was verified through the rebuilt native path and code inspection rather than automated two-finger input.
+
+## 2026-06-11
+
+### 3D Tiles Refinement Stall Fix
+
+Completed:
+
+- Traced the stalled fine-detail 3D Tiles loading to Rocky resident-tile eviction running before the current frame refreshed visible refinement candidates.
+- Moved 3D Tiles eviction to run after record traversal so visible and required candidates refresh their LRU state before cache pressure is enforced.
+- Added a shared tile touch path and applied it to rendered leaves, fallback parents, visible prefetched children, newly attached compiled content, and external tileset grafts.
+- Kept `maximumLoadedTiles` and `maximumResidentBytes` as cache budgets while allowing the current visible/required set to survive budget pressure until it is no longer needed.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+.\gradlew.bat :vectorra-sample:assembleDebug
+git diff --check
+git diff --check -- vectorra-maps/third_party/rocky/src/rocky/vsg/Tiles3DNode.cpp vectorra-maps/third_party/rocky/src/rocky/vsg/Tiles3DNode.h
+$adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+& $adb -s emulator-5554 install -r -d -t .\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-x86_64-debug.apk
+& $adb -s emulator-5554 shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action zoom-3dtiles
+& $adb -s emulator-5554 logcat -d -v time VectorraSample:I rocky_tiles3d:I rocky_jni:I AndroidRuntime:E '*:S'
+& $adb -s emulator-5554 logcat -d -v time AndroidRuntime:E libc:E DEBUG:E '*:S'
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed for `arm64-v8a` and `x86_64`, including native rocky rebuilds.
+- `git diff --check` is blocked by an unrelated existing `AGENTS.md:103` blank-line-at-EOF issue.
+- Targeted `git diff --check` for the modified Rocky files passed with CRLF warnings only.
+- Emulator smoke on `emulator-5554` installed the x86_64 sample, launched `zoom-3dtiles`, loaded the NLSC tileset, ran zoom to level 20, and produced a nonblank 3D Tiles zoom snapshot with no `AndroidRuntime`, `libc`, or `DEBUG` error logs.
+
+Known issues / next:
+
+- The smoke test verifies loading, zoom transitions, snapshot nonblank output, and absence of crashes; it does not quantitatively assert every fine-detail tile has completed rendering.

@@ -262,6 +262,11 @@ namespace ROCKY_NAMESPACE
         // the tile stops requesting and no longer gates parent refinement
         mutable bool _permanentlyFailed = false;
 
+        //! Refresh traversal/LRU stamps. protectResident marks content as
+        //! required by the current selection even if it is not drawn yet.
+        void touch(uint64_t frame, double simulationTime, bool protectResident) const;
+        void touch(const vsg::RecordTraversal& rv, bool protectResident) const;
+
         //! Common failure path: bump the fail counter, schedule a backoff
         //! retry, and release the load state so requestContent() can re-fire.
         void failWithBackoff(const std::string& msg) const;
