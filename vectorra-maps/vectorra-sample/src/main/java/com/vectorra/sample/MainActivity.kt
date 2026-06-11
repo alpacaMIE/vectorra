@@ -276,6 +276,9 @@ class MainActivity : Activity() {
                 },
                 sampleButton("MVT Hide") {
                     hiddenSampleMvt()
+                },
+                sampleButton("MVT Bad") {
+                    loadBrokenSampleMvt()
                 }
             ))
 
@@ -553,10 +556,14 @@ class MainActivity : Activity() {
                 file = createSampleMvtMbTiles(),
                 id = SAMPLE_MVT_MBTILES_SOURCE_ID
             )
+            val sampleCenter = sampleMvtCoordinate(
+                localX = SAMPLE_MVT_QUERY_LOCAL_X,
+                localY = SAMPLE_MVT_QUERY_LOCAL_Y
+            )
             mapView.map.setCamera(
                 CameraOptions(
-                    longitude = SAMPLE_MVT_LONGITUDE,
-                    latitude = SAMPLE_MVT_LATITUDE,
+                    longitude = sampleCenter.longitude,
+                    latitude = sampleCenter.latitude,
                     zoom = 12.0,
                     pitch = 0.0,
                     bearing = 0.0
@@ -565,7 +572,7 @@ class MainActivity : Activity() {
             mapView.map.addMbTilesVectorLayer(
                 source = source,
                 layer = VectorraVectorTileLayer.Line(
-                    id = SAMPLE_MVT_LAYER_ID,
+                    id = SAMPLE_MVT_LINE_LAYER_ID,
                     sourceId = source.id,
                     sourceLayer = "transportation",
                     minZoom = 12,
@@ -575,18 +582,104 @@ class MainActivity : Activity() {
                     widthPixels = 4.0
                 )
             )
+            mapView.map.addMbTilesVectorLayer(
+                source = source,
+                layer = VectorraVectorTileLayer.Fill(
+                    id = SAMPLE_MVT_FILL_LAYER_ID,
+                    sourceId = source.id,
+                    sourceLayer = "landuse",
+                    minZoom = 12,
+                    maxZoom = 12,
+                    color = 0x6659a14f,
+                    opacity = 0.6
+                )
+            )
+            mapView.map.addMbTilesVectorLayer(
+                source = source,
+                layer = VectorraVectorTileLayer.Circle(
+                    id = SAMPLE_MVT_POINT_LAYER_ID,
+                    sourceId = source.id,
+                    sourceLayer = "poi",
+                    minZoom = 12,
+                    maxZoom = 12,
+                    color = 0xffff6b6b.toInt(),
+                    opacity = 1.0,
+                    radiusPixels = 7.0
+                )
+            )
             statusText.text = "MVT MBTiles layer requested"
-            Log.i(LOG_TAG, "MVT MBTiles smoke: requested file=${source.metadata.name}")
+            Log.i(LOG_TAG, "MVT MBTiles smoke: requested line/fill/point file=${source.metadata.name}")
             statusText.postDelayed({
-                logCenterMvtQuery("MVT MBTiles center query")
+                logSampleMvtGeometryQuery(
+                    prefix = "MVT MBTiles line geometry query",
+                    layerId = SAMPLE_MVT_LINE_LAYER_ID,
+                    sourceLayerIds = setOf("transportation")
+                )
+                logSampleMvtGeometryQuery(
+                    prefix = "MVT MBTiles fill geometry query",
+                    layerId = SAMPLE_MVT_FILL_LAYER_ID,
+                    sourceLayerIds = setOf("landuse")
+                )
+                logSampleMvtGeometryQuery(
+                    prefix = "MVT MBTiles point geometry query",
+                    layerId = SAMPLE_MVT_POINT_LAYER_ID,
+                    sourceLayerIds = setOf("poi")
+                )
             }, SAMPLE_MVT_QUERY_DELAY_MS)
         }.onFailure { error ->
             statusText.text = "MVT MBTiles error: ${error.message}"
         }
     }
 
-    private fun createSampleMvtMbTiles(): File {
-        val file = File(cacheDir, SAMPLE_MVT_MBTILES_FILE_NAME)
+    private fun loadBrokenSampleMvt() {
+        runCatching {
+            val source = VectorraMbTilesVectorSource.open(
+                file = createSampleMvtMbTiles(
+                    fileName = SAMPLE_BAD_MVT_MBTILES_FILE_NAME,
+                    metadataName = "Vectorra Bad MVT",
+                    tileData = byteArrayOf(0xff.toByte())
+                ),
+                id = SAMPLE_BAD_MVT_SOURCE_ID
+            )
+            val sampleCenter = sampleMvtCoordinate(
+                localX = SAMPLE_MVT_QUERY_LOCAL_X,
+                localY = SAMPLE_MVT_QUERY_LOCAL_Y
+            )
+            mapView.map.setCamera(
+                CameraOptions(
+                    longitude = sampleCenter.longitude,
+                    latitude = sampleCenter.latitude,
+                    zoom = 12.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            )
+            mapView.map.addMbTilesVectorLayer(
+                source = source,
+                layer = VectorraVectorTileLayer.Line(
+                    id = SAMPLE_BAD_MVT_LAYER_ID,
+                    sourceId = source.id,
+                    sourceLayer = "transportation",
+                    minZoom = 12,
+                    maxZoom = 12,
+                    color = 0xffff6b6b.toInt(),
+                    opacity = 1.0,
+                    widthPixels = 4.0
+                )
+            )
+            statusText.text = "Bad MVT requested"
+            Log.i(LOG_TAG, "Bad MVT smoke: requested invalid tile file=${source.metadata.name}")
+        }.onFailure { error ->
+            statusText.text = "Bad MVT setup error: ${error.message}"
+        }
+    }
+
+    private fun createSampleMvtMbTiles(
+        fileName: String = SAMPLE_MVT_MBTILES_FILE_NAME,
+        metadataName: String = "Vectorra Sample MVT",
+        tileData: ByteArray = sampleMvtTile()
+    ): File {
+        val file = File(cacheDir, fileName)
         if (file.exists()) {
             file.delete()
         }
@@ -600,7 +693,7 @@ class MainActivity : Activity() {
                     "tile_row INTEGER, " +
                     "tile_data BLOB)"
             )
-            insertMbTilesMetadata(db, "name", "Vectorra Sample MVT")
+            insertMbTilesMetadata(db, "name", metadataName)
             insertMbTilesMetadata(db, "format", "pbf")
             insertMbTilesMetadata(db, "minzoom", "12")
             insertMbTilesMetadata(db, "maxzoom", "12")
@@ -611,7 +704,7 @@ class MainActivity : Activity() {
                 statement.bindLong(1, SAMPLE_MVT_TILE_Z.toLong())
                 statement.bindLong(2, SAMPLE_MVT_TILE_X.toLong())
                 statement.bindLong(3, tmsTileRow(SAMPLE_MVT_TILE_Z, SAMPLE_MVT_TILE_Y).toLong())
-                statement.bindBlob(4, sampleMvtTile())
+                statement.bindBlob(4, tileData)
                 statement.executeInsert()
             }
         }
@@ -659,13 +752,13 @@ class MainActivity : Activity() {
                 CameraOptions(
                     longitude = SAMPLE_MVT_PAN_LONGITUDE,
                     latitude = SAMPLE_MVT_LATITUDE,
-                    zoom = 12.0,
+                    zoom = SAMPLE_MVT_PAN_ZOOM,
                     pitch = 0.0,
                     bearing = 0.0
                 )
             )
-            statusText.text = "MVT pan smoke"
-            Log.i(LOG_TAG, "MVT smoke: camera pan lon=$SAMPLE_MVT_PAN_LONGITUDE")
+            statusText.text = "MVT pan/zoom smoke"
+            Log.i(LOG_TAG, "MVT smoke: camera pan lon=$SAMPLE_MVT_PAN_LONGITUDE zoom=$SAMPLE_MVT_PAN_ZOOM")
             statusText.postDelayed({
                 logCenterMvtQuery("MVT pan center query")
             }, SAMPLE_MVT_PAN_QUERY_DELAY_MS)
@@ -1085,6 +1178,7 @@ class MainActivity : Activity() {
                 SAMPLE_ACTION_READD_MVT -> reloadSampleMvt()
                 SAMPLE_ACTION_PAN_MVT -> panSampleMvt()
                 SAMPLE_ACTION_HIDDEN_MVT -> hiddenSampleMvt()
+                SAMPLE_ACTION_BAD_MVT -> loadBrokenSampleMvt()
                 SAMPLE_ACTION_BAD_3D_TILES -> loadBrokenSample3DTiles()
                 SAMPLE_ACTION_REMOVE_3D_TILES -> removeSample3DTiles()
                 SAMPLE_ACTION_READD_3D_TILES -> reloadSample3DTiles()
@@ -1203,8 +1297,25 @@ class MainActivity : Activity() {
     private fun logCenterMvtQuery(prefix: String) {
         logCenterQuery(
             prefix = prefix,
-            layerId = SAMPLE_MVT_LAYER_ID,
+            layerId = SAMPLE_MVT_LINE_LAYER_ID,
             sourceLayerIds = setOf("transportation"),
+            radiusPixels = 48.0
+        )
+    }
+
+    private fun logSampleMvtGeometryQuery(
+        prefix: String,
+        layerId: String,
+        sourceLayerIds: Set<String>
+    ) {
+        logCoordinateQuery(
+            prefix = prefix,
+            coordinate = sampleMvtCoordinate(
+                localX = SAMPLE_MVT_QUERY_LOCAL_X,
+                localY = SAMPLE_MVT_QUERY_LOCAL_Y
+            ),
+            layerId = layerId,
+            sourceLayerIds = sourceLayerIds,
             radiusPixels = 48.0
         )
     }
@@ -1235,44 +1346,133 @@ class MainActivity : Activity() {
         statusText.text = text
     }
 
+    private fun logCoordinateQuery(
+        prefix: String,
+        coordinate: VectorraCoordinate,
+        layerId: String,
+        sourceLayerIds: Set<String>,
+        radiusPixels: Double
+    ) {
+        val width = mapView.width
+        val height = mapView.height
+        Log.i(
+            LOG_TAG,
+            "$prefix: start viewport=${width}x$height " +
+                "lon=${"%.6f".format(coordinate.longitude)} lat=${"%.6f".format(coordinate.latitude)}"
+        )
+        if (width <= 0 || height <= 0) {
+            Log.i(LOG_TAG, "$prefix: skipped empty viewport ${width}x$height")
+            return
+        }
+        val screenPoint = runCatching {
+            mapView.map.pixelForCoordinate(coordinate)
+        }.getOrElse { error ->
+            Log.i(LOG_TAG, "$prefix: skipped projection error=${error.message}")
+            return
+        }
+        val features = mapView.map.queryRenderedFeatures(
+            screenPoint = screenPoint,
+            options = VectorraQueryOptions(
+                layerIds = setOf(layerId),
+                sourceLayerIds = sourceLayerIds,
+                radiusPixels = radiusPixels
+            )
+        )
+        val text = "$prefix: ${clickStatusText(features)} " +
+            "at x=${"%.1f".format(screenPoint.x)} y=${"%.1f".format(screenPoint.y)}"
+        Log.i(LOG_TAG, text)
+        statusText.text = text
+    }
+
+    private fun sampleMvtCoordinate(localX: Double, localY: Double): VectorraCoordinate {
+        val worldTiles = (1 shl SAMPLE_MVT_TILE_Z).toDouble()
+        val worldSize = MVT_TILE_EXTENT.toDouble() * worldTiles
+        val globalX = SAMPLE_MVT_TILE_X.toDouble() * MVT_TILE_EXTENT.toDouble() + localX
+        val globalY = SAMPLE_MVT_TILE_Y.toDouble() * MVT_TILE_EXTENT.toDouble() + localY
+        val longitude = globalX / worldSize * 360.0 - 180.0
+        val mercatorY = Math.PI * (1.0 - 2.0 * globalY / worldSize)
+        val latitude = Math.atan(Math.sinh(mercatorY)) * 180.0 / Math.PI
+        return VectorraCoordinate(longitude, latitude)
+    }
+
     private fun sampleMvtTile(): ByteArray {
         return pbfMessage {
+            bytes(MVT_TILE_LAYERS_FIELD, sampleMvtLayer(
+                name = "landuse",
+                featureId = 2,
+                geometryType = MVT_GEOMETRY_POLYGON,
+                label = "Offline Park",
+                geometry = listOf(
+                    mvtCommand(MVT_COMMAND_MOVE_TO, 1),
+                    zigZag(1600),
+                    zigZag(1600),
+                    mvtCommand(MVT_COMMAND_LINE_TO, 3),
+                    zigZag(896),
+                    zigZag(0),
+                    zigZag(0),
+                    zigZag(896),
+                    zigZag(-896),
+                    zigZag(0),
+                    mvtCommand(MVT_COMMAND_CLOSE_PATH, 1)
+                )
+            ))
+            bytes(MVT_TILE_LAYERS_FIELD, sampleMvtLayer(
+                name = "transportation",
+                featureId = 1,
+                geometryType = MVT_GEOMETRY_LINE_STRING,
+                label = "Offline MBTiles",
+                geometry = listOf(
+                    mvtCommand(MVT_COMMAND_MOVE_TO, 1),
+                    zigZag(1900),
+                    zigZag(2048),
+                    mvtCommand(MVT_COMMAND_LINE_TO, 2),
+                    zigZag(350),
+                    zigZag(0),
+                    zigZag(350),
+                    zigZag(0)
+                )
+            ))
+            bytes(MVT_TILE_LAYERS_FIELD, sampleMvtLayer(
+                name = "poi",
+                featureId = 3,
+                geometryType = MVT_GEOMETRY_POINT,
+                label = "Offline POI",
+                geometry = listOf(
+                    mvtCommand(MVT_COMMAND_MOVE_TO, 1),
+                    zigZag(2048),
+                    zigZag(2048)
+                )
+            ))
+        }
+    }
+
+    private fun sampleMvtLayer(
+        name: String,
+        featureId: Long,
+        geometryType: Int,
+        label: String,
+        geometry: List<Int>
+    ): ByteArray {
+        return pbfMessage {
+            string(MVT_LAYER_NAME_FIELD, name)
             bytes(
-                MVT_TILE_LAYERS_FIELD,
+                MVT_LAYER_FEATURES_FIELD,
                 pbfMessage {
-                    string(MVT_LAYER_NAME_FIELD, "transportation")
-                    bytes(
-                        MVT_LAYER_FEATURES_FIELD,
-                        pbfMessage {
-                            uint(MVT_FEATURE_ID_FIELD, 1)
-                            packed(MVT_FEATURE_TAGS_FIELD, listOf(0, 0))
-                            uint(MVT_FEATURE_TYPE_FIELD, MVT_GEOMETRY_LINE_STRING.toLong())
-                            packed(
-                                MVT_FEATURE_GEOMETRY_FIELD,
-                                listOf(
-                                    mvtCommand(MVT_COMMAND_MOVE_TO, 1),
-                                    zigZag(1900),
-                                    zigZag(2048),
-                                    mvtCommand(MVT_COMMAND_LINE_TO, 2),
-                                    zigZag(350),
-                                    zigZag(0),
-                                    zigZag(350),
-                                    zigZag(0)
-                                )
-                            )
-                        }
-                    )
-                    string(MVT_LAYER_KEYS_FIELD, "name")
-                    bytes(
-                        MVT_LAYER_VALUES_FIELD,
-                        pbfMessage {
-                            string(MVT_VALUE_STRING_FIELD, "Offline MBTiles")
-                        }
-                    )
-                    uint(MVT_LAYER_EXTENT_FIELD, MVT_TILE_EXTENT.toLong())
-                    uint(MVT_LAYER_VERSION_FIELD, 2)
+                    uint(MVT_FEATURE_ID_FIELD, featureId)
+                    packed(MVT_FEATURE_TAGS_FIELD, listOf(0, 0))
+                    uint(MVT_FEATURE_TYPE_FIELD, geometryType.toLong())
+                    packed(MVT_FEATURE_GEOMETRY_FIELD, geometry)
                 }
             )
+            string(MVT_LAYER_KEYS_FIELD, "name")
+            bytes(
+                MVT_LAYER_VALUES_FIELD,
+                pbfMessage {
+                    string(MVT_VALUE_STRING_FIELD, label)
+                }
+            )
+            uint(MVT_LAYER_EXTENT_FIELD, MVT_TILE_EXTENT.toLong())
+            uint(MVT_LAYER_VERSION_FIELD, 2)
         }
     }
 
@@ -1352,12 +1552,19 @@ class MainActivity : Activity() {
         const val SAMPLE_HK_3D_TILES_LATITUDE = 22.32
         const val SAMPLE_MVT_SOURCE_ID = "sample-mvt"
         const val SAMPLE_MVT_LAYER_ID = "sample-mvt-transportation"
+        const val SAMPLE_MVT_LINE_LAYER_ID = SAMPLE_MVT_LAYER_ID
+        const val SAMPLE_MVT_FILL_LAYER_ID = "sample-mvt-landuse"
+        const val SAMPLE_MVT_POINT_LAYER_ID = "sample-mvt-poi"
         const val SAMPLE_MVT_TEMPLATE_URL = "https://tiles.openfreemap.org/planet/20260520_001001_pt/{z}/{x}/{y}.pbf"
         const val SAMPLE_MVT_LONGITUDE = -122.4194
         const val SAMPLE_MVT_PAN_LONGITUDE = -122.3000
+        const val SAMPLE_MVT_PAN_ZOOM = 13.0
         const val SAMPLE_MVT_LATITUDE = 37.7749
         const val SAMPLE_MVT_MBTILES_SOURCE_ID = "sample-mvt-mbtiles"
         const val SAMPLE_MVT_MBTILES_FILE_NAME = "sample-vector.mbtiles"
+        const val SAMPLE_BAD_MVT_SOURCE_ID = "sample-bad-mvt"
+        const val SAMPLE_BAD_MVT_LAYER_ID = "sample-bad-mvt-transportation"
+        const val SAMPLE_BAD_MVT_MBTILES_FILE_NAME = "sample-bad-vector.mbtiles"
         const val SAMPLE_GEOJSON_SOURCE_ID = "sample-geojson"
         const val SAMPLE_GEOJSON_LAYER_ID = "sample-geojson-layer"
         const val SAMPLE_GEOJSON_LONGITUDE = -122.4194
@@ -1367,6 +1574,8 @@ class MainActivity : Activity() {
         const val SAMPLE_MVT_TILE_Z = 12
         const val SAMPLE_MVT_TILE_X = 655
         const val SAMPLE_MVT_TILE_Y = 1583
+        const val SAMPLE_MVT_QUERY_LOCAL_X = 2048.0
+        const val SAMPLE_MVT_QUERY_LOCAL_Y = 2048.0
         const val MVT_TILE_EXTENT = 4096
         const val SAMPLE_3D_TILES_REMOVE_DELAY_MS = 16_000L
         const val SAMPLE_3D_TILES_READD_DELAY_MS = 4_000L
@@ -1391,6 +1600,7 @@ class MainActivity : Activity() {
         const val SAMPLE_ACTION_READD_MVT = "readd-mvt"
         const val SAMPLE_ACTION_PAN_MVT = "pan-mvt"
         const val SAMPLE_ACTION_HIDDEN_MVT = "hidden-mvt"
+        const val SAMPLE_ACTION_BAD_MVT = "bad-mvt"
         const val SAMPLE_ACTION_BAD_3D_TILES = "bad-3dtiles"
         const val SAMPLE_ACTION_REMOVE_3D_TILES = "remove-3dtiles"
         const val SAMPLE_ACTION_READD_3D_TILES = "readd-3dtiles"
@@ -1420,9 +1630,12 @@ class MainActivity : Activity() {
         const val MVT_FEATURE_TYPE_FIELD = 3
         const val MVT_FEATURE_GEOMETRY_FIELD = 4
         const val MVT_VALUE_STRING_FIELD = 1
+        const val MVT_GEOMETRY_POINT = 1
         const val MVT_GEOMETRY_LINE_STRING = 2
+        const val MVT_GEOMETRY_POLYGON = 3
         const val MVT_COMMAND_MOVE_TO = 1
         const val MVT_COMMAND_LINE_TO = 2
+        const val MVT_COMMAND_CLOSE_PATH = 7
         const val MVT_COMMAND_COUNT_SHIFT = 3
     }
 }

@@ -4718,3 +4718,41 @@ Known issues / next:
 
 - Native decode was compile-verified but not device-render smoke tested in this pass.
 - Stage 4 still needs MVT tile scheduling down into a native layer.
+
+## 2026-06-11
+
+### MVT Native Smoke and Public API Test Unblock
+
+Completed:
+
+- Restored `docs/beta/public-api-surface.md` so `VectorraPublicApiSurfaceTest` has the beta public API inventory it expects.
+- Extended the sample MVT MBTiles smoke to build one local PBF vector tile with `transportation` line, `landuse` fill, and `poi` point source layers, then add matching vector render layers.
+- Added a sample `bad-mvt` smoke action backed by invalid PBF bytes to verify native decode failure propagation through vector resource status.
+- Made the sample `pan-mvt` action pan and zoom, so tile switching exercises rendered-state toggling and new z=13 tile loads.
+- Updated sample query smoke to project the known local MVT geometry coordinate and call `queryRenderedFeatures` against line/fill/point layers.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest :vectorra-sample:assembleDebug
+.\gradlew.bat :vectorra-maps:testDebugUnitTest --rerun-tasks
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' install -r 'D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-universal-debug.apk'
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action mvt-mbtiles
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action bad-mvt
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' shell am start -n com.vectorra.sample/.MainActivity --es vectorra.sample.action pan-mvt
+git diff --check
+```
+
+Results:
+
+- `:vectorra-maps:testDebugUnitTest` passed, including a forced `--rerun-tasks` run.
+- `:vectorra-sample:assembleDebug` passed and the universal debug APK installed successfully on `emulator-5554`.
+- `mvt-mbtiles` smoke registered and applied line, fill, and point native MVT render tiles, each with one entity; `queryRenderedFeatures` returned one feature for `transportation`, `landuse`, and `poi`.
+- `bad-mvt` smoke reported `vector sample-bad-mvt-transportation failed: Unexpected end of protobuf data.`, confirming native decode failure is emitted as a vector resource failure.
+- `pan-mvt` smoke loaded remote OpenFreeMap PBF tiles, switched rendered state after camera pan to lon `-122.3` and zoom `13.0`, loaded new z=13 tiles, and `queryRenderedFeatures` returned 43 transportation features after the move.
+- `git diff --check` passed with CRLF warnings only.
+
+Known issues / next:
+
+- The local MBTiles smoke intentionally contains one tile, so surrounding tile cover requests log expected 404 resource failures while the center tile validates line/fill/point render and query behavior.
+- Stage 4 still needs MVT tile scheduling down into a native layer.
