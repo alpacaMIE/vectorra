@@ -4583,3 +4583,24 @@ Known remaining work:
 - P2 items from the review: update-phase selection (traverse/record decoupling), cesium-style skip-LOD, HTTP/2 via curl multi, OBB culling for box volumes, KTX2/BasisU textures.
 - Pre-existing unit test failure above needs either the doc restored or the test updated.
 - Physical-device (arm64) smoke was not run in this pass.
+
+## 2026-06-11
+
+### Physical Device APK Install
+
+Completed:
+
+- Rebuilt the sample debug APK from `D:\workspace\code\vectorra\vectorra-maps`.
+- Installed `vectorra-sample-arm64-v8a-debug.apk` to the connected physical device `4tqoz9bmfu8t8pr8` (`model:2312DRAABC`) with `adb install -r -d`.
+
+Verification commands:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat :vectorra-sample:assembleDebug
+& 'C:\Users\myg\AppData\Local\Android\Sdk\platform-tools\adb.exe' -s 4tqoz9bmfu8t8pr8 install -r -d 'D:\workspace\code\vectorra\vectorra-maps\vectorra-sample\build\outputs\apk\debug\vectorra-sample-arm64-v8a-debug.apk'
+```
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed.
+- APK install completed with `Success`.
