@@ -9,7 +9,7 @@ class VectorraGeoJsonIndexTest {
 
     private fun newIndex(zoom: Double = 10.0): VectorraGeoJsonIndex {
         return VectorraGeoJsonIndex(
-            project = { coordinate -> VectorraScreenPoint(coordinate.longitude, coordinate.latitude) },
+            projector = IdentityProjector(),
             camera = {
                 CameraState(
                     longitude = 0.0,
@@ -151,5 +151,47 @@ class VectorraGeoJsonIndexTest {
 
         val results = index.query(VectorraScreenPoint(10.0, 10.0), VectorraQueryOptions())
         assertEquals(listOf("high", "low"), results.map { it.layerId })
+    }
+
+    @Test
+    fun unprojectablePointIsNotQueryable() {
+        val hidden = VectorraCoordinate(10.0, 10.0)
+        val index = VectorraGeoJsonIndex(
+            projector = IdentityProjector(hiddenCoordinates = setOf(hidden)),
+            camera = {
+                CameraState(
+                    longitude = 0.0,
+                    latitude = 0.0,
+                    zoom = 10.0,
+                    pitch = 0.0,
+                    bearing = 0.0
+                )
+            }
+        )
+        index.setSource(
+            VectorraGeoJsonSource(
+                id = "source",
+                features = listOf(
+                    VectorraGeoJsonFeature("feature", VectorraAnnotationGeometry.Point(hidden))
+                )
+            )
+        )
+        index.setLayer(VectorraGeoJsonLayer(id = "layer", sourceId = "source"))
+
+        assertTrue(index.query(VectorraScreenPoint(10.0, 10.0), VectorraQueryOptions()).isEmpty())
+    }
+
+    private class IdentityProjector(
+        private val hiddenCoordinates: Set<VectorraCoordinate> = emptySet()
+    ) : VectorraCoordinateProjector {
+        override fun project(coordinates: List<VectorraCoordinate>): List<VectorraScreenPoint?> {
+            return coordinates.map { coordinate ->
+                if (coordinate in hiddenCoordinates) {
+                    null
+                } else {
+                    VectorraScreenPoint(coordinate.longitude, coordinate.latitude)
+                }
+            }
+        }
     }
 }

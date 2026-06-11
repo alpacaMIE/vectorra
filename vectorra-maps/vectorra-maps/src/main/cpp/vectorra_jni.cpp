@@ -11,6 +11,7 @@
 #include <vulkan/vulkan_android.h>
 
 #include <rocky/Profile.h>
+#include <rocky/GeoPoint.h>
 #include <rocky/TMSImageLayer.h>
 #include <rocky/TMSElevationLayer.h>
 #include <rocky/Units.h>
@@ -29,6 +30,7 @@
 #include <rocky/vsg/ecs/ModelSystem.h>
 #include <rocky/vsg/MapManipulator.h>
 #include <rocky/vsg/terrain/SurfaceNode.h>
+#include <rocky/vsg/terrain/TerrainNode.h>
 #include <rocky/vsg/Tiles3DLayer.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -36,11 +38,13 @@
 #include <vsg/core/Exception.h>
 #include <vsg/lighting/AmbientLight.h>
 #include <vsg/lighting/Light.h>
+#include <vsg/utils/LineSegmentIntersector.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -61,6 +65,40 @@ namespace
     constexpr double EARTH_CIRCUMFERENCE_METERS = 40075016.686;
     constexpr double WEB_MERCATOR_TILE_SIZE = 256.0;
     constexpr double VECTORRA_CAMERA_FOVY_DEGREES = 30.0;
+    constexpr int COORDINATE_PROJECTION_INPUT_STRIDE = 3;
+    constexpr int COORDINATE_PROJECTION_OUTPUT_STRIDE = 3;
+    constexpr int SCREEN_TO_COORDINATE_OUTPUT_STRIDE = 3;
+
+    struct ProjectionSnapshot
+    {
+        bool ready = false;
+        vsg::dmat4 viewMatrix;
+        vsg::dmat4 projectionMatrix;
+        double viewportX = 0.0;
+        double viewportY = 0.0;
+        double viewportWidth = 1.0;
+        double viewportHeight = 1.0;
+        int viewWidth = 1;
+        int viewHeight = 1;
+        int renderWidth = 1;
+        int renderHeight = 1;
+        rocky::SRS renderingSRS;
+    };
+
+    struct ScreenToCoordinateResult
+    {
+        bool hit = false;
+        double longitude = 0.0;
+        double latitude = 0.0;
+    };
+
+    struct ScreenToCoordinateQuery
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool done = false;
+        ScreenToCoordinateResult result;
+    };
 
     const char* vkResultName(VkResult result)
     {
@@ -743,6 +781,7 @@ namespace
         void detachSurface()
         {
             std::unique_lock<std::mutex> lock(mutex);
+            projectionSnapshot.ready = false;
             shutdownRendererLocked(lock);
             __android_log_print(ANDROID_LOG_INFO, TAG, "detachSurface");
         }
@@ -757,6 +796,10 @@ namespace
             // height — the surface is downscaled to MAX_ANDROID_RENDER_EXTENT.
             for (auto& [id, layer] : tiles3DLayerMap)
                 layer->setViewportHeight(static_cast<float>(effectiveRenderHeight()));
+            if (app)
+            {
+                updateProjectionSnapshotLocked(app.get());
+            }
         }
 
         void setCamera(
@@ -778,6 +821,121 @@ namespace
             {
                 queueLatestCameraUpdateLocked();
             }
+        }
+
+        std::vector<double> projectCoordinates(const std::vector<double>& lonLatHeight)
+        {
+            ProjectionSnapshot snapshot;
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                snapshot = projectionSnapshot;
+            }
+
+            if (!snapshot.ready || lonLatHeight.size() % COORDINATE_PROJECTION_INPUT_STRIDE != 0)
+            {
+                return {};
+            }
+
+            const std::size_t coordinateCount = lonLatHeight.size() / COORDINATE_PROJECTION_INPUT_STRIDE;
+            std::vector<double> output(coordinateCount * COORDINATE_PROJECTION_OUTPUT_STRIDE, 0.0);
+            const double viewScaleX = static_cast<double>(std::max(snapshot.viewWidth, 1)) /
+                static_cast<double>(std::max(snapshot.renderWidth, 1));
+            const double viewScaleY = static_cast<double>(std::max(snapshot.viewHeight, 1)) /
+                static_cast<double>(std::max(snapshot.renderHeight, 1));
+
+            for (std::size_t index = 0; index < coordinateCount; ++index)
+            {
+                const std::size_t inputOffset = index * COORDINATE_PROJECTION_INPUT_STRIDE;
+                const double longitude = lonLatHeight[inputOffset];
+                const double latitude = lonLatHeight[inputOffset + 1];
+                const double height = lonLatHeight[inputOffset + 2];
+                if (!std::isfinite(longitude) || !std::isfinite(latitude) || !std::isfinite(height))
+                {
+                    continue;
+                }
+
+                const auto world = rocky::GeoPoint(rocky::SRS::WGS84, longitude, latitude, height)
+                    .transform(snapshot.renderingSRS);
+                if (!world)
+                {
+                    continue;
+                }
+
+                const auto clip = snapshot.projectionMatrix *
+                    (snapshot.viewMatrix * vsg::dvec4(world.x, world.y, world.z, 1.0));
+                if (!std::isfinite(clip.x) ||
+                    !std::isfinite(clip.y) ||
+                    !std::isfinite(clip.w) ||
+                    std::abs(clip.w) <= 1e-12)
+                {
+                    continue;
+                }
+
+                const double ndcX = clip.x / clip.w;
+                const double ndcY = clip.y / clip.w;
+                const double renderX = snapshot.viewportX + (ndcX + 1.0) * 0.5 * snapshot.viewportWidth;
+                const double renderY = snapshot.viewportY + (1.0 - ndcY) * 0.5 * snapshot.viewportHeight;
+                const std::size_t outputOffset = index * COORDINATE_PROJECTION_OUTPUT_STRIDE;
+                output[outputOffset] = renderX * viewScaleX;
+                output[outputOffset + 1] = renderY * viewScaleY;
+                output[outputOffset + 2] = clip.w > 0.0 ? 1.0 : 0.0;
+            }
+
+            return output;
+        }
+
+        ScreenToCoordinateResult screenToCoordinate(double x, double y)
+        {
+            if (!std::isfinite(x) || !std::isfinite(y))
+            {
+                return {};
+            }
+
+            auto query = std::make_shared<ScreenToCoordinateQuery>();
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (!app)
+                {
+                    return {};
+                }
+                auto* activeApp = app.get();
+                const double renderX = x * static_cast<double>(std::max(effectiveRenderWidth(), 1)) /
+                    static_cast<double>(std::max(surfaceWidth, 1));
+                const double renderY = y * static_cast<double>(std::max(effectiveRenderHeight(), 1)) /
+                    static_cast<double>(std::max(surfaceHeight, 1));
+                activeApp->onNextUpdate([this, activeApp, renderX, renderY, query]()
+                {
+                    ScreenToCoordinateResult result;
+                    {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        if (app.get() == activeApp)
+                        {
+                            result = screenToCoordinateOnUpdateLocked(
+                                activeApp,
+                                static_cast<int32_t>(std::lround(renderX)),
+                                static_cast<int32_t>(std::lround(renderY)));
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> queryLock(query->mutex);
+                        query->result = result;
+                        query->done = true;
+                    }
+                    query->cv.notify_one();
+                });
+                requestFrameLocked();
+            }
+
+            std::unique_lock<std::mutex> queryLock(query->mutex);
+            if (!query->cv.wait_for(queryLock, std::chrono::milliseconds(500), [&query]()
+            {
+                return query->done;
+            }))
+            {
+                __android_log_print(ANDROID_LOG_WARN, TAG, "screenToCoordinate timed out waiting for renderer update");
+                return {};
+            }
+            return query->result;
         }
 
         void addRasterLayer(
@@ -1933,6 +2091,7 @@ namespace
 
         void shutdownRendererLocked(std::unique_lock<std::mutex>& lock)
         {
+            projectionSnapshot.ready = false;
             detachSurfaceLocked(lock);
             labelEntities.clear();
             drawEntities.clear();
@@ -3357,6 +3516,19 @@ namespace
                 30000000.0);
         }
 
+        int effectiveRenderWidth() const
+        {
+            const int maxSurfaceExtent = std::max(surfaceWidth, surfaceHeight);
+            if (maxSurfaceExtent <= MAX_ANDROID_RENDER_EXTENT)
+            {
+                return std::max(surfaceWidth, 1);
+            }
+
+            const double scale = static_cast<double>(MAX_ANDROID_RENDER_EXTENT) /
+                static_cast<double>(maxSurfaceExtent);
+            return std::max(1, static_cast<int>(surfaceWidth * scale));
+        }
+
         int effectiveRenderHeight() const
         {
             const int maxSurfaceExtent = std::max(surfaceWidth, surfaceHeight);
@@ -3368,6 +3540,104 @@ namespace
             const double scale = static_cast<double>(MAX_ANDROID_RENDER_EXTENT) /
                 static_cast<double>(maxSurfaceExtent);
             return std::max(1, static_cast<int>(surfaceHeight * scale));
+        }
+
+        void updateProjectionSnapshotLocked(rocky::Application* activeApp)
+        {
+            projectionSnapshot.ready = false;
+            if (!activeApp ||
+                activeApp->display.windows().empty() ||
+                !activeApp->mapNode ||
+                !activeApp->mapNode->terrainNode)
+            {
+                return;
+            }
+
+            auto& window = activeApp->display.window(0);
+            if (window.views().empty())
+            {
+                return;
+            }
+
+            auto& view = window.view(0);
+            if (!view.vsgView ||
+                !view.vsgView->camera ||
+                !view.vsgView->camera->viewMatrix ||
+                !view.vsgView->camera->projectionMatrix)
+            {
+                return;
+            }
+
+            const auto viewport = view.vsgView->camera->getViewport();
+            projectionSnapshot.viewMatrix = view.vsgView->camera->viewMatrix->transform();
+            projectionSnapshot.projectionMatrix = view.vsgView->camera->projectionMatrix->transform();
+            projectionSnapshot.viewportX = static_cast<double>(viewport.x);
+            projectionSnapshot.viewportY = static_cast<double>(viewport.y);
+            projectionSnapshot.viewportWidth = static_cast<double>(std::max(viewport.width, 1.0f));
+            projectionSnapshot.viewportHeight = static_cast<double>(std::max(viewport.height, 1.0f));
+            projectionSnapshot.viewWidth = std::max(surfaceWidth, 1);
+            projectionSnapshot.viewHeight = std::max(surfaceHeight, 1);
+            projectionSnapshot.renderWidth = effectiveRenderWidth();
+            projectionSnapshot.renderHeight = effectiveRenderHeight();
+            projectionSnapshot.renderingSRS = activeApp->mapNode->terrainNode->renderingSRS;
+            projectionSnapshot.ready = projectionSnapshot.renderingSRS.valid();
+        }
+
+        ScreenToCoordinateResult screenToCoordinateOnUpdateLocked(
+            rocky::Application* activeApp,
+            int32_t renderX,
+            int32_t renderY)
+        {
+            if (!activeApp ||
+                activeApp->display.windows().empty() ||
+                !activeApp->mapNode ||
+                !activeApp->mapNode->terrainNode)
+            {
+                return {};
+            }
+
+            auto& window = activeApp->display.window(0);
+            if (window.views().empty())
+            {
+                return {};
+            }
+
+            auto& view = window.view(0);
+            if (!view.vsgView || !view.vsgView->camera)
+            {
+                return {};
+            }
+
+            auto* terrain = activeApp->mapNode->terrainNode.get();
+            vsg::LineSegmentIntersector intersector(*view.vsgView->camera, renderX, renderY);
+            terrain->accept(intersector);
+            if (intersector.intersections.empty())
+            {
+                return {};
+            }
+
+            const auto closest = std::min_element(
+                intersector.intersections.begin(),
+                intersector.intersections.end(),
+                [](const auto& lhs, const auto& rhs)
+                {
+                    return lhs->ratio < rhs->ratio;
+                });
+
+            auto wgs84 = rocky::GeoPoint(
+                terrain->renderingSRS,
+                closest->get()->worldIntersection).transform(rocky::SRS::WGS84);
+            if (!wgs84 ||
+                !std::isfinite(wgs84.x) ||
+                !std::isfinite(wgs84.y))
+            {
+                return {};
+            }
+
+            return ScreenToCoordinateResult{
+                true,
+                wgs84.x,
+                wgs84.y};
         }
 
         rocky::Viewpoint currentViewpoint() const
@@ -3407,6 +3677,7 @@ namespace
 
             const auto viewpoint = currentViewpoint();
             manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
+            updateProjectionSnapshotLocked(activeApp);
             if (activeApp->vsgcontext)
             {
                 activeApp->vsgcontext->requestFrame();
@@ -3481,6 +3752,13 @@ namespace
                 viewpoint.heading = rocky::Angle(bearing, rocky::Units::DEGREES);
                 viewpoint.pitch = rocky::Angle(std::clamp(pitch - 90.0, -90.0, -5.0), rocky::Units::DEGREES);
                 manipulator->setViewpoint(viewpoint, std::chrono::duration<float>(0.0f));
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    if (app.get() == activeApp)
+                    {
+                        updateProjectionSnapshotLocked(activeApp);
+                    }
+                }
                 if (activeApp->vsgcontext)
                 {
                     activeApp->vsgcontext->requestFrame();
@@ -3507,6 +3785,7 @@ namespace
         std::thread renderThread;
         int surfaceWidth = 1;
         int surfaceHeight = 1;
+        ProjectionSnapshot projectionSnapshot;
 
         double cameraLongitude = 104.293174;
         double cameraLatitude = 32.2857965;
@@ -3812,6 +4091,81 @@ Java_com_vectorra_maps_internal_VectorraNative_setCamera(
     {
         engine->setCamera(longitude, latitude, zoom, pitch, bearing, targetHeightMeters);
     }
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_projectCoordinates(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jdoubleArray lonLatHeight)
+{
+    if (!lonLatHeight)
+    {
+        return env->NewDoubleArray(0);
+    }
+
+    const auto length = env->GetArrayLength(lonLatHeight);
+    if (length % COORDINATE_PROJECTION_INPUT_STRIDE != 0)
+    {
+        jclass exceptionClass = env->FindClass("java/lang/IllegalArgumentException");
+        if (exceptionClass)
+        {
+            env->ThrowNew(exceptionClass, "projectCoordinates input must be lon/lat/height triples.");
+        }
+        return nullptr;
+    }
+
+    std::vector<jdouble> input(static_cast<std::size_t>(length));
+    if (length > 0)
+    {
+        env->GetDoubleArrayRegion(lonLatHeight, 0, length, input.data());
+    }
+
+    std::vector<double> output;
+    if (auto* engine = fromHandle(handle))
+    {
+        output = engine->projectCoordinates(input);
+    }
+
+    auto result = env->NewDoubleArray(static_cast<jsize>(output.size()));
+    if (result && !output.empty())
+    {
+        env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(output.size()), output.data());
+    }
+    return result;
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_screenToCoordinate(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jdouble x,
+    jdouble y)
+{
+    std::array<double, SCREEN_TO_COORDINATE_OUTPUT_STRIDE> output{0.0, 0.0, 0.0};
+    if (auto* engine = fromHandle(handle))
+    {
+        const auto result = engine->screenToCoordinate(x, y);
+        if (result.hit)
+        {
+            output[0] = result.longitude;
+            output[1] = result.latitude;
+            output[2] = 1.0;
+        }
+    }
+
+    auto nativeResult = env->NewDoubleArray(SCREEN_TO_COORDINATE_OUTPUT_STRIDE);
+    if (nativeResult)
+    {
+        env->SetDoubleArrayRegion(
+            nativeResult,
+            0,
+            SCREEN_TO_COORDINATE_OUTPUT_STRIDE,
+            output.data());
+    }
+    return nativeResult;
 }
 
 extern "C" JNIEXPORT void JNICALL

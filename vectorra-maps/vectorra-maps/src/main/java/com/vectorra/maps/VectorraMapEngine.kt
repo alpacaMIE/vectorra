@@ -40,6 +40,7 @@ import com.vectorra.maps.query.VectorraAnnotationFeature
 import com.vectorra.maps.query.VectorraAnnotationGeometry
 import com.vectorra.maps.query.VectorraAnnotationHitTester
 import com.vectorra.maps.query.VectorraCoordinate
+import com.vectorra.maps.query.VectorraCoordinateProjector
 import com.vectorra.maps.query.VectorraGeoJsonFeature
 import com.vectorra.maps.query.VectorraGeoJsonIndex
 import com.vectorra.maps.query.VectorraGeoJsonLayer
@@ -109,6 +110,35 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             handleNativeResourceStatus(kind, layerId, state, errorType, errorMessage)
         }
     }
+    private val nativeProjector = VectorraCoordinateProjector { coordinates ->
+        if (coordinates.isEmpty()) {
+            emptyList()
+        } else {
+            val nativeInput = DoubleArray(coordinates.size * COORDINATE_PROJECTION_INPUT_STRIDE)
+            coordinates.forEachIndexed { index, coordinate ->
+                val offset = index * COORDINATE_PROJECTION_INPUT_STRIDE
+                nativeInput[offset] = coordinate.longitude
+                nativeInput[offset + 1] = coordinate.latitude
+                nativeInput[offset + 2] = 0.0
+            }
+            val nativeOutput = VectorraNative.projectCoordinates(nativeHandle, nativeInput)
+            check(nativeOutput.size == coordinates.size * COORDINATE_PROJECTION_OUTPUT_STRIDE) {
+                "Native projection is not ready or returned ${nativeOutput.size} values for " +
+                    "${coordinates.size} coordinates."
+            }
+            coordinates.indices.map { index ->
+                val offset = index * COORDINATE_PROJECTION_OUTPUT_STRIDE
+                if (nativeOutput[offset + 2] >= 1.0) {
+                    VectorraScreenPoint(
+                        x = nativeOutput[offset],
+                        y = nativeOutput[offset + 1]
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
     override val location: VectorraLocationComponent = VectorraLocationComponentImpl(this)
     override val offline: VectorraOfflineManager = EngineOfflineManager()
     var loadState: VectorraMapLoadState = VectorraMapLoadState.IDLE
@@ -135,9 +165,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private var nativeCameraApplyScheduled = false
     private var cameraNotificationScheduled = false
     private var cameraAnimator: ValueAnimator? = null
-    private val hitTester = VectorraAnnotationHitTester()
+    private val hitTester = VectorraAnnotationHitTester(
+        projector = nativeProjector,
+        camera = { cameraState }
+    )
     private val geoJsonIndex = VectorraGeoJsonIndex(
-        project = { coordinate -> hitTester.pixelForCoordinate(coordinate) },
+        projector = nativeProjector,
         camera = { cameraState }
     )
     private val mapClickListeners = CopyOnWriteArrayList<VectorraMapClickListener>()
@@ -170,7 +203,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private var tileNetworkConfig = TileNetworkConfig()
 
     init {
-        hitTester.setCamera(cameraState)
         VectorraNative.setResourceStatusCallback(nativeHandle, nativeResourceStatusCallback)
     }
 
@@ -179,7 +211,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             return null
         }
 
-        hitTester.setViewport(width, height)
         viewportWidthPixels = width.coerceAtLeast(1)
         viewportHeightPixels = height.coerceAtLeast(1)
         updateRenderViewport(width, height)
@@ -230,7 +261,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     fun resize(width: Int, height: Int) {
-        hitTester.setViewport(width, height)
         viewportWidthPixels = width.coerceAtLeast(1)
         viewportHeightPixels = height.coerceAtLeast(1)
         updateRenderViewport(width, height)
@@ -266,7 +296,6 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
             bearing = normalizeBearing(bearing)
         )
         cameraState = next
-        hitTester.setCamera(next)
         scheduleNativeCameraApply()
         scheduleCameraNotification()
         scheduleVectorTileLoads()
@@ -474,6 +503,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         screenPoint: VectorraScreenPoint,
         options: VectorraQueryOptions
     ): List<VectorraQueriedFeature> {
+        requireProjectionReady("queryRenderedFeatures")
         return (
             hitTester.query(screenPoint, options) +
                 geoJsonIndex.query(screenPoint, options) +
@@ -495,11 +525,36 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     override fun pixelForCoordinate(coordinate: VectorraCoordinate): VectorraScreenPoint {
-        return hitTester.pixelForCoordinate(coordinate)
+        requireProjectionReady("pixelForCoordinate")
+        require(coordinate.longitude.isFinite() && coordinate.latitude.isFinite()) {
+            "Coordinate must contain finite longitude and latitude."
+        }
+        return nativeProjector.project(listOf(coordinate)).singleOrNull()
+            ?: throw IllegalStateException(
+                "Native projection could not project coordinate " +
+                    "longitude=${coordinate.longitude}, latitude=${coordinate.latitude}."
+            )
     }
 
     override fun coordinateForPixel(screenPoint: VectorraScreenPoint): VectorraCoordinate {
-        return hitTester.coordinateForPixel(screenPoint)
+        requireProjectionReady("coordinateForPixel")
+        require(screenPoint.x.isFinite() && screenPoint.y.isFinite()) {
+            "Screen point must contain finite x and y values."
+        }
+        val nativeResult = VectorraNative.screenToCoordinate(nativeHandle, screenPoint.x, screenPoint.y)
+        check(nativeResult.size == SCREEN_TO_COORDINATE_OUTPUT_STRIDE) {
+            "Native screen-to-coordinate projection is not ready."
+        }
+        if (nativeResult[2] < 1.0) {
+            throw IllegalStateException(
+                "Native projection could not resolve a ground coordinate for " +
+                    "screen x=${screenPoint.x}, y=${screenPoint.y}."
+            )
+        }
+        return VectorraCoordinate(
+            longitude = nativeResult[0],
+            latitude = nativeResult[1]
+        )
     }
 
     override fun addHitTestAnnotation(feature: VectorraAnnotationFeature) {
@@ -1334,7 +1389,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     }
 
     internal fun dispatchMapClick(screenX: Float, screenY: Float): Boolean {
-        if (mapClickListeners.isEmpty()) {
+        if (mapClickListeners.isEmpty() || loadState != VectorraMapLoadState.READY || closed.get()) {
             return false
         }
         val screenPoint = VectorraScreenPoint(screenX.toDouble(), screenY.toDouble())
@@ -1435,6 +1490,15 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
     private inline fun ifOpen(block: () -> Unit) {
         if (!closed.get()) {
             block()
+        }
+    }
+
+    private fun requireProjectionReady(operation: String) {
+        check(!closed.get()) {
+            "Vectorra map is closed; $operation requires an active native renderer."
+        }
+        check(loadState == VectorraMapLoadState.READY) {
+            "Vectorra native projection is not ready; $operation requires an attached, ready map surface."
         }
     }
 
@@ -1695,6 +1759,9 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         const val MIN_PITCH = 0.0
         const val MAX_PITCH = 80.0
         const val WEB_MERCATOR_TILE_SIZE = 256.0
+        const val COORDINATE_PROJECTION_INPUT_STRIDE = 3
+        const val COORDINATE_PROJECTION_OUTPUT_STRIDE = 3
+        const val SCREEN_TO_COORDINATE_OUTPUT_STRIDE = 3
         const val LOG_TAG = "VectorraMapEngine"
 
         data class WorldPoint(val x: Double, val y: Double)

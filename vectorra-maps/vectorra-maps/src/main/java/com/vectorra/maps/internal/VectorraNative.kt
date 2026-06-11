@@ -33,6 +33,8 @@ internal object VectorraNative {
         bearing: Double,
         targetHeightMeters: Double
     )
+    external fun projectCoordinates(handle: Long, lonLatHeight: DoubleArray): DoubleArray
+    external fun screenToCoordinate(handle: Long, x: Double, y: Double): DoubleArray
 
     external fun addRasterLayer(
         handle: Long,

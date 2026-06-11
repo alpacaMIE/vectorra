@@ -5,7 +5,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 internal class VectorraGeoJsonIndex(
-    private val project: (VectorraCoordinate) -> VectorraScreenPoint,
+    private val projector: VectorraCoordinateProjector,
     private val camera: () -> CameraState
 ) {
     private val sources = linkedMapOf<String, VectorraGeoJsonSource>()
@@ -39,13 +39,28 @@ internal class VectorraGeoJsonIndex(
 
     fun query(screenPoint: VectorraScreenPoint, options: VectorraQueryOptions): List<VectorraQueriedFeature> {
         clusterLeaves.clear()
-        return layers.values.asSequence()
+        val cameraState = camera()
+        val activeLayers = layers.values.asSequence()
             .filter { it.visible }
             .filter { it.opacity > OPACITY_THRESHOLD }
-            .filter { camera().zoom >= it.minZoom && camera().zoom <= it.maxZoom }
+            .filter { cameraState.zoom >= it.minZoom && cameraState.zoom <= it.maxZoom }
             .filter { options.layerIds.isEmpty() || it.id in options.layerIds }
             .sortedByDescending { it.zIndex }
-            .flatMap { layer -> queryLayer(screenPoint, layer, options).asSequence() }
+            .toList()
+        if (activeLayers.isEmpty()) {
+            return emptyList()
+        }
+
+        val projection = VectorraProjectionCache.create(
+            activeLayers.asSequence()
+                .mapNotNull { sources[it.sourceId] }
+                .distinctBy { it.id }
+                .flatMap { source -> source.features.asSequence().flatMap { it.geometry.coordinates().asSequence() } }
+                .asIterable(),
+            projector
+        )
+        return activeLayers.asSequence()
+            .flatMap { layer -> queryLayer(screenPoint, layer, options, cameraState, projection).asSequence() }
             .sortedWith(compareByDescending<VectorraQueriedFeature> { layerZIndex(it.layerId) }.thenBy { it.distancePixels })
             .toList()
     }
@@ -65,12 +80,14 @@ internal class VectorraGeoJsonIndex(
     private fun queryLayer(
         screenPoint: VectorraScreenPoint,
         layer: VectorraGeoJsonLayer,
-        options: VectorraQueryOptions
+        options: VectorraQueryOptions,
+        cameraState: CameraState,
+        projection: VectorraProjectionCache
     ): List<VectorraQueriedFeature> {
         val source = sources[layer.sourceId] ?: return emptyList()
         val radius = options.radiusPixels.takeIf { it > 0.0 && it.isFinite() } ?: layer.hitRadiusPixels
-        val entries = if (source.cluster && camera().zoom <= source.clusterMaxZoom) {
-            clusteredEntries(source, layer)
+        val entries = if (source.cluster && cameraState.zoom <= source.clusterMaxZoom) {
+            clusteredEntries(source, layer, projection)
         } else {
             source.features.mapNotNull { feature ->
                 if (feature.geometry.geometryType in layer.geometryTypes && layer.filter != VectorraGeoJsonLayerFilter.CLUSTER) {
@@ -84,15 +101,19 @@ internal class VectorraGeoJsonIndex(
         return entries
             .filter { options.sourceLayerIds.isEmpty() || it.feature.properties["source-layer"] in options.sourceLayerIds }
             .mapNotNull { entry ->
-            val bounds = screenBounds(entry.geometry)
-            if (!bounds.intersects(screenPoint, radius)) return@mapNotNull null
-            val distance = distanceToGeometry(screenPoint, entry.geometry)
-            if (distance > radius) return@mapNotNull null
-            entry.toQueriedFeature(distance)
-        }
+                val bounds = screenBounds(entry, projection)
+                if (!bounds.intersects(screenPoint, radius)) return@mapNotNull null
+                val distance = distanceToGeometry(screenPoint, entry, projection)
+                if (distance > radius) return@mapNotNull null
+                entry.toQueriedFeature(distance)
+            }
     }
 
-    private fun clusteredEntries(source: VectorraGeoJsonSource, layer: VectorraGeoJsonLayer): List<GeoJsonEntry> {
+    private fun clusteredEntries(
+        source: VectorraGeoJsonSource,
+        layer: VectorraGeoJsonLayer,
+        projection: VectorraProjectionCache
+    ): List<GeoJsonEntry> {
         val pointFeatures = source.features.filter {
             it.geometry is VectorraAnnotationGeometry.Point && VectorraGeometryType.POINT in layer.geometryTypes
         }
@@ -110,12 +131,14 @@ internal class VectorraGeoJsonIndex(
         val clusters = mutableListOf<GeoJsonEntry>()
         while (remaining.isNotEmpty()) {
             val seed = remaining.removeAt(0)
-            val seedPoint = project((seed.geometry as VectorraAnnotationGeometry.Point).coordinate)
+            val seedPoint = projection.screenPoint((seed.geometry as VectorraAnnotationGeometry.Point).coordinate)
+                ?: continue
             val grouped = mutableListOf(seed)
             val iterator = remaining.iterator()
             while (iterator.hasNext()) {
                 val candidate = iterator.next()
-                val candidatePoint = project((candidate.geometry as VectorraAnnotationGeometry.Point).coordinate)
+                val candidatePoint = projection.screenPoint((candidate.geometry as VectorraAnnotationGeometry.Point).coordinate)
+                    ?: continue
                 if (hypot(candidatePoint.x - seedPoint.x, candidatePoint.y - seedPoint.y) <= source.clusterRadiusPixels) {
                     grouped.add(candidate)
                     iterator.remove()
@@ -126,6 +149,9 @@ internal class VectorraGeoJsonIndex(
                 if (layer.filter != VectorraGeoJsonLayerFilter.UNCLUSTERED) {
                     val clusterId = clusterIdFor(grouped)
                     val centroid = centroid(grouped)
+                    val clusterScreenPoint = grouped
+                        .mapNotNull { projection.screenPoint((it.geometry as VectorraAnnotationGeometry.Point).coordinate) }
+                        .averageScreenPoint()
                     clusterLeaves[ClusterKey(source.id, clusterId)] = grouped
                     val properties = mapOf(
                         "cluster" to "true",
@@ -141,7 +167,8 @@ internal class VectorraGeoJsonIndex(
                                 properties = properties
                             ),
                             layer = layer,
-                            cluster = ClusterInfo(source.id, clusterId, grouped)
+                            cluster = ClusterInfo(source.id, clusterId, grouped),
+                            projectedPoint = clusterScreenPoint
                         )
                     )
                 }
@@ -171,12 +198,20 @@ internal class VectorraGeoJsonIndex(
         )
     }
 
-    private fun screenBounds(geometry: VectorraAnnotationGeometry): ScreenBounds {
-        val points = when (geometry) {
-            is VectorraAnnotationGeometry.Point -> listOf(project(geometry.coordinate))
-            is VectorraAnnotationGeometry.LineString -> geometry.coordinates.map(project)
-            is VectorraAnnotationGeometry.Polygon -> geometry.rings.flatten().map(project)
+    private fun screenBounds(
+        entry: GeoJsonEntry,
+        projection: VectorraProjectionCache
+    ): ScreenBounds {
+        val geometry = entry.geometry
+        if (geometry is VectorraAnnotationGeometry.Point && entry.projectedPoint != null) {
+            return ScreenBounds(
+                minX = entry.projectedPoint.x,
+                minY = entry.projectedPoint.y,
+                maxX = entry.projectedPoint.x,
+                maxY = entry.projectedPoint.y
+            )
         }
+        val points = geometry.coordinates().map { projection.screenPoint(it) ?: return ScreenBounds.empty() }
         if (points.isEmpty()) return ScreenBounds.empty()
         return ScreenBounds(
             minX = points.minOf { it.x },
@@ -186,28 +221,49 @@ internal class VectorraGeoJsonIndex(
         )
     }
 
-    private fun distanceToGeometry(point: VectorraScreenPoint, geometry: VectorraAnnotationGeometry): Double {
+    private fun distanceToGeometry(
+        point: VectorraScreenPoint,
+        entry: GeoJsonEntry,
+        projection: VectorraProjectionCache
+    ): Double {
+        val geometry = entry.geometry
         return when (geometry) {
             is VectorraAnnotationGeometry.Point -> {
-                val projected = project(geometry.coordinate)
+                val projected = entry.projectedPoint
+                    ?: projection.screenPoint(geometry.coordinate)
+                    ?: return Double.POSITIVE_INFINITY
                 hypot(point.x - projected.x, point.y - projected.y)
             }
-            is VectorraAnnotationGeometry.LineString -> distanceToLineString(point, geometry.coordinates)
-            is VectorraAnnotationGeometry.Polygon -> distanceToPolygon(point, geometry.rings)
+            is VectorraAnnotationGeometry.LineString -> distanceToLineString(point, geometry.coordinates, projection)
+            is VectorraAnnotationGeometry.Polygon -> distanceToPolygon(point, geometry.rings, projection)
         }
     }
 
-    private fun distanceToLineString(point: VectorraScreenPoint, coordinates: List<VectorraCoordinate>): Double {
+    private fun distanceToLineString(
+        point: VectorraScreenPoint,
+        coordinates: List<VectorraCoordinate>,
+        projection: VectorraProjectionCache
+    ): Double {
         if (coordinates.isEmpty()) return Double.POSITIVE_INFINITY
-        if (coordinates.size == 1) {
-            val projected = project(coordinates.first())
-            return hypot(point.x - projected.x, point.y - projected.y)
+        val projected = coordinates.map { projection.screenPoint(it) ?: return Double.POSITIVE_INFINITY }
+        if (projected.size == 1) {
+            return hypot(point.x - projected.first().x, point.y - projected.first().y)
         }
-        return coordinates.map(project).zipWithNext().minOf { (a, b) -> distanceToSegment(point, a, b) }
+        return projected.zipWithNext().minOf { (a, b) -> distanceToSegment(point, a, b) }
     }
 
-    private fun distanceToPolygon(point: VectorraScreenPoint, rings: List<List<VectorraCoordinate>>): Double {
-        val projectedRings = rings.map { ring -> ring.map(project) }.filter { it.size >= 3 }
+    private fun distanceToPolygon(
+        point: VectorraScreenPoint,
+        rings: List<List<VectorraCoordinate>>,
+        projection: VectorraProjectionCache
+    ): Double {
+        val projectedRings = rings.mapNotNull { ring ->
+            if (ring.size < 3) {
+                null
+            } else {
+                ring.map { projection.screenPoint(it) ?: return@mapNotNull null }
+            }
+        }
         if (projectedRings.isEmpty()) return Double.POSITIVE_INFINITY
         val insideOuter = pointInRing(point, projectedRings.first())
         val insideHole = projectedRings.drop(1).any { pointInRing(point, it) }
@@ -254,6 +310,13 @@ internal class VectorraGeoJsonIndex(
         return features.map { it.id }.sorted().joinToString("|").hashCode().toLong() and 0xffffffffL
     }
 
+    private fun List<VectorraScreenPoint>.averageScreenPoint(): VectorraScreenPoint {
+        return VectorraScreenPoint(
+            x = map { it.x }.average(),
+            y = map { it.y }.average()
+        )
+    }
+
     private fun layerZIndex(layerId: String): Int = layers[layerId]?.zIndex ?: 0
 
     private val VectorraAnnotationGeometry.geometryType: VectorraGeometryType
@@ -266,7 +329,8 @@ internal class VectorraGeoJsonIndex(
     private data class GeoJsonEntry(
         val feature: VectorraGeoJsonFeature,
         val layer: VectorraGeoJsonLayer,
-        val cluster: ClusterInfo?
+        val cluster: ClusterInfo?,
+        val projectedPoint: VectorraScreenPoint? = null
     ) {
         val geometry: VectorraAnnotationGeometry
             get() = feature.geometry

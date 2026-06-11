@@ -1,36 +1,14 @@
 package com.vectorra.maps.query
 
 import com.vectorra.maps.CameraState
-import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.atan
-import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.ln
-import kotlin.math.pow
-import kotlin.math.sin
-import kotlin.math.sinh
 
-internal class VectorraAnnotationHitTester {
+internal class VectorraAnnotationHitTester(
+    private val projector: VectorraCoordinateProjector,
+    private val camera: () -> CameraState
+) {
     private val features = linkedMapOf<String, VectorraAnnotationFeature>()
-    private var viewportWidth = 1
-    private var viewportHeight = 1
-    private var cameraState = CameraState(
-        longitude = 0.0,
-        latitude = 0.0,
-        zoom = 0.0,
-        pitch = 0.0,
-        bearing = 0.0
-    )
-
-    fun setViewport(width: Int, height: Int) {
-        viewportWidth = width.coerceAtLeast(1)
-        viewportHeight = height.coerceAtLeast(1)
-    }
-
-    fun setCamera(camera: CameraState) {
-        cameraState = camera
-    }
 
     fun add(feature: VectorraAnnotationFeature) {
         features[feature.id] = feature
@@ -58,16 +36,27 @@ internal class VectorraAnnotationHitTester {
         screenPoint: VectorraScreenPoint,
         options: VectorraQueryOptions
     ): List<VectorraQueriedFeature> {
-        val radiusOverride = options.radiusPixels.takeIf { it > 0.0 && it.isFinite() }
-        return candidates.asSequence()
+        val zoom = camera().zoom
+        val visibleCandidates = candidates.asSequence()
             .filter { it.visible }
             .filter { it.opacity > OPACITY_THRESHOLD }
-            .filter { cameraState.zoom >= it.minZoom && cameraState.zoom <= it.maxZoom }
+            .filter { zoom >= it.minZoom && zoom <= it.maxZoom }
             .filter { options.layerIds.isEmpty() || it.layerId in options.layerIds }
             .filter { options.sourceLayerIds.isEmpty() || it.properties["source-layer"] in options.sourceLayerIds }
+            .toList()
+        if (visibleCandidates.isEmpty()) {
+            return emptyList()
+        }
+
+        val projection = VectorraProjectionCache.create(
+            visibleCandidates.asSequence().flatMap { it.geometry.coordinates().asSequence() }.asIterable(),
+            projector
+        )
+        val radiusOverride = options.radiusPixels.takeIf { it > 0.0 && it.isFinite() }
+        return visibleCandidates.asSequence()
             .mapNotNull { feature ->
                 val threshold = radiusOverride ?: feature.radiusPixels
-                val distance = distanceToFeature(screenPoint, feature)
+                val distance = distanceToFeature(screenPoint, feature, projection)
                 if (distance <= threshold) {
                     VectorraHit(feature, distance)
                 } else {
@@ -89,59 +78,35 @@ internal class VectorraAnnotationHitTester {
             .toList()
     }
 
-    fun pixelForCoordinate(coordinate: VectorraCoordinate): VectorraScreenPoint {
-        val center = worldPoint(cameraState.longitude, cameraState.latitude)
-        val target = worldPoint(coordinate.longitude, coordinate.latitude)
-        val dx = wrapWorldDelta(target.x - center.x)
-        val dy = target.y - center.y
-        val bearingRadians = Math.toRadians(cameraState.bearing)
-        val cosBearing = cos(bearingRadians)
-        val sinBearing = sin(bearingRadians)
-        val rotatedX = dx * cosBearing - dy * sinBearing
-        val rotatedY = dx * sinBearing + dy * cosBearing
-        return VectorraScreenPoint(
-            x = viewportWidth / 2.0 + rotatedX,
-            y = viewportHeight / 2.0 + rotatedY
-        )
-    }
-
-    fun coordinateForPixel(screenPoint: VectorraScreenPoint): VectorraCoordinate {
-        val dx = screenPoint.x - viewportWidth / 2.0
-        val dy = screenPoint.y - viewportHeight / 2.0
-        val bearingRadians = Math.toRadians(cameraState.bearing)
-        val cosBearing = cos(bearingRadians)
-        val sinBearing = sin(bearingRadians)
-        val unrotatedX = dx * cosBearing + dy * sinBearing
-        val unrotatedY = -dx * sinBearing + dy * cosBearing
-        val center = worldPoint(cameraState.longitude, cameraState.latitude)
-        return coordinateFromWorld(
-            WorldPoint(center.x + unrotatedX, center.y + unrotatedY)
-        )
-    }
-
     private fun distanceToFeature(
         screenPoint: VectorraScreenPoint,
-        feature: VectorraAnnotationFeature
+        feature: VectorraAnnotationFeature,
+        projection: VectorraProjectionCache
     ): Double {
         return when (val geometry = feature.geometry) {
-            is VectorraAnnotationGeometry.Point -> distanceToPoint(screenPoint, geometry.coordinate)
-            is VectorraAnnotationGeometry.LineString -> distanceToLineString(screenPoint, geometry.coordinates)
-            is VectorraAnnotationGeometry.Polygon -> distanceToPolygon(screenPoint, geometry.rings)
+            is VectorraAnnotationGeometry.Point -> distanceToPoint(screenPoint, geometry.coordinate, projection)
+            is VectorraAnnotationGeometry.LineString -> distanceToLineString(screenPoint, geometry.coordinates, projection)
+            is VectorraAnnotationGeometry.Polygon -> distanceToPolygon(screenPoint, geometry.rings, projection)
         }
     }
 
-    private fun distanceToPoint(screenPoint: VectorraScreenPoint, coordinate: VectorraCoordinate): Double {
-        val projected = pixelForCoordinate(coordinate)
+    private fun distanceToPoint(
+        screenPoint: VectorraScreenPoint,
+        coordinate: VectorraCoordinate,
+        projection: VectorraProjectionCache
+    ): Double {
+        val projected = projection.screenPoint(coordinate) ?: return Double.POSITIVE_INFINITY
         return hypot(screenPoint.x - projected.x, screenPoint.y - projected.y)
     }
 
     private fun distanceToLineString(
         screenPoint: VectorraScreenPoint,
-        coordinates: List<VectorraCoordinate>
+        coordinates: List<VectorraCoordinate>,
+        projection: VectorraProjectionCache
     ): Double {
         if (coordinates.isEmpty()) return Double.POSITIVE_INFINITY
-        if (coordinates.size == 1) return distanceToPoint(screenPoint, coordinates.first())
-        val points = coordinates.map(::pixelForCoordinate)
+        val points = coordinates.map { projection.screenPoint(it) ?: return Double.POSITIVE_INFINITY }
+        if (points.size == 1) return hypot(screenPoint.x - points.first().x, screenPoint.y - points.first().y)
         return points.zipWithNext().minOf { (a, b) ->
             distanceToSegment(screenPoint, a, b)
         }
@@ -149,11 +114,17 @@ internal class VectorraAnnotationHitTester {
 
     private fun distanceToPolygon(
         screenPoint: VectorraScreenPoint,
-        rings: List<List<VectorraCoordinate>>
+        rings: List<List<VectorraCoordinate>>,
+        projection: VectorraProjectionCache
     ): Double {
         val projectedRings = rings
-            .map { ring -> ring.map(::pixelForCoordinate) }
-            .filter { it.size >= 3 }
+            .mapNotNull { ring ->
+                if (ring.size < 3) {
+                    null
+                } else {
+                    ring.map { projection.screenPoint(it) ?: return@mapNotNull null }
+                }
+            }
         if (projectedRings.isEmpty()) return Double.POSITIVE_INFINITY
 
         val insideOuter = pointInRing(screenPoint, projectedRings.first())
@@ -200,36 +171,6 @@ internal class VectorraAnnotationHitTester {
         return hypot(point.x - projectionX, point.y - projectionY)
     }
 
-    private fun worldPoint(longitude: Double, latitude: Double): WorldPoint {
-        val worldSize = worldSize()
-        val x = (wrapLongitude(longitude) + 180.0) / 360.0 * worldSize
-        val clampedLatitude = latitude.coerceIn(MIN_LATITUDE, MAX_LATITUDE)
-        val sinLatitude = sin(Math.toRadians(clampedLatitude))
-        val y = (0.5 - ln((1.0 + sinLatitude) / (1.0 - sinLatitude)) / (4.0 * PI)) * worldSize
-        return WorldPoint(x, y)
-    }
-
-    private fun coordinateFromWorld(point: WorldPoint): VectorraCoordinate {
-        val worldSize = worldSize()
-        val normalizedX = ((point.x % worldSize) + worldSize) % worldSize
-        val longitude = normalizedX / worldSize * 360.0 - 180.0
-        val mercatorY = PI * (1.0 - 2.0 * point.y / worldSize)
-        val latitude = Math.toDegrees(atan(sinh(mercatorY))).coerceIn(MIN_LATITUDE, MAX_LATITUDE)
-        return VectorraCoordinate(longitude = longitude, latitude = latitude)
-    }
-
-    private fun worldSize(): Double {
-        return TILE_SIZE * 2.0.pow(cameraState.zoom)
-    }
-
-    private fun wrapWorldDelta(delta: Double): Double {
-        val worldSize = worldSize()
-        var result = delta
-        if (result > worldSize / 2.0) result -= worldSize
-        if (result < -worldSize / 2.0) result += worldSize
-        return result
-    }
-
     private val VectorraAnnotationGeometry.geometryType: VectorraGeometryType
         get() = when (this) {
             is VectorraAnnotationGeometry.Point -> VectorraGeometryType.POINT
@@ -237,24 +178,12 @@ internal class VectorraAnnotationHitTester {
             is VectorraAnnotationGeometry.Polygon -> VectorraGeometryType.POLYGON
         }
 
-    private data class WorldPoint(val x: Double, val y: Double)
-
     private data class VectorraHit(
         val feature: VectorraAnnotationFeature,
         val distancePixels: Double
     )
 
     private companion object {
-        const val TILE_SIZE = 512.0
-        const val MIN_LATITUDE = -85.05112878
-        const val MAX_LATITUDE = 85.05112878
         const val OPACITY_THRESHOLD = 0.01
-
-        fun wrapLongitude(longitude: Double): Double {
-            var result = longitude
-            while (result < -180.0) result += 360.0
-            while (result > 180.0) result -= 360.0
-            return result
-        }
     }
 }

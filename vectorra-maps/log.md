@@ -4621,3 +4621,33 @@ Next:
 
 - 按文档阶段 1 实现 native worldToScreen/screenToWorld 投影 API。
 - 网络代理两项短期修复（稳定注册 key、keep-alive）可独立先行。
+
+## 2026-06-11
+
+### Native Projection Refactor - Stage 1
+
+Completed:
+
+- Added internal JNI projection APIs for batched WGS84-to-screen projection and screen-to-WGS84 terrain picking.
+- Replaced Kotlin hit-test Web Mercator projection in annotation, GeoJSON, and MVT query paths with a shared native-backed projector and query-scope projection cache.
+- Kept public `VectorraMap` API unchanged; `pixelForCoordinate`, `coordinateForPixel`, and explicit `queryRenderedFeatures` now fail fast when the native renderer surface is not ready.
+- Updated query unit tests to use fake projectors and cover unprojectable coordinates plus batched line/polygon projection behavior.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+.\gradlew.bat :vectorra-maps:testDebugUnitTest --tests com.vectorra.maps.query.VectorraAnnotationHitTesterTest --tests com.vectorra.maps.query.VectorraGeoJsonIndexTest
+.\gradlew.bat :vectorra-maps:assembleDebug
+```
+
+Results:
+
+- Changed query tests passed.
+- `:vectorra-maps:assembleDebug` passed for `arm64-v8a` and `x86_64`.
+- Full `:vectorra-maps:testDebugUnitTest` still fails only in `VectorraPublicApiSurfaceTest.publicApiInventoryKeeps3DTilesModelSmokeOutOfPublishedBaseline` because the public API baseline file is missing; this is the pre-existing failure noted above.
+
+Known issues / next:
+
+- Device visual validation for pitch/high-latitude click alignment was not run in this pass.
+- Later stages still need native camera ownership and MVT decode/scheduling migration.

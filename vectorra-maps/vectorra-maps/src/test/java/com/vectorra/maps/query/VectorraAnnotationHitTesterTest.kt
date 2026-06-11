@@ -7,17 +7,17 @@ import org.junit.Test
 
 class VectorraAnnotationHitTesterTest {
 
-    private fun newTester(): VectorraAnnotationHitTester {
-        return VectorraAnnotationHitTester().apply {
-            setViewport(1000, 1000)
-            setCamera(
-                CameraState(
-                    longitude = 104.0,
-                    latitude = 30.0,
-                    zoom = 10.0,
-                    pitch = 0.0,
-                    bearing = 0.0
-                )
+    private fun newTester(
+        zoom: Double = 10.0,
+        projector: FakeProjector = FakeProjector()
+    ): VectorraAnnotationHitTester {
+        return VectorraAnnotationHitTester(projector) {
+            CameraState(
+                longitude = 104.0,
+                latitude = 30.0,
+                zoom = zoom,
+                pitch = 0.0,
+                bearing = 0.0
             )
         }
     }
@@ -36,7 +36,7 @@ class VectorraAnnotationHitTesterTest {
             )
         )
 
-        val screen = tester.pixelForCoordinate(center)
+        val screen = center.toScreenPoint()
         assertEquals("point-1", tester.query(screen, VectorraQueryOptions()).single().id)
         assertTrue(tester.query(VectorraScreenPoint(screen.x + 20.0, screen.y), VectorraQueryOptions()).isEmpty())
     }
@@ -60,7 +60,7 @@ class VectorraAnnotationHitTesterTest {
 
         assertEquals(
             "line-1",
-            tester.query(tester.pixelForCoordinate(VectorraCoordinate(104.0, 30.0)), VectorraQueryOptions()).single().id
+            tester.query(VectorraCoordinate(104.0, 30.0).toScreenPoint(), VectorraQueryOptions()).single().id
         )
     }
 
@@ -86,8 +86,8 @@ class VectorraAnnotationHitTesterTest {
             )
         )
 
-        val inside = tester.pixelForCoordinate(VectorraCoordinate(104.0, 30.0))
-        val outside = tester.pixelForCoordinate(VectorraCoordinate(104.05, 30.05))
+        val inside = VectorraCoordinate(104.0, 30.0).toScreenPoint()
+        val outside = VectorraCoordinate(104.05, 30.05).toScreenPoint()
         assertEquals("polygon-1", tester.query(inside, VectorraQueryOptions()).single().id)
         assertTrue(tester.query(outside, VectorraQueryOptions()).isEmpty())
     }
@@ -105,7 +105,7 @@ class VectorraAnnotationHitTesterTest {
             )
         )
 
-        val screen = tester.pixelForCoordinate(VectorraCoordinate(104.0, 30.0))
+        val screen = VectorraCoordinate(104.0, 30.0).toScreenPoint()
         assertTrue(tester.query(screen, VectorraQueryOptions(layerIds = setOf("draw-polyline"))).isEmpty())
         val result = tester.query(screen, VectorraQueryOptions(layerIds = setOf("draw-point"))).single()
         assertEquals("{\"id\":\"p1\"}", result.properties["payload"])
@@ -115,7 +115,7 @@ class VectorraAnnotationHitTesterTest {
     fun externalCandidatesUseSameHitLogicAndReturnSourceId() {
         val tester = newTester()
         val center = VectorraCoordinate(104.0, 30.0)
-        val screen = tester.pixelForCoordinate(center)
+        val screen = center.toScreenPoint()
         val results = tester.queryFeatures(
             candidates = listOf(
                 VectorraAnnotationFeature(
@@ -207,20 +207,21 @@ class VectorraAnnotationHitTesterTest {
             )
         )
 
-        val results = tester.query(tester.pixelForCoordinate(center), VectorraQueryOptions())
+        val results = tester.query(center.toScreenPoint(), VectorraQueryOptions())
         assertEquals(listOf("high", "low"), results.map { it.id })
     }
 
     @Test
     fun visibilityOpacityAndZoomFilterAnnotationHits() {
-        val tester = newTester()
+        val projector = FakeProjector()
+        val tester = newTester(projector = projector)
         val center = VectorraCoordinate(104.0, 30.0)
-        val screen = tester.pixelForCoordinate(center)
+        val screen = center.toScreenPoint()
         tester.add(
             VectorraAnnotationFeature(
                 id = "hidden",
                 layerId = "draw-point",
-                geometry = VectorraAnnotationGeometry.Point(center),
+                geometry = VectorraAnnotationGeometry.Point(VectorraCoordinate(104.1, 30.0)),
                 visible = false
             )
         )
@@ -228,7 +229,7 @@ class VectorraAnnotationHitTesterTest {
             VectorraAnnotationFeature(
                 id = "transparent",
                 layerId = "draw-point",
-                geometry = VectorraAnnotationGeometry.Point(center),
+                geometry = VectorraAnnotationGeometry.Point(VectorraCoordinate(104.2, 30.0)),
                 opacity = 0.0
             )
         )
@@ -236,7 +237,7 @@ class VectorraAnnotationHitTesterTest {
             VectorraAnnotationFeature(
                 id = "out-of-zoom",
                 layerId = "draw-point",
-                geometry = VectorraAnnotationGeometry.Point(center),
+                geometry = VectorraAnnotationGeometry.Point(VectorraCoordinate(104.3, 30.0)),
                 minZoom = 12.0
             )
         )
@@ -249,5 +250,84 @@ class VectorraAnnotationHitTesterTest {
         )
 
         assertEquals(listOf("visible"), tester.query(screen, VectorraQueryOptions()).map { it.id })
+        assertEquals(listOf(listOf(center)), projector.batches)
+    }
+
+    @Test
+    fun unprojectablePointIsNotHit() {
+        val center = VectorraCoordinate(104.0, 30.0)
+        val tester = newTester(projector = FakeProjector(hiddenCoordinates = setOf(center)))
+        tester.add(
+            VectorraAnnotationFeature(
+                id = "point-1",
+                layerId = "draw-point",
+                geometry = VectorraAnnotationGeometry.Point(center),
+                radiusPixels = 20.0
+            )
+        )
+
+        assertTrue(tester.query(center.toScreenPoint(), VectorraQueryOptions()).isEmpty())
+    }
+
+    @Test
+    fun lineAndPolygonQueriesUseBatchProjection() {
+        val projector = FakeProjector()
+        val tester = newTester(projector = projector)
+        val lineA = VectorraCoordinate(103.99, 30.0)
+        val lineB = VectorraCoordinate(104.01, 30.0)
+        val polygon = listOf(
+            VectorraCoordinate(103.99, 29.99),
+            VectorraCoordinate(104.01, 29.99),
+            VectorraCoordinate(104.01, 30.01),
+            VectorraCoordinate(103.99, 30.01)
+        )
+        tester.add(
+            VectorraAnnotationFeature(
+                id = "line",
+                layerId = "draw-line",
+                geometry = VectorraAnnotationGeometry.LineString(listOf(lineA, lineB)),
+                radiusPixels = 10.0
+            )
+        )
+        tester.add(
+            VectorraAnnotationFeature(
+                id = "polygon",
+                layerId = "draw-fill",
+                geometry = VectorraAnnotationGeometry.Polygon(listOf(polygon)),
+                radiusPixels = 10.0
+            )
+        )
+
+        val results = tester.query(VectorraCoordinate(104.0, 30.0).toScreenPoint(), VectorraQueryOptions())
+
+        assertEquals(setOf("line", "polygon"), results.map { it.id }.toSet())
+        assertEquals(1, projector.batches.size)
+        assertEquals((listOf(lineA, lineB) + polygon).distinct(), projector.batches.single())
+    }
+
+    private class FakeProjector(
+        private val hiddenCoordinates: Set<VectorraCoordinate> = emptySet()
+    ) : VectorraCoordinateProjector {
+        val batches = mutableListOf<List<VectorraCoordinate>>()
+
+        override fun project(coordinates: List<VectorraCoordinate>): List<VectorraScreenPoint?> {
+            batches.add(coordinates)
+            return coordinates.map { coordinate ->
+                if (coordinate in hiddenCoordinates) {
+                    null
+                } else {
+                    coordinate.toScreenPoint()
+                }
+            }
+        }
+    }
+
+    private companion object {
+        fun VectorraCoordinate.toScreenPoint(): VectorraScreenPoint {
+            return VectorraScreenPoint(
+                x = (longitude - 104.0) * 1000.0 + 500.0,
+                y = (latitude - 30.0) * 1000.0 + 500.0
+            )
+        }
     }
 }
