@@ -216,6 +216,12 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
         }
     }
 
+    fun setCachePath(path: String) {
+        ifOpen {
+            VectorraNative.setCachePath(nativeHandle, path)
+        }
+    }
+
     fun detachSurface() {
         ifOpen {
             VectorraNative.setSurface(nativeHandle, null, 0, 0)

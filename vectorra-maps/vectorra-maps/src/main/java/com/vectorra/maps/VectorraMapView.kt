@@ -97,6 +97,7 @@ class VectorraMapView @JvmOverloads constructor(
 
     init {
         engine.setResourcePath(ensureVectorraAssets(context).absolutePath)
+        engine.setCachePath(File(context.cacheDir, "vectorra-net").absolutePath)
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true

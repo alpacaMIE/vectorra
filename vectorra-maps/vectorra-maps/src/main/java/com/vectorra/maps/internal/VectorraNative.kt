@@ -21,6 +21,7 @@ internal object VectorraNative {
     external fun destroy(handle: Long)
     external fun setResourceStatusCallback(handle: Long, callback: ResourceStatusCallback?)
     external fun setResourcePath(handle: Long, path: String)
+    external fun setCachePath(handle: Long, path: String)
     external fun setSurface(handle: Long, surface: Surface?, width: Int, height: Int): String?
     external fun resize(handle: Long, width: Int, height: Int)
     external fun setCamera(

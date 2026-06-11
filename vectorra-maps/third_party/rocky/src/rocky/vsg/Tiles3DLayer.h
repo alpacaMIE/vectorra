@@ -39,6 +39,11 @@ namespace ROCKY_NAMESPACE
         //! Maximum number of tile content nodes resident in memory.
         unsigned maximumLoadedTiles = 1024u;
 
+        //! Approximate GPU byte budget (geometry + textures) for resident
+        //! tile content; eviction triggers on whichever of this and
+        //! maximumLoadedTiles is exceeded first.
+        std::uint64_t maximumResidentBytes = 384ull * 1024 * 1024;
+
         //! VSG context — must be set before calling open().
         //! Typically: layer->vsgctx = app->vsgcontext;
         VSGContext vsgctx = nullptr;

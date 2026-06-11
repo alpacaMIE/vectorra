@@ -7,6 +7,7 @@
 
 #include <rocky/Common.h>
 #include <rocky/Utils.h>
+#include <functional>
 #include <mutex>
 #include <shared_mutex>
 #include <list>
@@ -132,6 +133,8 @@ namespace ROCKY_NAMESPACE
         private:
             mutable std::mutex _mutex;
             size_t _capacity;
+            size_t _capacityBytes = 0;   // 0 = no byte limit
+            size_t _currentBytes = 0;    // tracked only when sizeOf is set
             using E = typename std::pair<K, V>;
             mutable typename std::list<E> _cache;
             mutable std::unordered_map<K, typename std::list<E>::iterator> _map;
@@ -139,6 +142,12 @@ namespace ROCKY_NAMESPACE
             std::uint32_t _hits = 0, _misses = 0;
 
         public:
+            //! Optional functor returning the size in bytes of a cached value.
+            //! When set (together with setCapacityBytes), the cache evicts
+            //! oldest entries to stay within the byte budget as well as the
+            //! entry-count capacity. Set before first use; not thread-safe to
+            //! change while the cache is in service.
+            std::function<size_t(const V&)> sizeOf;
 
             //! Constructs an LRUCache with the specified capacity.
             //! \param capacity_ The maximum number of items the cache can hold.
@@ -155,9 +164,18 @@ namespace ROCKY_NAMESPACE
                 _cache.clear();
                 _map.clear();
                 _capacity = std::max((size_t)0, value);
+                _currentBytes = 0;
                 //_map._container.reserve(_capacity);
                 _hits = 0;
                 _misses = 0;
+            }
+
+            //! Sets a total-bytes budget (0 = unlimited). Requires sizeOf to
+            //! be set for byte accounting to take effect.
+            inline void setCapacityBytes(size_t value)
+            {
+                std::scoped_lock L(_mutex);
+                _capacityBytes = value;
             }
 
             //! Retrieves the value associated with the given key, if present.
@@ -193,16 +211,31 @@ namespace ROCKY_NAMESPACE
                 auto it = _map.find(key);
                 if (it != _map.end()) {
                     // Update value and move to back
+                    if (sizeOf) {
+                        _currentBytes -= std::min(_currentBytes, sizeOf(it->second->second));
+                        _currentBytes += sizeOf(value);
+                    }
                     it->second->second = value;
                     _cache.splice(_cache.end(), _cache, it->second);
                 }
                 else {
-                    if (_cache.size() == _capacity) {
-                        _map.erase(_cache.front().first);
-                        _cache.pop_front();
-                    }
+                    if (sizeOf)
+                        _currentBytes += sizeOf(value);
                     _cache.emplace_back(key, value);
                     _map[key] = std::prev(_cache.end());
+                }
+
+                // Trim oldest entries over the count capacity and (if byte
+                // accounting is active) over the byte budget. Never evict the
+                // entry just inserted.
+                while (_cache.size() > 1 &&
+                    (_cache.size() > _capacity ||
+                        (sizeOf && _capacityBytes > 0 && _currentBytes > _capacityBytes)))
+                {
+                    if (sizeOf)
+                        _currentBytes -= std::min(_currentBytes, sizeOf(_cache.front().second));
+                    _map.erase(_cache.front().first);
+                    _cache.pop_front();
                 }
             }
 
@@ -234,6 +267,7 @@ namespace ROCKY_NAMESPACE
                 std::scoped_lock L(_mutex);
                 _cache.clear();
                 _map.clear();
+                _currentBytes = 0;
                 _hits = 0, _misses = 0;
             }
         };

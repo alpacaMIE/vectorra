@@ -25,6 +25,11 @@ namespace ROCKY_NAMESPACE
     class ContextImpl;
     class GeoExtent;
 
+    namespace detail
+    {
+        class DiskContentCache;
+    }
+
     //! Service for reading an image from a URI
     using ReadImageURIService = std::function<
         Result<std::shared_ptr<Image>>(const std::string& location, const IOOptions&)>;
@@ -83,6 +88,9 @@ namespace ROCKY_NAMESPACE
         //! Caches raw context coming from a URI (like a browser cache)
         std::shared_ptr<ContentCache> contentCache;
 
+        //! Optional persistent on-disk cache for remote URI content
+        std::shared_ptr<detail::DiskContentCache> diskCache;
+
         //! Provides fast access to Image data that is resident somwehere in memory
         std::shared_ptr<detail::ResidentCache<std::string, Image, GeoExtent>> residentImageCache;
 
@@ -123,6 +131,11 @@ namespace ROCKY_NAMESPACE
         //! Network connection timeout (in seconds; 0 = infinite)
         std::chrono::seconds networkConnectionTimeout = std::chrono::seconds(5);
 
+        //! Whether URI::read may store/fetch this request in the in-memory
+        //! content cache. Disable for large low-reuse payloads (e.g. 3D Tiles
+        //! content) that would otherwise crowd out everything else.
+        bool useContentCache = true;
+
         //! Referring location for an operation using these options
         std::optional<std::string> referrer;
 
@@ -145,6 +158,8 @@ namespace ROCKY_NAMESPACE
         {
             Cancelable::operator=(rhs);
             maxNetworkAttempts = rhs.maxNetworkAttempts;
+            networkConnectionTimeout = rhs.networkConnectionTimeout;
+            useContentCache = rhs.useContentCache;
             referrer = std::move(rhs.referrer);
             _services = rhs._services;
             _cancelable = rhs._cancelable;

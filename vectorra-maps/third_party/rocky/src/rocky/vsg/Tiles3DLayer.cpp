@@ -36,6 +36,7 @@ Result<> Tiles3DLayer::openImplementation(const IOOptions& io)
     const auto ctx         = _vsgctx;
     const auto maxSSE      = maximumScreenSpaceError;
     const auto maxTiles_   = maximumLoadedTiles;
+    const auto maxBytes_   = maximumResidentBytes;
     const auto vpHeight    = _viewportHeight.load();
     // Raw pointer is safe here: the cancellation token prevents the callback
     // from running after closeImplementation() signals cancellation.
@@ -50,10 +51,14 @@ Result<> Tiles3DLayer::openImplementation(const IOOptions& io)
     jobCtx.can_cancel = false; // run to completion; we manage cancellation ourselves
 
     _openFuture = jobs.dispatch(
-        [rawSelf, uri, io, ctx, maxSSE, maxTiles_, vpHeight, canceled](Cancelable&) -> int
+        [rawSelf, uri, io, ctx, maxSSE, maxTiles_, maxBytes_, vpHeight, canceled](Cancelable&) -> int
     {
-        // 1. Fetch tileset.json
-        auto rr = uri.read(io);
+        // 1. Fetch tileset.json — skip the in-memory content cache (a root
+        // tileset.json can be tens of MB and is parsed exactly once; the
+        // disk cache still serves it on the next app run)
+        auto localIO = io;
+        localIO.useContentCache = false;
+        auto rr = uri.read(localIO);
         if (!rr || canceled->load())
         {
             if (!rr)
@@ -77,6 +82,7 @@ Result<> Tiles3DLayer::openImplementation(const IOOptions& io)
         // 3. Build the scene graph node
         auto tilesNode = Tiles3DNode::create(
             tileset.value(), uri.context(), ctx, maxSSE, maxTiles_);
+        tilesNode->maximumResidentBytes = maxBytes_;
         tilesNode->viewportHeight.store(vpHeight);
 
         TILES3D_LOG_I("Tiles3DLayer: opened uri=%s geometricError=%.1f",

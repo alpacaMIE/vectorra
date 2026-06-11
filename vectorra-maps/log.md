@@ -4539,3 +4539,47 @@ git diff --check -- vectorra-maps/docs/tiles3d-performance-review.md vectorra-ma
 Result:
 
 - Passed; documentation-only change, no Gradle build required. Git emitted CRLF normalization warnings only.
+
+## 2026-06-11
+
+### 3D Tiles Performance Overhaul (P0+P1)
+
+Completed (per docs/tiles3d-performance-review.md):
+
+- SSE viewport-height bug: `vectorra_jni.cpp` passed the uncapped Android view height (e.g. 2219) to `Tiles3DLayer::setViewportHeight` while the Vulkan surface is capped to 1280 on the longest side; both call sites now use `effectiveRenderHeight()`, cutting SSE inflation (~1.7x on the emulator) and the whole download/compile/render load with it.
+- sharedObjects: each `Tiles3DNode` now owns a `vsg::SharedObjects` assigned to the cloned reader options in the decode stage, so vsgXchange's gltf builder shares shader sets, samplers, and identical pipeline states across tiles instead of recreating them per tile; pruned every 120 frames in the expire pass so evicted tiles' pipeline configs do not pin texture data.
+- contentCache: `LRUCache` gained an optional byte budget (`sizeOf` functor + `setCapacityBytes`); the VSGContext content cache is now 96MB/1024-entry bounded. `IOOptions.useContentCache` lets 3D Tiles content (and the 49.7MB tileset.json) bypass the in-memory cache entirely. `URI::read` also stopped double-copying every response body (move semantics).
+- curl: added `CURLOPT_NOSIGNAL`, `CURLOPT_TCP_KEEPALIVE`, `CURLOPT_BUFFERSIZE=512KB`, stall protection (`LOW_SPEED_LIMIT/TIME` 1KB/s / 30s), a per-request `XFERINFOFUNCTION` cancel hook honoring `io.canceled()` (mirrors the httplib path), `CURLE_ABORTED_BY_CALLBACK` -> OperationCanceled, and partial-body reset on retry. Tile downloads use `maxNetworkAttempts=1` so backoff lives in `Tile3DNode::failWithBackoff` instead of sleeping pool threads.
+- Cancellation chain: tile downloads run with `io.with(c)`; a pending-loads registry plus a per-frame stale sweep (30 frames unseen) abandons futures for off-screen tiles - aborting in-flight transfers mid-download and releasing results that arrived after their tile scrolled away (these were previously retained indefinitely).
+- Download/decode split: loads now run as two stages - network pool ("rocky::Tiles3DNode.net", 8 threads) -> decode pool ("rocky::Tiles3DNode.decode", 2-4 threads) - so Draco/WebP decode no longer starves the network pipe; decode reads via `vsg::mem_stream` (no istringstream copy).
+- Background compile: the batched compile moved off the frame loop onto a dedicated 1-thread pool ("rocky::Tiles3DNode.compile", NodePager precedent), batches of 8 with per-tile failure isolation; results attach to tiles on the next update pass so all tile state stays on the frame thread and the frame loop never blocks on a compile fence.
+- GPU byte-budget eviction: a `GPUBytesCounter` visitor accounts each tile's buffer+texture bytes at compile time; eviction now triggers on count (`maximumLoadedTiles`) or bytes (`maximumResidentBytes`, default 384MB, plumbed through `Tiles3DLayer`). The LRU list/sentinel/mutex-per-touch machinery was replaced by frame-stamp touches and a sorted scan in the expire pass; frustum/SSE results are cached per frame (the same tile was tested 3x/2x per frame).
+- Disk cache: new `rocky::detail::DiskContentCache` (one file per URL, 512MB budget, temp+rename writes, mtime-LRU trim, no ETag semantics v1) wired into `URI::read` for remote content; activated via `ROCKY_CACHE_PATH`, set from `VectorraMapView` -> `VectorraMapEngine.setCachePath` -> JNI `setenv` (mirrors setResourcePath), pointing at `cacheDir/vectorra-net`.
+- Metadata diet + SAX: `Tiles3DTile` shrank from ~500B to ~150B (bounding volumes folded to `vsg::dsphere`+regionVolume flag at parse, `unique_ptr<dmat4>` transform, relative-URI-only content resolved on demand against a shared baseURI); `Tile3DNode` holds `shared_ptr<const Tiles3DTile>` instead of a full copy. `Tiles3DTileset::fromJSON` is now a streaming nlohmann SAX parse (explicit frame stack, post-pass refine inheritance so JSON key order cannot break it) - no DOM is built for the 49.7MB NLSC tileset.json.
+- CMake note: rocky sources are globbed at configure time; adding DiskCache.cpp required touching `src/rocky/CMakeLists.txt` (comment added there as a reminder).
+
+Verification commands were run from `D:\workspace\code\vectorra\vectorra-maps`:
+
+```powershell
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-sample:assembleDebug
+$env:ANDROID_HOME='C:\Users\myg\AppData\Local\Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; .\gradlew.bat -g .\.gradle-agent-home :vectorra-maps:testDebugUnitTest
+git diff --check
+```
+
+Manual emulator smoke was run on `emulator-5554` (Rocky_Vulkan_API36_1, x86_64, host GPU): pm clear + `--es vectorra.sample.action 3dtiles`, zoom + 12 alternating swipes, force-stop + relaunch (warm cache), and `--es vectorra.sample.action hk-3dtiles`.
+
+Results:
+
+- `:vectorra-sample:assembleDebug` passed (arm64-v8a + x86_64).
+- `:vectorra-maps:testDebugUnitTest`: 171 tests, 170 passed; the 1 failure (`VectorraPublicApiSurfaceTest.publicApiInventoryKeeps3DTilesModelSmokeOutOfPublishedBaseline`) is pre-existing - commit 6bb65f8 deleted `docs/beta/public-api-surface.md` that the test reads; unrelated to this change.
+- `git diff --check` passed (CRLF warnings only).
+- NLSC: tileset opened, SAX parse of the 49.7MB JSON ~4s; buildings render identically to the 2026-06-10 baseline screenshots; 12-swipe drag storm with zero `rocky_tiles3d` failures, no crash, same PID. **TOTAL PSS 455MB vs ~935MB baseline (-51%)**.
+- Disk cache: 288 entries / 64MB after first run; warm relaunch fetched tileset.json from disk in ~0.2s vs ~23s network (logcat `ROCKY_CACHE_PATH` + fetch timestamps).
+- HK Kowloon: external-json chain grafts, Draco+WebP b3dm content renders textured at pitch 45 (screenshot), zero failures; root json top-level geometricError genuinely absent in the data (verified by fetching it) - not a parser issue. PSS 521MB.
+- Screenshots: `build/device-3dtiles-perf-overview-2026-06-11.png`, `build/device-3dtiles-perf-clean-2026-06-11.png`, `build/device-3dtiles-perf-postdrag-2026-06-11.png`, `build/device-3dtiles-perf-hk-2026-06-11.png`.
+
+Known remaining work:
+
+- P2 items from the review: update-phase selection (traverse/record decoupling), cesium-style skip-LOD, HTTP/2 via curl multi, OBB culling for box volumes, KTX2/BasisU textures.
+- Pre-existing unit test failure above needs either the doc restored or the test updated.
+- Physical-device (arm64) smoke was not run in this pass.

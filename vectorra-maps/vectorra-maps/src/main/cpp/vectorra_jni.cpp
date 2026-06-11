@@ -728,6 +728,18 @@ namespace
             }
         }
 
+        // Persistent network content cache directory. Must be set before the
+        // renderer starts (rocky reads ROCKY_CACHE_PATH at context creation).
+        void setCachePath(const std::string& path)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!path.empty())
+            {
+                setenv("ROCKY_CACHE_PATH", path.c_str(), 1);
+                __android_log_print(ANDROID_LOG_INFO, TAG, "ROCKY_CACHE_PATH=%s", path.c_str());
+            }
+        }
+
         void detachSurface()
         {
             std::unique_lock<std::mutex> lock(mutex);
@@ -741,8 +753,10 @@ namespace
             surfaceWidth = width > 0 ? width : 1;
             surfaceHeight = height > 0 ? height : 1;
             __android_log_print(ANDROID_LOG_INFO, TAG, "resize %dx%d", surfaceWidth, surfaceHeight);
+            // SSE must use the capped Vulkan render extent, not the Android view
+            // height — the surface is downscaled to MAX_ANDROID_RENDER_EXTENT.
             for (auto& [id, layer] : tiles3DLayerMap)
-                layer->setViewportHeight(static_cast<float>(surfaceHeight));
+                layer->setViewportHeight(static_cast<float>(effectiveRenderHeight()));
         }
 
         void setCamera(
@@ -1227,7 +1241,7 @@ namespace
             layer->maximumScreenSpaceError = maxSSE;
             layer->maximumLoadedTiles = static_cast<unsigned>(std::max(1, maxTiles));
             layer->vsgctx = app->vsgcontext;
-            layer->setViewportHeight(static_cast<float>(surfaceHeight));
+            layer->setViewportHeight(static_cast<float>(effectiveRenderHeight()));
 
             auto openResult = layer->open(app->vsgcontext->io);
             if (openResult.failed())
@@ -3747,6 +3761,15 @@ Java_com_vectorra_maps_internal_VectorraNative_setResourcePath(JNIEnv* env, jobj
     if (auto* engine = fromHandle(handle))
     {
         engine->setResourcePath(jstringToString(env, path));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vectorra_maps_internal_VectorraNative_setCachePath(JNIEnv* env, jobject, jlong handle, jstring path)
+{
+    if (auto* engine = fromHandle(handle))
+    {
+        engine->setCachePath(jstringToString(env, path));
     }
 }
 

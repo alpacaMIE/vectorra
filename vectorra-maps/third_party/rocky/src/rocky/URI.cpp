@@ -8,6 +8,7 @@
 #include "URI.h"
 #include "Utils.h"
 #include "Context.h"
+#include "DiskCache.h"
 #include "Version.h"
 #include "json.h"
 
@@ -251,6 +252,14 @@ namespace
         }
     };
 
+    // Aborts an in-flight transfer when the caller's cancelable fires
+    // (e.g. a paging tile scrolled out of view mid-download).
+    static int curl_cancel_xferinfo(void* clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+    {
+        auto* io = static_cast<const IOOptions*>(clientp);
+        return (io && io->canceled()) ? 1 : 0;
+    }
+
     Result<HTTPResponse> http_get_curl(const HTTPRequest& request, const IOOptions& io)
     {
         // use thread-local clients for connection reuse.
@@ -282,6 +291,19 @@ namespace
             // where the peer certificate cannot be verified.
             curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, (void*)0);
 
+            // Required in multithreaded programs: signal-based DNS timeouts
+            // are not safe across threads.
+            curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
+
+            curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1L);
+            curl_easy_setopt(handle, CURLOPT_BUFFERSIZE, 524288L);
+
+            // Stall protection: a transfer below 1 KB/s for 30s is aborted.
+            // Without this a dead connection pins a worker thread forever
+            // (CONNECTTIMEOUT only covers the connect phase).
+            curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+            curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 30L);
+
             basket.handle = handle;
         }
 
@@ -308,6 +330,11 @@ namespace
 
         curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, (long)io.networkConnectionTimeout.count());
 
+        // mid-transfer cancellation (mirrors the httplib path's progress hook)
+        curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, curl_cancel_xferinfo);
+        curl_easy_setopt(handle, CURLOPT_XFERINFODATA, (void*)&io);
+
         CURLcode result = CURLE_OK;
         std::random_device device;
         std::default_random_engine engine(device());
@@ -329,7 +356,17 @@ namespace
                     std::this_thread::sleep_for(delay);
             }
 
+            // discard any partial body/headers from a failed previous attempt
+            so.stream.str(std::string());
+            so.stream.clear();
+            so.headers.clear();
+
             result = curl_easy_perform(handle);
+
+            if (result == CURLE_ABORTED_BY_CALLBACK)
+            {
+                return Failure_OperationCanceled;
+            }
 
             if (result == CURLE_COULDNT_CONNECT || result == CURLE_OPERATION_TIMEDOUT)
             {
@@ -682,7 +719,7 @@ auto URI::read(const IOOptions& io) const -> Result<URIResponse>
     // protect against multiple threads trying to read the same URI at the same time
     detail::ScopedGate<std::string> gate(io.services().uriGate, full());
 
-    if (io.services().contentCache)
+    if (io.useContentCache && io.services().contentCache)
     {
         auto cached = io.services().contentCache->get(full());
         if (cached.has_value() && cached->ok())
@@ -701,6 +738,20 @@ auto URI::read(const IOOptions& io) const -> Result<URIResponse>
         if (auto r = io.services().deadpool->get(full()))
         {
             return r.value();
+        }
+    }
+
+    // check the persistent disk cache for remote content.
+    if (isRemote() && io.services().diskCache)
+    {
+        if (auto hit = io.services().diskCache->get(full()))
+        {
+            if (io.useContentCache && io.services().contentCache)
+                io.services().contentCache->put(full(), Result<Content>(*hit));
+
+            Result<URIResponse> result(URIResponse(std::move(*hit)));
+            result->fromCache = true;
+            return result;
         }
     }
 
@@ -781,12 +832,17 @@ auto URI::read(const IOOptions& io) const -> Result<URIResponse>
 
     auto t1 = std::chrono::steady_clock::now();
 
-    if (io.services().contentCache)
+    if (isRemote() && io.services().diskCache)
+    {
+        io.services().diskCache->put(full(), content);
+    }
+
+    if (io.useContentCache && io.services().contentCache)
     {
         io.services().contentCache->put(full(), Result<Content>(content));
     }
 
-    return URIResponse(content, t1 - t0);
+    return URIResponse(std::move(content), t1 - t0);
 }
 
 bool

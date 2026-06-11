@@ -5,6 +5,7 @@
  */
 #include "VSGContext.h"
 #include "VSGUtils.h"
+#include <rocky/DiskCache.h>
 #include <rocky/Image.h>
 #include <rocky/URI.h>
 #include <rocky/GeoExtent.h>
@@ -979,8 +980,25 @@ VSGContextImpl::ctor(int& argc, char** argv)
             return Failure(Failure::ServiceUnavailable, "No image reader for \"" + contentType + "\"");
         };
 
-    // caches URI request results
+    // caches URI request results. Bounded by entry count AND total bytes:
+    // entry-count alone lets MB-scale payloads pin gigabytes of raw data.
     io.services().contentCache = std::make_shared<ContentCache>(1024);
+    io.services().contentCache->sizeOf = [](const Result<Content>& r) -> size_t {
+        return r.ok() ? r.value().data.size() + r.value().type.size() : 64;
+    };
+    io.services().contentCache->setCapacityBytes(96 * 1024 * 1024);
+
+    // optional persistent disk cache for remote content (set by the host
+    // app, e.g. the Android cache directory)
+    if (const char* cachePath = ::getenv("ROCKY_CACHE_PATH"); cachePath && cachePath[0])
+    {
+        auto diskCache = std::make_shared<rocky::detail::DiskContentCache>(cachePath);
+        if (diskCache->valid())
+        {
+            io.services().diskCache = diskCache;
+            Log()->info("Disk content cache: {}", cachePath);
+        }
+    }
 
     // weak cache of resident image (and elevation) rasters
     io.services().residentImageCache = std::make_shared<ResidentCache<std::string, Image, GeoExtent>>();
@@ -1065,7 +1083,7 @@ VSGContextImpl::onNextUpdate(std::function<void(VSGContext)> function)
 }
 
 vsg::CompileResult
-VSGContextImpl::compile(vsg::ref_ptr<vsg::Object> compilable)
+VSGContextImpl::compile(vsg::ref_ptr<vsg::Object> compilable, bool callerHandlesFailure)
 {
     ROCKY_SOFT_ASSERT_AND_RETURN(compilable.valid(), {});
     ROCKY_SOFT_ASSERT_AND_RETURN(_viewer && _viewer->compileManager, {});
@@ -1160,8 +1178,12 @@ VSGContextImpl::compile(vsg::ref_ptr<vsg::Object> compilable)
         std::unique_lock lock(_compileMutex);
         _compileResult.add(cr);
     }
-    else
+    else if (!callerHandlesFailure)
     {
+        // The failed object may hold partially-created GPU state; if it could
+        // be in (or enter) the live scene graph, recording would crash, so
+        // rendering gets disabled. Callers that keep failed objects out of
+        // the scene graph opt out via callerHandlesFailure.
         compileFailed = true;
     }
 

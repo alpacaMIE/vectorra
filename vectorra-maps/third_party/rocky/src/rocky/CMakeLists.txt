@@ -8,6 +8,8 @@ endif()
 # version variables found in the CMake configuration.
 set(version_h ${ROCKY_BUILDTIME_INCLUDE_DIR}/rocky/Version.h)
 
+# NOTE: sources are globbed at configure time. When adding a new source file
+# (e.g. DiskCache.cpp), touch this file so existing build trees reconfigure.
 rocky_glob(HEADERS_CORE *.h)
 list(APPEND HEADERS_CORE ${version_h})
 rocky_glob(SOURCES_CORE *.cpp tinyxml/*.cpp)
