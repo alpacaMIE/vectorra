@@ -4522,3 +4522,20 @@ git diff --check -- vectorra-maps/docs/tiles3d-performance-review.md vectorra-ma
 Result:
 
 - Passed; documentation-only change, no Gradle build required.
+
+2026-06-11
+
+Completed:
+
+- Cleaned up `docs/tiles3d-performance-review.md` formatting after duplicated pasted sections and broken table fragments appeared in the working copy.
+- Restored a consistent Markdown hierarchy, code formatting, bullet spacing, and a normal priority table.
+
+Verification:
+
+```powershell
+git diff --check -- vectorra-maps/docs/tiles3d-performance-review.md vectorra-maps/log.md
+```
+
+Result:
+
+- Passed; documentation-only change, no Gradle build required. Git emitted CRLF normalization warnings only.
