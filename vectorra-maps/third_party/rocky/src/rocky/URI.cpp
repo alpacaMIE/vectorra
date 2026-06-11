@@ -742,7 +742,7 @@ auto URI::read(const IOOptions& io) const -> Result<URIResponse>
     }
 
     // check the persistent disk cache for remote content.
-    if (isRemote() && io.services().diskCache)
+    if (isRemote() && !_context.bypassDiskCache && io.services().diskCache)
     {
         if (auto hit = io.services().diskCache->get(full()))
         {
@@ -832,7 +832,7 @@ auto URI::read(const IOOptions& io) const -> Result<URIResponse>
 
     auto t1 = std::chrono::steady_clock::now();
 
-    if (isRemote() && io.services().diskCache)
+    if (isRemote() && !_context.bypassDiskCache && io.services().diskCache)
     {
         io.services().diskCache->put(full(), content);
     }
@@ -866,7 +866,9 @@ namespace ROCKY_NAMESPACE
 {
     void to_json(json& j, const URI& obj)
     {
-        if (obj.context().referrer.empty() && obj.context().headers.empty())
+        if (obj.context().referrer.empty() &&
+            obj.context().headers.empty() &&
+            !obj.context().bypassDiskCache)
         {
             j = obj.base();
         }
@@ -881,6 +883,9 @@ namespace ROCKY_NAMESPACE
                     headers.push_back({ h.first, h.second });
                 }
                 j["headers"] = headers;
+            }
+            if (obj.context().bypassDiskCache) {
+                set(j, "bypassDiskCache", true);
             }
         }
     }
@@ -897,6 +902,7 @@ namespace ROCKY_NAMESPACE
             get_to(j, "href", base);
             get_to(j, "referrer", referrer);
             URI::Context context{ referrer };
+            get_to(j, "bypassDiskCache", context.bypassDiskCache);
             if (j.contains("headers")) {
                 auto headers = j.at("headers");
                 if (headers.is_array()) {

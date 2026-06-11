@@ -2,6 +2,7 @@ package com.vectorra.maps.network
 
 import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.URI
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
@@ -10,9 +11,66 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TileProxyServerTest {
+    @Test
+    fun proxyUsesStableRegistrationKeyForSameSourceLayerAndTemplate() {
+        val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-stable-key-cache").toFile()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val first = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer",
+                    templateUrl = "https://example.test/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+                val second = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer",
+                    templateUrl = "https://example.test/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+
+                assertEquals(first, second)
+                assertTrue(it.isProxyTemplate(first))
+                assertEquals(proxyTileId(first), proxyTileId(second))
+            }
+        } finally {
+            cacheRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun proxyUsesDifferentRegistrationKeysForDifferentLayers() {
+        val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-distinct-key-cache").toFile()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val first = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer-a",
+                    templateUrl = "https://example.test/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+                val second = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer-b",
+                    templateUrl = "https://example.test/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+
+                assertNotEquals(proxyTileId(first), proxyTileId(second))
+            }
+        } finally {
+            cacheRoot.deleteRecursively()
+        }
+    }
+
     @Test
     fun proxyFetchesRemoteTileThroughCacheAndScheduler() {
         val upstream = TestHttpServer { path ->
@@ -44,6 +102,93 @@ class TileProxyServerTest {
                 assertEquals(1, upstream.calls.get())
                 assertEquals("tile:/tiles/3/4/5.png", readUrl(url))
                 assertEquals(1, upstream.calls.get())
+            }
+        } finally {
+            upstream.close()
+            cacheRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun proxyKeepsHttp11ConnectionAliveAcrossRequests() {
+        val upstream = TestHttpServer { path ->
+            200 to "tile:$path".toByteArray()
+        }
+        val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-keep-alive-cache").toFile()
+        upstream.start()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val template = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer",
+                    templateUrl = "http://127.0.0.1:${upstream.port}/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+                val base = URI(template.replace("{z}", "3").replace("{x}", "4").replace("{y}", "5"))
+                Socket(base.host, base.port).use { socket ->
+                    socket.soTimeout = 2_000
+                    val output = socket.getOutputStream()
+                    val reader = socket.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+
+                    output.write("GET ${base.rawPath}?z=3&x=4&y=5 HTTP/1.1\r\nHost: ${base.host}\r\n\r\n".toByteArray())
+                    output.flush()
+                    val first = readRawResponse(reader)
+                    assertEquals(200, first.statusCode)
+                    assertEquals("keep-alive", first.headers["connection"])
+                    assertEquals("tile:/tiles/3/4/5.png", first.body)
+
+                    output.write("GET ${base.rawPath}?z=3&x=4&y=6 HTTP/1.1\r\nHost: ${base.host}\r\n\r\n".toByteArray())
+                    output.flush()
+                    val second = readRawResponse(reader)
+                    assertEquals(200, second.statusCode)
+                    assertEquals("keep-alive", second.headers["connection"])
+                    assertEquals("tile:/tiles/3/4/6.png", second.body)
+                }
+            }
+        } finally {
+            upstream.close()
+            cacheRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun proxyClosesConnectionWhenClientRequestsClose() {
+        val upstream = TestHttpServer { path ->
+            200 to "tile:$path".toByteArray()
+        }
+        val cacheRoot = Files.createTempDirectory("rocky-tile-proxy-close-cache").toFile()
+        upstream.start()
+        try {
+            val server = TileProxyServer(cacheDirectory = cacheRoot)
+            server.use {
+                val template = it.proxyTemplateFor(
+                    sourceId = "source",
+                    layerId = "layer",
+                    templateUrl = "http://127.0.0.1:${upstream.port}/tiles/{z}/{x}/{y}.png",
+                    headers = emptyMap()
+                )
+                val url = URI(template.replace("{z}", "3").replace("{x}", "4").replace("{y}", "5"))
+                Socket(url.host, url.port).use { socket ->
+                    socket.soTimeout = 2_000
+                    val output = socket.getOutputStream()
+                    val reader = socket.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+                    output.write(
+                        (
+                            "GET ${url.rawPath}?z=3&x=4&y=5 HTTP/1.1\r\n" +
+                                "Host: ${url.host}\r\n" +
+                                "Connection: close\r\n" +
+                                "\r\n"
+                            ).toByteArray()
+                    )
+                    output.flush()
+
+                    val response = readRawResponse(reader)
+                    assertEquals(200, response.statusCode)
+                    assertEquals("close", response.headers["connection"])
+                    assertEquals("tile:/tiles/3/4/5.png", response.body)
+                    assertNull(reader.readLine())
+                }
             }
         } finally {
             upstream.close()
@@ -243,6 +388,39 @@ class TileProxyServerTest {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun proxyTileId(template: String): String {
+        return template.substringAfter("/tile/").substringBefore("?")
+    }
+
+    private data class RawHttpResponse(
+        val statusCode: Int,
+        val headers: Map<String, String>,
+        val body: String
+    )
+
+    private fun readRawResponse(reader: java.io.BufferedReader): RawHttpResponse {
+        val statusLine = reader.readLine()
+        val statusCode = statusLine.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
+        val headers = linkedMapOf<String, String>()
+        while (true) {
+            val line = reader.readLine()
+            if (line.isNullOrEmpty()) break
+            val separator = line.indexOf(":")
+            if (separator > 0) {
+                headers[line.substring(0, separator).lowercase()] = line.substring(separator + 1).trim()
+            }
+        }
+        val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+        val body = CharArray(contentLength)
+        var read = 0
+        while (read < contentLength) {
+            val count = reader.read(body, read, contentLength - read)
+            if (count < 0) break
+            read += count
+        }
+        return RawHttpResponse(statusCode, headers, body.concatToString(0, read))
     }
 
     private class TestHttpServer(

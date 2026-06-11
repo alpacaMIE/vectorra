@@ -55,10 +55,12 @@ namespace ROCKY_NAMESPACE
          */
         struct Context
         {
-            Context() = default;
-            Context(std::string_view v) : referrer(v) {}
             std::string referrer;
             Headers headers;
+            bool bypassDiskCache;
+
+            Context() : bypassDiskCache(false) {}
+            Context(std::string_view v) : referrer(v), bypassDiskCache(false) {}
         };
 
     public:

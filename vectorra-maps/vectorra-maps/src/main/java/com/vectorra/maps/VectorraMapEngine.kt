@@ -512,6 +512,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 resourceType = TileResourceType.RASTER
             )
             val nativeHeaders = if (proxiedTemplateUrl == layer.templateUrl) headers else emptyMap()
+            val disableNativeDiskCache = shouldDisableNativeDiskCache(
+                tileProxyServer = tileProxyServer,
+                templateUrl = proxiedTemplateUrl
+            )
             runResourceNativeCall(VectorraResourceKind.RASTER, layer.sourceId, layer.id) {
                 VectorraNative.addRasterLayer(
                     nativeHandle,
@@ -526,6 +530,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     layer.tileSize,
                     layer.scheme.name,
                     layer.matrixSet.orEmpty(),
+                    disableNativeDiskCache,
                     nativeHeaders.toNameArray(),
                     nativeHeaders.toValueArray()
                 )
@@ -563,6 +568,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     source.tileSize,
                     TileScheme.XYZ.name,
                     "",
+                    shouldDisableNativeDiskCache(
+                        tileProxyServer = tileProxyServer,
+                        templateUrl = proxiedTemplateUrl
+                    ),
                     emptyArray(),
                     emptyArray()
                 )
@@ -669,6 +678,10 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                 resourceType = TileResourceType.DEM
             )
             val nativeHeaders = if (proxiedTemplateUrl == templateUrl) headers else emptyMap()
+            val disableNativeDiskCache = shouldDisableNativeDiskCache(
+                tileProxyServer = tileProxyServer,
+                templateUrl = proxiedTemplateUrl
+            )
             runResourceNativeCall(VectorraResourceKind.DEM, id, id) {
                 VectorraNative.addElevationLayer(
                     nativeHandle,
@@ -676,6 +689,7 @@ internal class VectorraMapEngine(cacheDirectory: File) : VectorraMap {
                     proxiedTemplateUrl,
                     minZoom,
                     maxZoom,
+                    disableNativeDiskCache,
                     nativeHeaders.toNameArray(),
                     nativeHeaders.toValueArray()
                 )
@@ -1415,6 +1429,13 @@ private fun TileCacheStoreStatus.toPublicStatus(): VectorraCacheBucketStatus {
         diskEntryCount = diskEntryCount,
         diskBytes = diskBytes
     )
+}
+
+internal fun shouldDisableNativeDiskCache(
+    tileProxyServer: TileProxyServer,
+    templateUrl: String
+): Boolean {
+    return tileProxyServer.isProxyTemplate(templateUrl)
 }
 
 private fun TileResponse.toPrefetchTileResult(): VectorraPrefetchTileResult {

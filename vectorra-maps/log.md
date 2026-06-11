@@ -4786,3 +4786,36 @@ Results:
 Known issues / next:
 
 - Device MVT smoke for ordinary MVT, MBTiles MVT, pan/readd/hide/bad tile, eviction, fallback, and query was not run in this pass.
+
+## 2026-06-11
+
+### Network Stack Short-Term Proxy Fixes - Stage 5
+
+Completed:
+
+- Replaced random tile proxy registration IDs with stable source/layer/resource keys, with deterministic fallback hashes when no source/layer identity is available.
+- Added HTTP/1.1 keep-alive support to the local tile proxy so one native curl connection can serve multiple tile GET requests.
+- Kept Kotlin `TileCacheStore` as the only persistent cache owner for proxied raster/DEM/MBTiles raster requests by passing a native disk-cache bypass flag through `VectorraNative.addRasterLayer` and `addElevationLayer`.
+- Added `rocky::URI::Context::bypassDiskCache` and made `URI::read` skip persistent disk cache get/put only when that flag is set.
+- Added JVM tests for stable proxy keys, proxy keep-alive/close behavior, and native disk-cache bypass selection for proxy URLs.
+
+Verification commands:
+
+```powershell
+.\gradlew.bat :vectorra-maps:testDebugUnitTest --tests "com.vectorra.maps.network.TileProxyServerTest" --tests "com.vectorra.maps.VectorraNativeDiskCacheBypassTest"
+.\gradlew.bat :vectorra-maps:testDebugUnitTest
+.\gradlew.bat :vectorra-sample:assembleDebug
+git diff --check
+```
+
+Results:
+
+- Targeted proxy/cache-bypass tests passed.
+- Full `:vectorra-maps:testDebugUnitTest` passed.
+- `:vectorra-sample:assembleDebug` passed for `arm64-v8a` and `x86_64`, including the JNI signature and rocky URI context changes.
+- `git diff --check` passed with CRLF warnings only.
+
+Known issues / next:
+
+- Long-term native TLS, `ROCKY_SUPPORTS_HTTPS ON`, native raster/DEM direct fetch, and native MBTiles direct read remain future work.
+- No device smoke test was run for live raster/DEM proxy loading in this pass.

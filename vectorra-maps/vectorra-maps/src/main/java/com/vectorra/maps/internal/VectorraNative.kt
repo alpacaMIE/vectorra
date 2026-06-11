@@ -90,6 +90,7 @@ internal object VectorraNative {
         tileSize: Int,
         scheme: String,
         matrixSet: String,
+        disableNativeDiskCache: Boolean,
         headerNames: Array<String>,
         headerValues: Array<String>
     )
@@ -109,6 +110,7 @@ internal object VectorraNative {
         templateUrl: String,
         minZoom: Int,
         maxZoom: Int,
+        disableNativeDiskCache: Boolean,
         headerNames: Array<String>,
         headerValues: Array<String>
     )

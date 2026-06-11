@@ -485,6 +485,7 @@ namespace
         int tileSize = 256;
         std::string scheme = "XYZ";
         std::string matrixSet;
+        bool disableNativeDiskCache = false;
         std::vector<std::pair<std::string, std::string>> headers;
     };
 
@@ -494,6 +495,7 @@ namespace
         int minZoom = 0;
         int maxZoom = 14;
         bool visible = true;
+        bool disableNativeDiskCache = false;
         std::vector<std::pair<std::string, std::string>> headers;
     };
 
@@ -2395,6 +2397,7 @@ namespace
             int tileSize,
             const std::string& scheme,
             const std::string& matrixSet,
+            bool disableNativeDiskCache,
             std::vector<std::pair<std::string, std::string>> headers)
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -2413,6 +2416,7 @@ namespace
                 std::max(1, tileSize),
                 scheme,
                 matrixSet,
+                disableNativeDiskCache,
                 std::move(headers)};
             __android_log_print(
                 ANDROID_LOG_INFO,
@@ -2481,6 +2485,7 @@ namespace
             const std::string& templateUrl,
             int minZoom,
             int maxZoom,
+            bool disableNativeDiskCache,
             std::vector<std::pair<std::string, std::string>> headers)
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -2488,7 +2493,13 @@ namespace
             {
                 elevationLayerOrder.emplace_back(id);
             }
-            elevationLayers[id] = ElevationLayerConfig{templateUrl, minZoom, maxZoom, true, std::move(headers)};
+            elevationLayers[id] = ElevationLayerConfig{
+                templateUrl,
+                minZoom,
+                maxZoom,
+                true,
+                disableNativeDiskCache,
+                std::move(headers)};
             __android_log_print(ANDROID_LOG_INFO, TAG, "addElevationLayer id=%s minZoom=%d maxZoom=%d", id.c_str(), minZoom, maxZoom);
             if (app)
             {
@@ -5305,6 +5316,7 @@ namespace
             auto layer = rocky::TMSImageLayer::create();
             layer->name = id;
             rocky::URI::Context uriContext;
+            uriContext.bypassDiskCache = config.disableNativeDiskCache;
             for (const auto& header : config.headers)
             {
                 uriContext.headers.emplace_back(header.first, header.second);
@@ -5462,6 +5474,7 @@ namespace
             auto layer = rocky::TMSElevationLayer::create();
             layer->name = id;
             rocky::URI::Context uriContext;
+            uriContext.bypassDiskCache = config.disableNativeDiskCache;
             for (const auto& header : config.headers)
             {
                 uriContext.headers.emplace_back(header.first, header.second);
@@ -6456,6 +6469,7 @@ Java_com_vectorra_maps_internal_VectorraNative_addRasterLayer(
     jint tileSize,
     jstring scheme,
     jstring matrixSet,
+    jboolean disableNativeDiskCache,
     jobjectArray headerNames,
     jobjectArray headerValues)
 {
@@ -6473,6 +6487,7 @@ Java_com_vectorra_maps_internal_VectorraNative_addRasterLayer(
             tileSize,
             jstringToString(env, scheme),
             jstringToString(env, matrixSet),
+            disableNativeDiskCache == JNI_TRUE,
             headersFromJArrays(env, headerNames, headerValues));
     }
 }
@@ -6521,6 +6536,7 @@ Java_com_vectorra_maps_internal_VectorraNative_addElevationLayer(
     jstring templateUrl,
     jint minZoom,
     jint maxZoom,
+    jboolean disableNativeDiskCache,
     jobjectArray headerNames,
     jobjectArray headerValues)
 {
@@ -6531,6 +6547,7 @@ Java_com_vectorra_maps_internal_VectorraNative_addElevationLayer(
             jstringToString(env, templateUrl),
             minZoom,
             maxZoom,
+            disableNativeDiskCache == JNI_TRUE,
             headersFromJArrays(env, headerNames, headerValues));
     }
 }

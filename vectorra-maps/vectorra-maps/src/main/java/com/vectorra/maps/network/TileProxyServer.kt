@@ -7,7 +7,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URI
 import java.net.URLDecoder
-import java.util.UUID
+import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
@@ -76,7 +77,12 @@ class TileProxyServer(
             return templateUrl
         }
         val socket = startIfNeeded()
-        val id = UUID.randomUUID().toString()
+        val id = stableRegistrationId(
+            sourceId = sourceId,
+            layerId = layerId,
+            resourceType = resourceType,
+            fallback = "remote|$templateUrl"
+        )
         registrations[id] = Registration(
             sourceId = sourceId,
             layerId = layerId,
@@ -95,7 +101,12 @@ class TileProxyServer(
         provider: LocalTileProvider
     ): String {
         val socket = startIfNeeded()
-        val id = UUID.randomUUID().toString()
+        val id = stableRegistrationId(
+            sourceId = sourceId,
+            layerId = layerId,
+            resourceType = resourceType,
+            fallback = "local-provider"
+        )
         registrations[id] = Registration(
             sourceId = sourceId,
             layerId = layerId,
@@ -141,7 +152,13 @@ class TileProxyServer(
                     }
                 } catch (_: RejectedExecutionException) {
                     client.use {
-                        writeResponse(it, 503, "text/plain", "Tile proxy is shutting down.".toByteArray())
+                        writeResponse(
+                            it,
+                            503,
+                            "text/plain",
+                            "Tile proxy is shutting down.".toByteArray(),
+                            closeConnection = true
+                        )
                     }
                 }
             } catch (_: Exception) {
@@ -161,7 +178,8 @@ class TileProxyServer(
                     socket,
                     503,
                     "text/plain",
-                    (e.message ?: "Tile proxy request failed.").toByteArray()
+                    (e.message ?: "Tile proxy request failed.").toByteArray(),
+                    closeConnection = true
                 )
             }
         }
@@ -169,29 +187,53 @@ class TileProxyServer(
 
     private fun handleSocketRequest(socket: Socket) {
         val reader = socket.getInputStream().bufferedReader(Charsets.ISO_8859_1)
-        val requestLine = reader.readLine().orEmpty()
+        while (!closed.get() && !socket.isClosed) {
+            val result = handleSingleRequest(socket, reader)
+            if (!result.keepAlive) return
+        }
+    }
+
+    private data class RequestResult(val keepAlive: Boolean)
+
+    private fun handleSingleRequest(
+        socket: Socket,
+        reader: java.io.BufferedReader
+    ): RequestResult {
+        val requestLine = reader.readLine() ?: return RequestResult(keepAlive = false)
+        if (requestLine.isBlank()) return RequestResult(keepAlive = true)
+
+        val requestHeaders = linkedMapOf<String, String>()
         while (true) {
-            val line = reader.readLine() ?: break
+            val line = reader.readLine() ?: return RequestResult(keepAlive = false)
             if (line.isEmpty()) break
+            val separator = line.indexOf(":")
+            if (separator > 0) {
+                requestHeaders[line.substring(0, separator).lowercase(Locale.US)] =
+                    line.substring(separator + 1).trim()
+            }
+        }
+
+        val shouldKeepAlive = shouldKeepAlive(requestLine, requestHeaders)
+        fun respond(statusCode: Int, contentType: String, body: ByteArray): RequestResult {
+            val closeConnection = !shouldKeepAlive || statusCode !in 200..299
+            writeResponse(socket, statusCode, contentType, body, closeConnection)
+            return RequestResult(keepAlive = !closeConnection)
         }
 
         val parts = requestLine.split(" ")
         if (parts.size < 2 || parts[0] != "GET") {
-            writeResponse(socket, 405, "text/plain", "Method not allowed".toByteArray())
-            return
+            return respond(405, "text/plain", "Method not allowed".toByteArray())
         }
 
         val uri = runCatching { URI(parts[1]) }.getOrNull()
         if (uri == null || !uri.path.startsWith("/tile/")) {
-            writeResponse(socket, 404, "text/plain", "Not found".toByteArray())
-            return
+            return respond(404, "text/plain", "Not found".toByteArray())
         }
 
         val id = uri.path.removePrefix("/tile/")
         val registration = registrations[id]
         if (registration == null) {
-            writeResponse(socket, 404, "text/plain", "Unknown tile source".toByteArray())
-            return
+            return respond(404, "text/plain", "Unknown tile source".toByteArray())
         }
 
         val query = parseQuery(uri.rawQuery.orEmpty())
@@ -199,8 +241,7 @@ class TileProxyServer(
         val x = query["x"]
         val y = query["y"]
         if (z.isNullOrBlank() || x.isNullOrBlank() || y.isNullOrBlank()) {
-            writeResponse(socket, 400, "text/plain", "Missing tile coordinate".toByteArray())
-            return
+            return respond(400, "text/plain", "Missing tile coordinate".toByteArray())
         }
 
         val tileId = TileId(
@@ -224,14 +265,12 @@ class TileProxyServer(
                 .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
                 ?.value
                 ?: inferContentType(response.request.url)
-            writeResponse(socket, status, contentType, response.body)
-            return
+            return respond(status, contentType, response.body)
         }
 
         val templateUrl = registration.templateUrl
         if (templateUrl == null) {
-            writeResponse(socket, 404, "text/plain", "Unknown tile source".toByteArray())
-            return
+            return respond(404, "text/plain", "Unknown tile source".toByteArray())
         }
         val targetUrl = templateUrl
             .replace("\${z}", z)
@@ -254,7 +293,7 @@ class TileProxyServer(
             .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
             ?.value
             ?: inferContentType(targetUrl)
-        writeResponse(socket, status, contentType, response.body)
+        return respond(status, contentType, response.body)
     }
 
     private fun executeWithCache(request: TileRequest, tileId: TileId): TileResponse {
@@ -270,7 +309,13 @@ class TileProxyServer(
         return response
     }
 
-    private fun writeResponse(socket: Socket, statusCode: Int, contentType: String, body: ByteArray) {
+    private fun writeResponse(
+        socket: Socket,
+        statusCode: Int,
+        contentType: String,
+        body: ByteArray,
+        closeConnection: Boolean
+    ) {
         val reason = when (statusCode) {
             200 -> "OK"
             400 -> "Bad Request"
@@ -288,7 +333,7 @@ class TileProxyServer(
             append("HTTP/1.1 $statusCode $reason\r\n")
             append("Content-Type: $contentType\r\n")
             append("Content-Length: ${body.size}\r\n")
-            append("Connection: close\r\n")
+            append("Connection: ${if (closeConnection) "close" else "keep-alive"}\r\n")
             append("\r\n")
         }.toByteArray(Charsets.ISO_8859_1)
         output.write(headers)
@@ -325,6 +370,43 @@ class TileProxyServer(
         return tileId.z.coerceAtLeast(0)
     }
 
+    internal fun isProxyTemplate(templateUrl: String): Boolean {
+        val port = serverSocket?.localPort ?: return false
+        return templateUrl.startsWith("http://127.0.0.1:$port/tile/") ||
+            templateUrl.startsWith("http://localhost:$port/tile/")
+    }
+
+    private fun stableRegistrationId(
+        sourceId: String?,
+        layerId: String?,
+        resourceType: TileResourceType,
+        fallback: String
+    ): String {
+        val source = sourceId.orEmpty().trim()
+        val layer = layerId.orEmpty().trim()
+        val identity = if (source.isNotEmpty() || layer.isNotEmpty()) {
+            "ids|$source|$layer|${resourceType.name}"
+        } else {
+            "fallback|${resourceType.name}|$fallback"
+        }
+        return "v1-${sha256(identity)}"
+    }
+
+    private fun sha256(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun shouldKeepAlive(requestLine: String, headers: Map<String, String>): Boolean {
+        val protocol = requestLine.split(" ").getOrNull(2).orEmpty().uppercase(Locale.US)
+        val connection = headers["connection"].orEmpty().lowercase(Locale.US)
+        return when {
+            connection.split(",").map { it.trim() }.any { it == "close" } -> false
+            protocol == "HTTP/1.0" -> connection.split(",").map { it.trim() }.any { it == "keep-alive" }
+            else -> true
+        }
+    }
+
     private fun inferContentType(url: String): String {
         val lower = url.substringBefore("?").lowercase()
         return when {
@@ -344,12 +426,6 @@ class TileProxyServer(
         return (templateUrl.contains("{z}") || templateUrl.contains("\${z}")) &&
             (templateUrl.contains("{x}") || templateUrl.contains("\${x}")) &&
             (templateUrl.contains("{y}") || templateUrl.contains("\${y}"))
-    }
-
-    private fun isProxyTemplate(templateUrl: String): Boolean {
-        val port = serverSocket?.localPort ?: return false
-        return templateUrl.startsWith("http://127.0.0.1:$port/tile/") ||
-            templateUrl.startsWith("http://localhost:$port/tile/")
     }
 
     private fun TileRequestHandle.awaitOrError(timeoutMillis: Long): TileResponse {
