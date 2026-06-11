@@ -4506,3 +4506,19 @@ Known remaining work:
 - P1: traverse/record decoupling; persistent glb disk cache.
 - P2: memory diet for the 262k-tile parse tree (emulator TOTAL PSS was ~935MB with the layer active — the 49.7MB tileset.json DOM + per-tile copies dominate); cesium-native-style selection with hysteresis; transform-chain-aware culling/SSE for spec compliance; byte-budget eviction.
 - Physical-device smoke (arm64) was not run in this pass.
+
+2026-06-11
+
+Completed:
+
+- Reflowed `docs/tiles3d-performance-review.md` into standard Markdown sections, removed duplicated pasted content and broken table fragments, and converted the priority matrix to a normal Markdown table.
+
+Verification:
+
+```powershell
+git diff --check -- vectorra-maps/docs/tiles3d-performance-review.md vectorra-maps/log.md
+```
+
+Result:
+
+- Passed; documentation-only change, no Gradle build required.
